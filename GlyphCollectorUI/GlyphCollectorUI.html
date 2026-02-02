@@ -43,10 +43,15 @@
         class="flex-none p-4 bg-white border-b border-slate-200 shadow-sm z-10 flex flex-wrap gap-4 items-end justify-between">
         <div>
             <h1 class="text-xl font-bold text-slate-900 leading-tight">VHS Batch Collector</h1>
-            <p class="text-xs text-slate-500">Zeichne 5 Varianten. Enter zum Speichern.</p>
+            <p class="text-xs text-slate-500">Zeichne Varianten. Enter zum Speichern.</p>
         </div>
 
         <div class="flex gap-4 items-end">
+            <button onclick="toggleSettings()"
+                class="px-3 h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-300 transition"
+                title="Einstellungen">
+                ⚙️
+            </button>
             <div>
                 <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Zeichen</label>
                 <input type="text" id="charInput" placeholder="a" autofocus
@@ -66,6 +71,48 @@
         </div>
     </header>
 
+    <!-- Settings Panel (Hidden by default) -->
+    <div id="settingsPanel"
+        class="hidden absolute top-20 right-4 bg-white p-6 rounded-xl shadow-2xl border border-slate-200 z-50 w-80">
+        <h3 class="font-bold text-lg mb-4 text-slate-800 border-b pb-2">Einstellungen</h3>
+
+        <div class="space-y-4">
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Anzahl Varianten</label>
+                <input type="number" id="cfgCount" class="w-20 p-1 border rounded text-right" value="10">
+            </div>
+
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Breite (px)</label>
+                <input type="number" id="cfgWidth" class="w-20 p-1 border rounded text-right" value="100">
+            </div>
+
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Höhe (px)</label>
+                <input type="number" id="cfgHeight" class="w-20 p-1 border rounded text-right" value="140">
+            </div>
+
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Baseline Y</label>
+                <input type="number" id="cfgBaseline" class="w-20 p-1 border rounded text-right" value="100">
+            </div>
+
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">x-Height Y</label>
+                <input type="number" id="cfgXHeight" class="w-20 p-1 border rounded text-right" value="60">
+            </div>
+
+            <div class="pt-4 border-t mt-4">
+                <button onclick="applySettings()"
+                    class="w-full bg-red-100 hover:bg-red-200 text-red-700 font-bold py-2 rounded-lg transition text-sm">
+                    Anwenden & Reset
+                </button>
+                <p class="text-[10px] text-center text-slate-400 mt-2">Achtung: Löscht aktuelle Zeichnung!</p>
+            </div>
+        </div>
+    </div>
+
+
     <!-- Drawing Area (Horizontal Scroll) -->
     <main class="flex-1 overflow-x-auto overflow-y-hidden p-4 flex items-center bg-slate-50 no-scrollbar">
         <div class="flex gap-4 px-4 m-auto">
@@ -84,19 +131,56 @@
     </footer>
 
     <script>
-        // --- Configuration ---
-        const VARIANT_COUNT = 10;
-        const CANVAS_WIDTH = 100;
-        const CANVAS_HEIGHT = 140;
-        const BASELINE_Y = 100;    // Red line
-        const X_HEIGHT = 60;      // Blue dashed line
+        // --- Configuration (Defaults) ---
+        let VARIANT_COUNT = 10;
+        let CANVAS_WIDTH = 100;
+        let CANVAS_HEIGHT = 140;
+        let BASELINE_Y = 100;    // Red line
+        let X_HEIGHT = 60;      // Blue dashed line
 
         // --- State ---
-        const slots = [];
+        let slots = [];
 
         // --- Initialization ---
         function init() {
+            // Load from inputs if possible, or keep defaults
+            // (Optional: Load from localStorage here in future)
+            generateGrid();
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') saveAndReset();
+            });
+        }
+
+        function toggleSettings() {
+            const el = document.getElementById('settingsPanel');
+            el.classList.toggle('hidden');
+        }
+
+        function applySettings() {
+            const count = parseInt(document.getElementById('cfgCount').value);
+            const w = parseInt(document.getElementById('cfgWidth').value);
+            const h = parseInt(document.getElementById('cfgHeight').value);
+            const base = parseInt(document.getElementById('cfgBaseline').value);
+            const xh = parseInt(document.getElementById('cfgXHeight').value);
+
+            if (count && w && h && base && xh) {
+                VARIANT_COUNT = count;
+                CANVAS_WIDTH = w;
+                CANVAS_HEIGHT = h;
+                BASELINE_Y = base;
+                X_HEIGHT = xh;
+                generateGrid();
+                toggleSettings();
+            } else {
+                alert("Bitte gültige Zahlen eingeben!");
+            }
+        }
+
+        function generateGrid() {
             const container = document.getElementById('canvasContainer');
+            container.innerHTML = ''; // Clear existing
+            slots = []; // Reset state
 
             for (let i = 0; i < VARIANT_COUNT; i++) {
                 const wrapper = document.createElement('div');
@@ -107,6 +191,11 @@
                 canvas.height = CANVAS_HEIGHT;
                 canvas.className = 'canvas-slot rounded-lg shadow-sm border-2 border-white';
                 canvas.id = `slot-${i}`;
+                // Set explicit style size to ensure CSS respects it if needed, 
+                // though width/height attrs should suffice for raw pixels.
+                canvas.style.width = `${CANVAS_WIDTH}px`;
+                canvas.style.height = `${CANVAS_HEIGHT}px`;
+
 
                 const label = document.createElement('div');
                 label.className = 'absolute top-2 left-2 text-xs font-bold text-slate-300 select-none pointer-events-none group-hover:text-slate-400';
@@ -129,10 +218,7 @@
                 attachEvents(slotData);
                 drawGuides(slotData);
             }
-
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') saveAndReset();
-            });
+            updateTotalCount();
         }
 
         // --- Drawing Logic ---
@@ -168,6 +254,7 @@
 
         function addPoint(e, slot) {
             const rect = slot.canvas.getBoundingClientRect();
+            // Since we resize canvas now, verify scale calcs
             const scaleX = slot.canvas.width / rect.width;
             const scaleY = slot.canvas.height / rect.height;
 
@@ -243,7 +330,7 @@
         }
 
         // --- File Naming & Sanitization ---
-        function getSafeFilename(char) {
+        function getSafeFilename(inputName) {
             const map = {
                 '.': 'period', ',': 'comma', ':': 'colon', ';': 'semicolon',
                 '?': 'question', '!': 'exclamation', '"': 'quote_double',
@@ -256,7 +343,8 @@
                 '=': 'equals', '+': 'plus', '~': 'tilde', '€': 'euro',
                 '§': 'section', '°': 'degree'
             };
-            return map[char] || char;
+
+            return inputName.split('').map(c => map[c] || c).join('');
         }
 
         function saveAndReset() {
