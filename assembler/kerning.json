@@ -1,0 +1,24 @@
+{
+    "space_width": 40.0,
+    "tracking_buffer": 5.0,
+    "exceptions": {
+        ".": {
+            "min_width": 20.0
+        },
+        ",": {
+            "min_width": 20.0
+        },
+        "'": {
+            "min_width": 15.0
+        },
+        ":": {
+            "min_width": 20.0
+        },
+        ";": {
+            "min_width": 20.0
+        },
+        "!": {
+            "min_width": 20.0
+        }
+    }
+}
