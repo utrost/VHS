@@ -11,6 +11,7 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
     -   Adjust the number of variants.
     -   Customize box width and height.
     -   Set custom Baseline and x-Height positions.
+-   **Multi-Font Support**: Specify a "Font Family" (e.g., "UweHandwriting") to organize your exports.
 -   **Ligature Support**:
     -   Type multiple characters (e.g., "sch", "tt").
     -   Filenames are automatically sanitized (e.g., "1/4" -> `1slash4.json`).
@@ -28,6 +29,7 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
 
 Click the **Settings (⚙️)** button in the header to open the configuration panel:
 
+-   **Font Name**: The unique name of the font family (e.g., "MyScript"). Use this to keep sets of glyphs separate.
 -   **Anzahl Varianten**: Number of boxes to display.
 -   **Breite / Höhe**: Dimensions of each drawing box in pixels.
 -   **Baseline Y**: Vertical position of the red baseline.

@@ -78,6 +78,12 @@
 
         <div class="space-y-4">
             <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Font Name</label>
+                <input type="text" id="cfgFontFamily" class="w-32 p-1 border rounded text-right text-xs"
+                    value="MyHandwriting">
+            </div>
+
+            <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Anzahl Varianten</label>
                 <input type="number" id="cfgCount" class="w-20 p-1 border rounded text-right" value="10">
             </div>
@@ -132,6 +138,7 @@
 
     <script>
         // --- Configuration (Defaults) ---
+        let FONT_FAMILY = "MyHandwriting";
         let VARIANT_COUNT = 10;
         let CANVAS_WIDTH = 100;
         let CANVAS_HEIGHT = 140;
@@ -158,13 +165,15 @@
         }
 
         function applySettings() {
+            const fontName = document.getElementById('cfgFontFamily').value;
             const count = parseInt(document.getElementById('cfgCount').value);
             const w = parseInt(document.getElementById('cfgWidth').value);
             const h = parseInt(document.getElementById('cfgHeight').value);
             const base = parseInt(document.getElementById('cfgBaseline').value);
             const xh = parseInt(document.getElementById('cfgXHeight').value);
 
-            if (count && w && h && base && xh) {
+            if (fontName && count && w && h && base && xh) {
+                FONT_FAMILY = fontName;
                 VARIANT_COUNT = count;
                 CANVAS_WIDTH = w;
                 CANVAS_HEIGHT = h;
@@ -173,7 +182,7 @@
                 generateGrid();
                 toggleSettings();
             } else {
-                alert("Bitte gültige Zahlen eingeben!");
+                alert("Bitte gültige Daten eingeben!");
             }
         }
 
@@ -369,6 +378,7 @@
                 char: rawChar,
                 exported_at: new Date().toISOString(),
                 metadata: {
+                    font_family: FONT_FAMILY,
                     baseline_y: BASELINE_Y,
                     x_height: X_HEIGHT,
                     canvas_size: [CANVAS_WIDTH, CANVAS_HEIGHT]

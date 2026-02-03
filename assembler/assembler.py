@@ -227,15 +227,30 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VHS Assembler: Convert text to vector handwriting SVG.")
     parser.add_argument("text", help="Text to render")
     parser.add_argument("output", help="Output SVG filename")
-    parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
+    parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     
     args = parser.parse_args()
     
     # Assume glyphs are in ../glyphs relative to this script
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    glyphs_path = os.path.join(script_dir, "../glyphs")
-    kerning_path = os.path.join(script_dir, "kerning.json")
+    base_glyphs_dir = os.path.join(script_dir, "../glyphs")
     
+    if args.font:
+        glyphs_path = os.path.join(base_glyphs_dir, args.font)
+        # Check for font-specific kerning
+        font_kerning = os.path.join(glyphs_path, "kerning.json")
+        if os.path.exists(font_kerning):
+            kerning_path = font_kerning
+        else:
+            kerning_path = os.path.join(script_dir, "kerning.json")
+    else:
+        glyphs_path = base_glyphs_dir
+        kerning_path = os.path.join(script_dir, "kerning.json")
+    
+    if not os.path.exists(glyphs_path):
+        print(f"Error: Glyphs directory not found: {glyphs_path}")
+        exit(1)
+
     print(f"Loading glyphs from: {glyphs_path}")
     lib = GlyphLibrary(glyphs_path)
     

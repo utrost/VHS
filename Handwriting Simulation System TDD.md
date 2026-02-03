@@ -8,14 +8,15 @@ The VHS system provides a deterministic pipeline for generating realistic handwr
 * **True Single-Stroke:** Output paths are 1-pixel wide vectors (no outlines/double-tracking).  
 * **Multilingual Native:** Full support for German Umlauts (ä, ö, ü), ß, and special punctuation via raw capture.  
 * **Automated Spacing:** Kerning is calculated mathematically from vector bounding boxes, removing the need for manual UI adjustments.
+* **Multi-Font Support:** Capable of managing and rendering multiple distinct handwriting styles/fonts.
 
 ## **2\. System Architecture**
 
 | Module | Component | Technology | Responsibility |
 | :---- | :---- | :---- | :---- |
-| **Capture** | Batch Glyph Collector | HTML5/JS (Canvas) | Captures raw pointer coordinates ($x,y,p,t$) in a "Filmstrip" UI (5 variants per char). Handles filename sanitization. |
-| **Storage** | Glyph Library | JSON Files | Stores strokes as serialized point arrays. Files are named safely (e.g., question.json for ?). |
-| **Synthesis** | The Assembler | Python | Performs text shaping, stochastic variant selection, Bounding Box kerning, and jitter simulation. |
+| **Capture** | Batch Glyph Collector | HTML5/JS (Canvas) | Captures raw pointer coordinates ($x,y,p,t$). Output: JSON. |
+| **Storage** | Glyph Library | JSON Files | Can be organized by subdirectory: `glyphs/{FontName}/`. Includes optional font-specific `kerning.json`. |
+| **Synthesis** | The Assembler | Python | Converts characters to SVG paths with stochastic variation and kerning. |
 
 ## **3\. Data Specification (Glyph JSON)**
 
@@ -24,6 +25,7 @@ To support batching, the JSON schema aggregates all variants of a single charact
   "char": "?",   
   "exported\_at": "2025-11-24T10:00:00Z",  
   "metadata": {  
+    "font_family": "UweHandwriting",
     "baseline\_y": 250,  
     "x\_height": 150,  
     "canvas\_size": \[250, 350\]  
@@ -53,18 +55,19 @@ To support batching, the JSON schema aggregates all variants of a single charact
 
 The UI does not capture width. The Python script calculates it dynamically to prevent "monospaced" look.
 
-1. **Normalization:** For each selected variant, calculate the Bounding Box ($x\_{min}, x\_{max}$).  
-2. **Trim:** Shift all points left by subtracting $x\_{min}$ ($NewX \= OldX \- x\_{min}$).  
-3. **Advance Width:** The cursor moves by $(x\_{max} \- x\_{min}) \+ \\text{TrackingBuffer}$.  
-4. **Overrides:** A kerning.json file handles exceptions:  
-   * **Space:** Fixed width (e.g., 10mm).  
-   * **Narrow Punctuation:** Enforce min-width for ., ,, '.
+1.  **Normalization:** For each selected variant, calculate the Bounding Box ($x\_{min}, x\_{max}$).  
+2.  **Trim:** Shift all points left by subtracting $x\_{min}$ ($NewX \= OldX \- x\_{min}$).  
+3.  **Advance Width:** The cursor moves by $(x\_{max} \- x\_{min}) \+ \\text{TrackingBuffer}$.  
+4.  **Overrides:** A kerning.json file handles exceptions:  
+    *   **Space:** Fixed width (e.g., 10mm).  
+    *   **Narrow Punctuation:** Enforce min-width for ., ,, '.
+    *   **Location:** `glyphs/{FontName}/kerning.json` (Font-specific configuration).
 
 ### **B. Stochastic Shaping**
 
-1. **Ligature Scan:** Checks input string for defined ligatures (sch, ss, ch) availability in the library.  
-2. **Variant Rotation:** Randomly selects variant\_id (0-4) to ensure no two adjacent characters look identical.  
-3. **High-Connector Logic:** If the previous letter ends high (o, v, w), the script can vertically shift the entry point of the next letter (if supported by stroke geometry) or select a specific "alt" glyph.
+1.  **Ligature Scan:** Checks input string for defined ligatures (sch, ss, ch) availability in the library.  
+2.  **Variant Rotation:** Randomly selects variant\_id (0-4) to ensure no two adjacent characters look identical.  
+3.  **High-Connector Logic:** If the previous letter ends high (o, v, w), the script can vertically shift the entry point of the next letter (if supported by stroke geometry) or select a specific "alt" glyph.
 
 ### **C. Quantized Jitter**
 
