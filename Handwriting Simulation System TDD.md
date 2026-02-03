@@ -44,7 +44,7 @@ To support batching, the JSON schema aggregates all variants of a single charact
 ## **4\. The Glyph Collector UI (Frontend)**
 
 * **Batch Pattern:** Displays 5 horizontal canvas slots to allow rapid repetition (muscle memory).  
-* **Sanitization:** Automatically maps filesystem-unsafe characters to safe filenames (e.g., / $\\rightarrow$ slash.json).  
+* **Sanitization:** Automatically maps input characters to **Unicode Hex filenames** (e.g., `A` $\rightarrow$ `0041.json`, `sch` $\rightarrow$ `007300630068.json`) to prevent case-insensitivity conflicts on Windows.
 * **Input:** Uses Pointer Events API to capture pressure and tilt where available.  
 * **Guides:** \* **Red Solid Line (**$y=250$**):** Absolute Baseline.  
   * **Blue Dashed Line (**$y=150$**):** x-Height reference.
@@ -65,7 +65,7 @@ The UI does not capture width. The Python script calculates it dynamically to pr
 
 ### **B. Stochastic Shaping**
 
-1.  **Ligature Scan:** Checks input string for defined ligatures (sch, ss, ch) availability in the library.  
+1.  **Ligature Scan (Greedy Matching):** The assembler looks ahead in the text stream. If a multi-character glyph (e.g., `tt`, `sch`) exists in the library, it consumes those characters and renders the single ligature glyph instead.
 2.  **Variant Rotation:** Randomly selects variant\_id (0-4) to ensure no two adjacent characters look identical.  
 3.  **High-Connector Logic:** If the previous letter ends high (o, v, w), the script can vertically shift the entry point of the next letter (if supported by stroke geometry) or select a specific "alt" glyph.
 

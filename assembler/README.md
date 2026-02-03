@@ -38,6 +38,16 @@ Each font directory can have its own `kerning.json`.
    - Generates an SVG with a single path element per stroke.
    - Applies jitter if requested.
 
+## Ligatures
+The assembler supports automatic ligature substitution via **Greedy Matching**.
+- To add a ligature, save a glyph with the name of the sequence (e.g., `tt.json`, `sch.json`).
+- If the assembler encounters "sch" in the text and `sch.json` exists, it will use that single glyph instead of `s`, `c`, and `h`.
+
+## File Naming
+The assembler supports two naming conventions for glyph files:
+1.  **Direct**: `a.json`, `b.json`, `tt.json`. (Note: distinct files for `A` and `a` are not possible on Windows).
+2.  **Unicode Hex**: `0061.json` (a), `0041.json` (A), `007300630068.json` (sch). This is the default output format of the Glyph Collector UI to ensure Windows compatibility.
+
 ## Kerning
 
 The assembler looks for a `kerning.json` file in the same directory. This file can define:

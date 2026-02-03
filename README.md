@@ -29,6 +29,7 @@ python assembler.py "Hello World" output.svg
 - **Curve Smoothing**: Uses Catmull-Rom splines to turn raw input into fluid, natural curves.
 - **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
 - **Ligature Support**: Handles multi-character sequences if captured (e.g., "sch", "tt").
+- **Windows Compatibility**: Uses Unicode Hex filenames (e.g., `0041.json`) to distinguish uppercase/lowercase files on case-insensitive systems.
 - **Pressure Data**: Preserves pressure information from the capture phase (if supported by hardware).
 
 ## Requirements
