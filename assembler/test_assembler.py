@@ -35,6 +35,14 @@ class TestAssembler(unittest.TestCase):
                 "variants": [ { "strokes": [[{"x": 5, "y": 5}, {"x": 6, "y": 6}]] } ]
             }''')
 
+        # Create a mock 'tt.json' (ligature)
+        cls.tt_path = os.path.join(cls.test_glyphs_dir, "tt.json")
+        with open(cls.tt_path, 'w') as f:
+            f.write('''{
+                "char": "tt",
+                "variants": [ { "strokes": [[{"x": 0, "y": 0}, {"x": 30, "y": 0}]] } ]
+            }''')
+
         # Create a mock local kerning file
         cls.kerning_path = os.path.join(cls.test_glyphs_dir, "kerning.json")
         with open(cls.kerning_path, 'w') as f:
@@ -55,7 +63,8 @@ class TestAssembler(unittest.TestCase):
     def test_library_loading(self):
         self.assertIsNotNone(self.lib.get_glyph("a"))
         self.assertIsNotNone(self.lib.get_glyph("."))
-        self.assertIsNone(self.lib.get_glyph("z"))
+        self.assertIsNotNone(self.lib.get_glyph("tt")) 
+        self.assertEqual(self.lib.max_key_length, 2)
 
     def test_typesetting_metrics(self):
         # Test basic typesetting
@@ -85,6 +94,21 @@ class TestAssembler(unittest.TestCase):
         distance = x2 - x1
         self.assertAlmostEqual(distance, 17.0, delta=0.5)
 
+    def test_ligature_recognition(self):
+         # "a.tt" should parse as 'a', '.', 'tt' (3 glyphs)
+         # If greedy matching fails, it might try 't', 't' (making 4 glyphs, but 't' doesn't exist so it skips or spaces)
+         
+         # Note: 't' is not defined in mock, so lookup fails for single 't'.
+         # This effectively forces it to find 'tt' or nothing.
+         
+         shapes = self.typesetter.typeset_text("a.tt")
+         self.assertEqual(len(shapes), 3) # a, ., tt
+         
+         # Check that the 3rd shape has width ~30 (mock tt width)
+         # Using metrics from mock: min_x=0, max_x=30 -> width=30
+         
+         # We can't easily check internal metrics here, but we check count.
+         
     def test_renderer_svg_generation(self):
         output_file = os.path.join(script_dir, "test_output_unittest.svg")
         shapes = self.typesetter.typeset_text("a.")

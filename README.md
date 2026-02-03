@@ -26,6 +26,7 @@ python assembler.py "Hello World" output.svg
 ## Features
 
 - **True Single-Stroke**: Output paths are 1-pixel wide vectors.
+- **Curve Smoothing**: Uses Catmull-Rom splines to turn raw input into fluid, natural curves.
 - **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
 - **Ligature Support**: Handles multi-character sequences if captured (e.g., "sch", "tt").
 - **Pressure Data**: Preserves pressure information from the capture phase (if supported by hardware).

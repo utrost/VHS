@@ -16,6 +16,7 @@ class GlyphLibrary:
     def __init__(self, glyphs_dir: str):
         self.glyphs_dir = glyphs_dir
         self.library: Dict[str, Dict[str, Any]] = {}
+        self.max_key_length = 1
         self.special_char_map = {
             '.': 'period', ',': 'comma', ':': 'colon', ';': 'semicolon',
             '?': 'question', '!': 'exclamation', '"': 'quote_double',
@@ -46,6 +47,8 @@ class GlyphLibrary:
                         # Pre-calculate metrics for each variant
                         self._preprocess_variants(data)
                         self.library[char] = data
+                        if len(char) > self.max_key_length:
+                            self.max_key_length = len(char)
             except json.JSONDecodeError:
                 logger.error(f"Invalid JSON in {file_path}")
             except Exception as e:
@@ -124,78 +127,100 @@ class Typesetter:
         cursor_x = 0.0
         cursor_y = 0.0 # Baseline
 
-        for char in text:
-            if char == '\n':
+        i = 0
+        while i < len(text):
+            char_at_i = text[i]
+
+            if char_at_i == '\n':
                 cursor_x = 0
                 cursor_y += 200 # Fixed Line Height for now
+                i += 1
                 continue
 
-            if char == ' ':
+            if char_at_i == ' ':
                 cursor_x += self.space_width
+                i += 1
                 continue
 
-            glyph_data = self.library.get_glyph(char)
-            if not glyph_data or not glyph_data.get('variants'):
-                logger.warning(f"No glyph found for '{char}', skipping.")
+            # Greedy Matching for Ligatures
+            match_found = False
+            max_lookahead = min(self.library.max_key_length, len(text) - i)
+            
+            for length in range(max_lookahead, 0, -1):
+                candidate = text[i : i + length]
+                glyph_data = self.library.get_glyph(candidate)
+                
+                if glyph_data and glyph_data.get('variants'):
+                    # Match found! Use this glyph (could be single char or ligature)
+                    width = self._process_glyph(glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
+                    
+                    cursor_x += width + self.tracking_buffer
+                    
+                    i += length
+                    match_found = True
+                    break
+            
+            if not match_found:
+                logger.warning(f"No glyph found for '{text[i]}', skipping.")
                 cursor_x += self.space_width # Placeholder advance
-                continue
+                i += 1
 
-            # Stochastic Selection
-            variants = glyph_data['variants']
-            num_variants = len(variants)
-            
-            if num_variants > 1:
-                last_idx = self.last_variant_indices.get(char)
-                available_indices = [i for i in range(num_variants) if i != last_idx]
-                
-                if not available_indices:
-                    available_indices = list(range(num_variants))
-                
-                selected_idx = random.choice(available_indices)
-                self.last_variant_indices[char] = selected_idx
-                selected_variant = variants[selected_idx]
-            else:
-                selected_variant = variants[0]
-            
-            # Use Pre-calculated Metrics
-            metrics = selected_variant.get('metrics', {'min_x': 0.0, 'width': 0.0, 'baseline_offset': 0.0})
-            content_width = metrics['width']
-            min_x_original = metrics['min_x']
-            baseline_offset = metrics['baseline_offset']
-            
-            # Kerning Exceptions (min_width)
-            min_width = 0.0
-            if char in self.kerning_exceptions:
-                min_width = self.kerning_exceptions[char].get('min_width', 0.0)
-            
-            final_width = max(content_width, min_width)
-            
-            # Centering if content is smaller than min_width
-            x_offset = cursor_x
-            if content_width < min_width:
-                centering = (min_width - content_width) / 2.0
-                x_offset += centering
-
-            # Normalize and Place Points
-            strokes = selected_variant['strokes']
-            placed_strokes = []
-            
-            for stroke in strokes:
-                new_stroke = []
-                for point in stroke:
-                    # Generic shift: (x - min_x) + offset
-                    # Y shift: (y - baseline_offset) + cursor_y
-                    new_x = (point['x'] - min_x_original) + x_offset
-                    new_y = (point['y'] - baseline_offset) + cursor_y
-                    new_stroke.append({'x': new_x, 'y': new_y, 'p': point.get('p', 0.5)})
-                placed_strokes.append(new_stroke)
-
-            compiled_shapes.append(placed_strokes)
-
-            # Advance Cursor
-            cursor_x += final_width + self.tracking_buffer
-        
         return compiled_shapes
+
+    def _process_glyph(self, glyph_data: Dict[str, Any], char_key: str, cursor_x: float, cursor_y: float, compiled_shapes: List) -> float:
+        # Stochastic Selection
+        variants = glyph_data['variants']
+        num_variants = len(variants)
+        
+        if num_variants > 1:
+            last_idx = self.last_variant_indices.get(char_key)
+            available_indices = [i for i in range(num_variants) if i != last_idx]
+            
+            if not available_indices:
+                available_indices = list(range(num_variants))
+            
+            selected_idx = random.choice(available_indices)
+            self.last_variant_indices[char_key] = selected_idx
+            selected_variant = variants[selected_idx]
+        else:
+            selected_variant = variants[0]
+        
+        # Use Pre-calculated Metrics
+        metrics = selected_variant.get('metrics', {'min_x': 0.0, 'width': 0.0, 'baseline_offset': 0.0})
+        content_width = metrics['width']
+        min_x_original = metrics['min_x']
+        baseline_offset = metrics['baseline_offset']
+        
+        # Kerning Exceptions (min_width)
+        min_width = 0.0
+        if char_key in self.kerning_exceptions:
+            min_width = self.kerning_exceptions[char_key].get('min_width', 0.0)
+        
+        final_width = max(content_width, min_width)
+        
+        # Centering if content is smaller than min_width
+        x_offset = cursor_x
+        if content_width < min_width:
+            centering = (min_width - content_width) / 2.0
+            x_offset += centering
+
+        # Normalize and Place Points
+        strokes = selected_variant['strokes']
+        placed_strokes = []
+        
+        for stroke in strokes:
+            new_stroke = []
+            for point in stroke:
+                # Generic shift: (x - min_x) + offset
+                # Y shift: (y - baseline_offset) + cursor_y
+                new_x = (point['x'] - min_x_original) + x_offset
+                new_y = (point['y'] - baseline_offset) + cursor_y
+                new_stroke.append({'x': new_x, 'y': new_y, 'p': point.get('p', 0.5)})
+            placed_strokes.append(new_stroke)
+
+        compiled_shapes.append(placed_strokes)
+        
+        return final_width # Return just the width (without tracking)
 
 class Renderer:
     def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False):

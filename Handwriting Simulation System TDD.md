@@ -16,7 +16,7 @@ The VHS system provides a deterministic pipeline for generating realistic handwr
 | :---- | :---- | :---- | :---- |
 | **Capture** | Batch Glyph Collector | HTML5/JS (Canvas) | Captures raw pointer coordinates ($x,y,p,t$). Output: JSON. |
 | **Storage** | Glyph Library | JSON Files | Can be organized by subdirectory: `glyphs/{FontName}/`. Includes optional font-specific `kerning.json`. |
-| **Synthesis** | The Assembler | Python | Converts characters to SVG paths with stochastic variation and kerning. |
+| **Synthesis** | The Assembler | Python | Converts characters to SVG paths with **baseline normalization**, **stochastic variation**, **kerning**, and **curve smoothing**. |
 
 ## **3\. Data Specification (Glyph JSON)**
 
@@ -74,6 +74,12 @@ The UI does not capture width. The Python script calculates it dynamically to pr
 Applied post-shaping to simulate mechanical imperfection:
 
 $$P\_{new} \= P\_{old} \+ N(0, \\sigma)$$
+
+### **D. Curve Smoothing**
+Raw capture data is polygonal. The renderer uses **Catmull-Rom Spline Interpolation** to generate fluid curves from the point data, simulating natural pen movement.
+
+### **E. Baseline Normalization**
+Reference metadata (`baseline_y`) is used to vertically align glyphs. All Y-coordinates are normalized relative to this baseline ($y=0$), ensuring correct alignment of ascenders and descenders regardless of the capture canvas position.
 
 ## **6\. Appendix: Capture Inventory Checklist**
 
