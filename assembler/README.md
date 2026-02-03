@@ -15,9 +15,11 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 
 ### Options
 
+- `--file [PATH]`, `-f [PATH]`: Read input text from a file instead of the command line.
 - `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `myFont`). Defaults to root `glyphs/`.
 - `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desiredMessiness.
 - `--smooth`: Enable Catmull-Rom spline smoothing to create fluid curves from captured points.
+- `--line-height [FLOAT]`: Override the vertical space between lines (default: 200.0).
 
 ## Directory Structure
 

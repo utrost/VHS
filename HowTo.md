@@ -55,6 +55,7 @@ To make letters touch (for a cursive look):
 {
     "space_width": 30.0,
     "tracking_buffer": -5.0,
+    "line_height": 200.0,
     "exceptions": {
         ".": { "min_width": 15.0 }
     }
@@ -72,6 +73,16 @@ python assembler.py "Your text here" output.svg --font MyHandwriting --smooth
 
 *   `--font MyHandwriting`: Tells it to look in `glyphs/MyHandwriting/`.
 *   `--smooth`: Turns your jagged input points into fluid, curvy strokes (highly recommended for realism).
+
+### 5.1 Using Multiline Files
+For longer texts, save them as a `.txt` file and run:
+
+```bash
+python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth --line-height 250
+```
+
+*   `--file`: Reads the input from a text file.
+*   `--line-height`: Controls the vertical gap between lines.
 
 ## 6. Troubleshooting
 

@@ -53,13 +53,14 @@ To support batching, the JSON schema aggregates all variants of a single charact
 
 ### **A. Automated Proportional Spacing (Kerning)**
 
-The UI does not capture width. The Python script calculates it dynamically to prevent "monospaced" look.
+The UI does not capture width. The Python script calculates it dynamically to prevent "monospaced" look. Handles `\n` by resetting X and advancing Y by `line_height`.
 
 1.  **Normalization:** For each selected variant, calculate the Bounding Box ($x\_{min}, x\_{max}$).  
 2.  **Trim:** Shift all points left by subtracting $x\_{min}$ ($NewX \= OldX \- x\_{min}$).  
 3.  **Advance Width:** The cursor moves by $(x\_{max} \- x\_{min}) \+ \\text{TrackingBuffer}$.  
 4.  **Overrides:** A kerning.json file handles exceptions:  
     *   **Space:** Fixed width (e.g., 10mm).  
+    *   **Line Height:** Vertical distance between lines (default 200).
     *   **Narrow Punctuation:** Enforce min-width for ., ,, '.
     *   **Location:** `glyphs/{FontName}/kerning.json` (Font-specific configuration).
 

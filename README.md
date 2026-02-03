@@ -19,8 +19,13 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 Use the assembler to convert text into an SVG suitable for plotting.
 
 ```bash
+```bash
 cd assembler
+# Direct text
 python assembler.py "Hello World" output.svg
+
+# From file (Multiline)
+python assembler.py --file letter.txt output.svg --line-height 250
 ```
 
 ## Features
@@ -30,6 +35,7 @@ python assembler.py "Hello World" output.svg
 - **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
 - **Ligature Support**: Handles multi-character sequences if captured (e.g., "sch", "tt").
 - **Windows Compatibility**: Uses Unicode Hex filenames (e.g., `0041.json`) to distinguish uppercase/lowercase files on case-insensitive systems.
+- **Multiline Support**: Render text files with configurable line height.
 - **Pressure Data**: Preserves pressure information from the capture phase (if supported by hardware).
 
 ## Requirements

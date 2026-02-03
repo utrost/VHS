@@ -101,7 +101,8 @@ class Typesetter:
         
         # Defaults
         self.tracking_buffer = 5.0 
-        self.space_width = 30.0 
+        self.space_width = 30.0
+        self.line_height = 200.0 # Default line height
         self.kerning_exceptions: Dict[str, Dict[str, float]] = {}
 
         if kerning_config_path and os.path.exists(kerning_config_path):
@@ -110,6 +111,7 @@ class Typesetter:
                     config = json.load(f)
                     self.space_width = config.get('space_width', self.space_width)
                     self.tracking_buffer = config.get('tracking_buffer', self.tracking_buffer)
+                    self.line_height = config.get('line_height', self.line_height)
                     self.kerning_exceptions = config.get('exceptions', {})
                 logger.info(f"Loaded kerning config from {kerning_config_path}")
             except Exception as e:
@@ -117,12 +119,15 @@ class Typesetter:
 
         self.last_variant_indices: Dict[str, int] = {} 
 
-    def typeset_text(self, text: str) -> List[List[List[Dict[str, float]]]]:
+    def typeset_text(self, text: str, override_line_height: Optional[float] = None) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
         Each stroke is a list of 'points' (dicts with x, y, p).
         """
+        
+        current_line_height = override_line_height if override_line_height is not None else self.line_height
+        
         compiled_shapes = []
         cursor_x = 0.0
         cursor_y = 0.0 # Baseline
@@ -133,7 +138,7 @@ class Typesetter:
 
             if char_at_i == '\n':
                 cursor_x = 0
-                cursor_y += 200 # Fixed Line Height for now
+                cursor_y += current_line_height
                 i += 1
                 continue
 
@@ -342,13 +347,29 @@ class Renderer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="VHS Assembler: Convert text to vector handwriting SVG.")
-    parser.add_argument("text", help="Text to render")
+    parser.add_argument("text", nargs="?", help="Text to render (optional if --file is used)")
     parser.add_argument("output", help="Output SVG filename")
+    parser.add_argument("--file", "-f", help="Read text from file instead of command line argument")
     parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--smooth", action="store_true", help="Enable spline smoothing for curves")
+    parser.add_argument("--line-height", type=float, help="Override line height for multiline text")
     
     args = parser.parse_args()
+    
+    input_text = ""
+    if args.file:
+        try:
+            with open(args.file, 'r', encoding='utf-8') as f:
+                input_text = f.read()
+        except Exception as e:
+            logger.error(f"Failed to read input file: {e}")
+            exit(1)
+    elif args.text:
+        input_text = args.text
+    else:
+        logger.error("No input provided. Use 'text' argument or --file.")
+        exit(1)
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_glyphs_dir = os.path.join(script_dir, "../glyphs")
@@ -368,7 +389,7 @@ if __name__ == "__main__":
 
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path)
-    shapes = typesetter.typeset_text(args.text)
+    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height)
     
     renderer = Renderer(jitter_amount=args.jitter, smoothing=args.smooth)
     renderer.generate_svg(shapes, args.output)
