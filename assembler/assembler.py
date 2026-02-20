@@ -119,7 +119,87 @@ class Typesetter:
 
         self.last_variant_indices: Dict[str, int] = {} 
 
-    def typeset_text(self, text: str, override_line_height: Optional[float] = None) -> List[List[List[Dict[str, float]]]]:
+    
+    def calculate_optical_kerning(self, shapes_a: List[List[Dict[str, float]]], shapes_b: List[List[Dict[str, float]]], resolution: int = 50) -> float:
+        """
+        Calculates the minimum horizontal distance between two shapes.
+        Positive value means they are apart, negative means they overlap.
+        """
+        if not shapes_a or not shapes_b:
+            return 0.0
+
+        # Flatten points to find vertical bounds
+        all_points_a = [p for stroke in shapes_a for p in stroke]
+        all_points_b = [p for stroke in shapes_b for p in stroke]
+        
+        if not all_points_a or not all_points_b:
+            return 0.0
+
+        min_y = min(p['y'] for p in all_points_a + all_points_b)
+        max_y = max(p['y'] for p in all_points_a + all_points_b)
+        
+        height = max_y - min_y
+        if height <= 0:
+            return 0.0
+            
+        step = height / resolution
+        
+        # Buckets for rightmost X of A and leftmost X of B
+        # Initialize with extreme values
+        # buckets_a[i] = max x found in slice i
+        # buckets_b[i] = min x found in slice i
+        buckets_a = {i: float('-inf') for i in range(resolution + 1)}
+        buckets_b = {i: float('inf') for i in range(resolution + 1)}
+        
+        def fill_buckets(shapes, buckets, is_max):
+            for stroke in shapes:
+                for i in range(len(stroke) - 1):
+                    p1 = stroke[i]
+                    p2 = stroke[i+1]
+                    
+                    # Segment Y range
+                    seg_min_y = min(p1['y'], p2['y'])
+                    seg_max_y = max(p1['y'], p2['y'])
+                    
+                    start_idx = max(0, int((seg_min_y - min_y) / step))
+                    end_idx = min(resolution, int((seg_max_y - min_y) / step) + 1)
+                    
+                    for idx in range(start_idx, end_idx):
+                        y_scan = min_y + (idx * step)
+                        
+                        # Check INTERSECTION with scanline y_scan
+                        # Avoid division by zero for horizontal lines
+                        if abs(p1['y'] - p2['y']) < 1e-9:
+                            continue
+                            
+                        # Linear interpolation for X
+                        t = (y_scan - p1['y']) / (p2['y'] - p1['y'])
+                        if 0 <= t <= 1:
+                            x_intersect = p1['x'] + t * (p2['x'] - p1['x'])
+                            
+                            if is_max:
+                                buckets[idx] = max(buckets[idx], x_intersect)
+                            else:
+                                buckets[idx] = min(buckets[idx], x_intersect)
+
+        fill_buckets(shapes_a, buckets_a, is_max=True)
+        fill_buckets(shapes_b, buckets_b, is_max=False)
+        
+        min_distance = float('inf')
+        
+        for i in range(resolution + 1):
+            if buckets_a[i] != float('-inf') and buckets_b[i] != float('inf'):
+                dist = buckets_b[i] - buckets_a[i]
+                if dist < min_distance:
+                    min_distance = dist
+                    
+        if min_distance == float('inf'):
+            # No vertical overlap
+            return 0.0
+            
+        return min_distance
+
+    def typeset_text(self, text: str, override_line_height: Optional[float] = None, auto_kern: bool = False) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
@@ -129,8 +209,14 @@ class Typesetter:
         current_line_height = override_line_height if override_line_height is not None else self.line_height
         
         compiled_shapes = []
+        # Store raw shapes for optical kerning calculation (before final placement)
+        # But wait, we need them placed relative to 0,0 of the CHAR to calculate distance?
+        # Actually, best to store the LAST placed shape to compare against.
+        
         cursor_x = 0.0
         cursor_y = 0.0 # Baseline
+
+        last_shape_placed = None # List of strokes of the previous character (in absolute coords)
 
         i = 0
         while i < len(text):
@@ -139,11 +225,13 @@ class Typesetter:
             if char_at_i == '\n':
                 cursor_x = 0
                 cursor_y += current_line_height
+                last_shape_placed = None
                 i += 1
                 continue
 
             if char_at_i == ' ':
                 cursor_x += self.space_width
+                last_shape_placed = None
                 i += 1
                 continue
 
@@ -156,10 +244,36 @@ class Typesetter:
                 glyph_data = self.library.get_glyph(candidate)
                 
                 if glyph_data and glyph_data.get('variants'):
-                    # Match found! Use this glyph (could be single char or ligature)
-                    width = self._process_glyph(glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
+                    # Match found! Use this glyph
                     
-                    cursor_x += width + self.tracking_buffer
+                    # 1. First, calculate where it WOULD go naturally
+                    # This adds the strokes to compiled_shapes
+                    width, placed_strokes = self._process_glyph(glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
+                    
+                    # 2. Optical Kerning
+                    manual_tracking_offset = 0.0
+                    if candidate in self.kerning_exceptions:
+                        manual_tracking_offset = self.kerning_exceptions[candidate].get('tracking_offset', 0.0)
+
+                    if auto_kern and last_shape_placed:
+                        # Calculate gap between last_shape_placed and placed_strokes
+                        gap = self.calculate_optical_kerning(last_shape_placed, placed_strokes)
+                        
+                        # We want the gap to be exactly self.tracking_buffer
+                        # Current gap is 'gap'. Target is 'self.tracking_buffer'.
+                        # Shift needed = gap - self.tracking_buffer
+                        
+                        shift = gap - self.tracking_buffer
+                        
+                        # Apply shift to both cursor_x AND the points of the just-placed glyph
+                        cursor_x -= shift
+                        for stroke in placed_strokes:
+                            for p in stroke:
+                                p['x'] -= shift
+                    
+                    # Update for next loop
+                    cursor_x += width + self.tracking_buffer + manual_tracking_offset
+                    last_shape_placed = placed_strokes
                     
                     i += length
                     match_found = True
@@ -168,11 +282,12 @@ class Typesetter:
             if not match_found:
                 logger.warning(f"No glyph found for '{text[i]}', skipping.")
                 cursor_x += self.space_width # Placeholder advance
+                last_shape_placed = None
                 i += 1
 
         return compiled_shapes
 
-    def _process_glyph(self, glyph_data: Dict[str, Any], char_key: str, cursor_x: float, cursor_y: float, compiled_shapes: List) -> float:
+    def _process_glyph(self, glyph_data: Dict[str, Any], char_key: str, cursor_x: float, cursor_y: float, compiled_shapes: List) -> Tuple[float, List[List[Dict[str, float]]]]:
         # Stochastic Selection
         variants = glyph_data['variants']
         num_variants = len(variants)
@@ -225,12 +340,13 @@ class Typesetter:
 
         compiled_shapes.append(placed_strokes)
         
-        return final_width # Return just the width (without tracking)
+        return final_width, placed_strokes
 
 class Renderer:
-    def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False):
+    def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False, color: str = "black"):
         self.jitter_amount = jitter_amount
         self.smoothing = smoothing
+        self.color = color
 
     def _catmull_rom_spline(self, points: List[Dict[str, float]], steps: int = 5) -> List[Tuple[float, float]]:
         """
@@ -305,7 +421,7 @@ class Renderer:
 
         g = ET.SubElement(svg, "g", {
             "fill": "none",
-            "stroke": "black",
+            "stroke": self.color,
             "stroke-width": "2",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
@@ -354,6 +470,8 @@ if __name__ == "__main__":
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--smooth", action="store_true", help="Enable spline smoothing for curves")
     parser.add_argument("--line-height", type=float, help="Override line height for multiline text")
+    parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
+    parser.add_argument("--color", default="black", help="Hex code or color name for the stroke (default: black)")
     
     args = parser.parse_args()
     
@@ -389,7 +507,7 @@ if __name__ == "__main__":
 
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path)
-    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height)
+    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height, auto_kern=args.auto_kern)
     
-    renderer = Renderer(jitter_amount=args.jitter, smoothing=args.smooth)
+    renderer = Renderer(jitter_amount=args.jitter, smoothing=args.smooth, color=args.color)
     renderer.generate_svg(shapes, args.output)
