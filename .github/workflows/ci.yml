@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    name: Test & Lint
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run unit tests
+        working-directory: assembler
+        run: python -m unittest test_assembler -v
+
+      - name: Run smoke test (generate SVG from test font)
+        working-directory: assembler
+        run: |
+          python assembler.py "Hi" /tmp/smoke_test.svg --font TestFont
+          test -s /tmp/smoke_test.svg && echo "✅ SVG generated" || exit 1
