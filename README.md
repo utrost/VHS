@@ -1,5 +1,7 @@
 # Vector Handwriting System (VHS)
 
+**🌐 Live Demo:** [utrost.github.io/VHS](https://utrost.github.io/VHS/) · [simiono.com/vhs](https://simiono.com/vhs/)
+
 VHS is a deterministic pipeline for generating realistic handwriting for pen plotters. It replaces neural-network-based generation with a stochastic "Shaping Engine" utilizing a custom-captured library of single-stroke vector glyphs.
 
 ## Project Structure
