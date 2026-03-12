@@ -29,6 +29,17 @@ python assembler.py "Hello World" output.svg --font YourFont --smooth
 python assembler.py --file letter.txt output.svg --font YourFont --smooth --line-height 250
 ```
 
+### 3. Web UI
+
+```bash
+pip install flask
+cd assembler
+python3 server.py
+# Open http://localhost:5001
+```
+
+The web UI provides a visual interface with live SVG preview, file upload, paper size presets, and all assembler options.
+
 ## Features
 
 - **True Single-Stroke**: Output paths are 1-pixel wide vectors — ready for pen plotters.

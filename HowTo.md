@@ -84,6 +84,19 @@ python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth -
 *   `--file`: Reads the input from a text file.
 *   `--line-height`: Controls the vertical gap between lines.
 
+### 5.2 Paper Size and Line Spacing
+To produce an SVG at a specific page size (useful for printing or pen plotters):
+
+```bash
+python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth \
+  --paper-size A4 --orientation landscape --line-spacing 1.2 --margin 25
+```
+
+*   `--paper-size`: Sets a fixed page size (`A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`).
+*   `--orientation`: `portrait` (default) or `landscape`.
+*   `--line-spacing`: Multiplier for `--line-height` (e.g. `1.5` = 150% spacing).
+*   `--margin`: Page margin in mm on all four sides (default: 20).
+
 ## 6. Troubleshooting
 
 *   **"My letters are floating!"**: You likely ignored the Red Line during capture. Open the JSON file and check `baseline_y`. The assembler tries to fix this, but garbage in = garbage out.

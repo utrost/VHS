@@ -1,6 +1,7 @@
 import os
 import sys
 import unittest
+import xml.etree.ElementTree as ET
 import shutil
 
 # Add script dir to path
@@ -120,6 +121,65 @@ class TestAssembler(unittest.TestCase):
         self.assertTrue(filesize > 0)
         
         # Clean up
+        os.remove(output_file)
+
+    def test_paper_size_dimensions(self):
+        """SVG should have fixed A4 portrait dimensions when --paper-size is used."""
+        output_file = os.path.join(script_dir, "test_paper_a4.svg")
+        shapes = self.typesetter.typeset_text("a.")
+        renderer = Renderer()
+        renderer.generate_svg(shapes, output_file, page_width_mm=210.0, page_height_mm=297.0)
+
+        tree = ET.parse(output_file)
+        root = tree.getroot()
+        ns = {'svg': 'http://www.w3.org/2000/svg'}
+        self.assertEqual(root.get("width"), "210.0mm")
+        self.assertEqual(root.get("height"), "297.0mm")
+        os.remove(output_file)
+
+    def test_paper_size_landscape(self):
+        """Landscape should swap width and height."""
+        output_file = os.path.join(script_dir, "test_paper_landscape.svg")
+        shapes = self.typesetter.typeset_text("a")
+        renderer = Renderer()
+        # A4 landscape: 297 x 210
+        renderer.generate_svg(shapes, output_file, page_width_mm=297.0, page_height_mm=210.0)
+
+        tree = ET.parse(output_file)
+        root = tree.getroot()
+        self.assertEqual(root.get("width"), "297.0mm")
+        self.assertEqual(root.get("height"), "210.0mm")
+        os.remove(output_file)
+
+    def test_line_spacing_multiplier(self):
+        """line_spacing=2.0 should double the vertical gap between lines."""
+        shapes_1x = self.typesetter.typeset_text("a\na", line_spacing=1.0)
+        shapes_2x = self.typesetter.typeset_text("a\na", line_spacing=2.0)
+
+        # First shape at y=0 baseline, second shape at y=line_height * spacing
+        y1_1x = shapes_1x[1][0][0]['y']
+        y0_1x = shapes_1x[0][0][0]['y']
+        gap_1x = y1_1x - y0_1x
+
+        y1_2x = shapes_2x[1][0][0]['y']
+        y0_2x = shapes_2x[0][0][0]['y']
+        gap_2x = y1_2x - y0_2x
+
+        self.assertAlmostEqual(gap_2x, gap_1x * 2.0, delta=0.1)
+
+    def test_margin_offset(self):
+        """Fixed page mode should add translate(margin, margin) to the content group."""
+        output_file = os.path.join(script_dir, "test_margin.svg")
+        shapes = self.typesetter.typeset_text("a")
+        renderer = Renderer()
+        renderer.generate_svg(shapes, output_file, page_width_mm=210.0, page_height_mm=297.0, margin_mm=25.0)
+
+        tree = ET.parse(output_file)
+        root = tree.getroot()
+        ns = "http://www.w3.org/2000/svg"
+        g = root.find(f"{{{ns}}}g")
+        self.assertIsNotNone(g)
+        self.assertEqual(g.get("transform"), "translate(25.00,25.00)")
         os.remove(output_file)
 
 if __name__ == '__main__':

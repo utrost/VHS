@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VHS — Assembler</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+        :root {
+            --bg-dark: #0f1117;
+            --bg-panel: #1a1d27;
+            --bg-card: #232734;
+            --bg-input: #2a2e3d;
+            --border: #333849;
+            --border-focus: #6366f1;
+            --text: #e2e4eb;
+            --text-muted: #8b8fa3;
+            --text-dim: #5c6078;
+            --accent: #6366f1;
+            --accent-hover: #818cf8;
+            --accent-glow: rgba(99, 102, 241, 0.25);
+            --success: #22c55e;
+            --warn: #f59e0b;
+            --danger: #ef4444;
+            --radius: 10px;
+            --radius-sm: 6px;
+            --sidebar-w: 340px;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-dark);
+            color: var(--text);
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 24px;
+            background: var(--bg-panel);
+            border-bottom: 1px solid var(--border);
+            flex-shrink: 0;
+        }
+        .header-title {
+            font-weight: 700;
+            font-size: 18px;
+            letter-spacing: -0.3px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .header-title .logo {
+            width: 28px;
+            height: 28px;
+            background: linear-gradient(135deg, var(--accent), #a855f7);
+            border-radius: 7px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 800;
+            color: #fff;
+        }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--text-dim);
+            transition: background 0.3s;
+        }
+        .status-dot.ready { background: var(--success); box-shadow: 0 0 6px rgba(34,197,94,0.5); }
+        .status-dot.loading { background: var(--warn); animation: pulse 1s infinite; }
+        .status-dot.error { background: var(--danger); }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .status-text { font-size: 12px; color: var(--text-muted); }
+
+        /* ── Layout ── */
+        .main {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── Sidebar ── */
+        .sidebar {
+            width: var(--sidebar-w);
+            min-width: var(--sidebar-w);
+            background: var(--bg-panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+        .sidebar-scroll {
+            flex: 1;
+            overflow-y: auto;
+            padding: 16px;
+        }
+        .sidebar-scroll::-webkit-scrollbar { width: 4px; }
+        .sidebar-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+        /* ── Section ── */
+        .section { margin-bottom: 20px; }
+        .section-label {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1.2px;
+            color: var(--text-dim);
+            margin-bottom: 10px;
+        }
+
+        /* ── Form Controls ── */
+        .field { margin-bottom: 12px; }
+        .field-label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+        }
+        .field-row {
+            display: flex;
+            gap: 8px;
+        }
+        .field-row .field { flex: 1; margin-bottom: 0; }
+
+        input[type="text"], input[type="number"], select, textarea {
+            width: 100%;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            color: var(--text);
+            font-family: inherit;
+            font-size: 13px;
+            padding: 8px 10px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input:focus, select:focus, textarea:focus {
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        select { cursor: pointer; }
+        select option { background: var(--bg-card); }
+
+        input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
+        input[type="number"]::-webkit-inner-spin-button { opacity: 1; }
+
+        /* ── Toggle ── */
+        .toggle-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+        }
+        .toggle-label { font-size: 13px; color: var(--text-muted); }
+        .toggle {
+            position: relative;
+            width: 38px; height: 20px;
+            cursor: pointer;
+        }
+        .toggle input { display: none; }
+        .toggle-track {
+            position: absolute; inset: 0;
+            background: var(--bg-input);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+        .toggle-thumb {
+            position: absolute;
+            top: 3px; left: 3px;
+            width: 14px; height: 14px;
+            background: var(--text-muted);
+            border-radius: 50%;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .toggle input:checked ~ .toggle-track {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .toggle input:checked ~ .toggle-thumb {
+            transform: translateX(18px);
+            background: #fff;
+        }
+
+        /* ── Textarea ── */
+        .text-editor {
+            resize: none;
+            min-height: 140px;
+            font-family: 'Inter', monospace;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 13px;
+            border: none;
+            border-radius: var(--radius-sm);
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s, box-shadow 0.2s;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent), #8b5cf6);
+            color: #fff;
+            box-shadow: 0 2px 12px var(--accent-glow);
+        }
+        .btn-primary:hover { background: linear-gradient(135deg, var(--accent-hover), #a78bfa); }
+        .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-secondary {
+            background: var(--bg-input);
+            color: var(--text-muted);
+            border: 1px solid var(--border);
+        }
+        .btn-secondary:hover { background: var(--bg-card); color: var(--text); }
+
+        .sidebar-actions {
+            padding: 16px;
+            border-top: 1px solid var(--border);
+            display: flex;
+            gap: 8px;
+        }
+        .sidebar-actions .btn { flex: 1; }
+
+        /* ── File upload ── */
+        .file-upload {
+            position: relative;
+            overflow: hidden;
+        }
+        .file-upload input[type="file"] {
+            position: absolute;
+            inset: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* ── Preview ── */
+        .preview-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background:
+                radial-gradient(circle at 20% 20%, rgba(99,102,241,0.04), transparent 60%),
+                radial-gradient(circle at 80% 80%, rgba(168,85,247,0.03), transparent 60%),
+                var(--bg-dark);
+        }
+        .preview-toolbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            border-bottom: 1px solid var(--border);
+            background: rgba(26,29,39,0.6);
+            backdrop-filter: blur(12px);
+            flex-shrink: 0;
+        }
+        .preview-info { font-size: 12px; color: var(--text-dim); }
+        .preview-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+        }
+        .preview-container::-webkit-scrollbar { width: 6px; height: 6px; }
+        .preview-container::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+        .preview-svg-wrapper {
+            background: #ffffff;
+            border-radius: var(--radius);
+            box-shadow:
+                0 0 0 1px rgba(255,255,255,0.06),
+                0 20px 60px rgba(0,0,0,0.4),
+                0 0 80px rgba(99,102,241,0.08);
+            overflow: hidden;
+            max-width: 100%;
+            max-height: 100%;
+        }
+        .preview-svg-wrapper svg {
+            display: block;
+            max-width: 100%;
+            max-height: calc(100vh - 160px);
+            height: auto;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            color: var(--text-dim);
+        }
+        .empty-state-icon {
+            font-size: 48px;
+            opacity: 0.3;
+        }
+        .empty-state-text { font-size: 14px; }
+        .empty-state-hint { font-size: 12px; color: var(--text-dim); opacity: 0.6; }
+
+        /* ── Color Picker ── */
+        input[type="color"] {
+            -webkit-appearance: none;
+            appearance: none;
+            border: 1px solid var(--border);
+            border-radius: var(--radius-sm);
+            width: 100%;
+            height: 34px;
+            padding: 2px;
+            background: var(--bg-input);
+            cursor: pointer;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+        input[type="color"]::-webkit-color-swatch { border-radius: 3px; border: none; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .main { flex-direction: column; }
+            .sidebar { width: 100%; min-width: unset; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--border); }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Header -->
+    <header class="header">
+        <div class="header-title">
+            <div class="logo">V</div>
+            <span>VHS Assembler</span>
+        </div>
+        <div class="header-right">
+            <div class="status-dot ready" id="statusDot"></div>
+            <span class="status-text" id="statusText">Ready</span>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <div class="main">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-scroll">
+
+                <!-- Text Input -->
+                <div class="section">
+                    <div class="section-label">Text Input</div>
+                    <textarea id="textInput" class="text-editor" placeholder="Type or paste your text here…
+Line breaks are preserved."></textarea>
+                    <div style="margin-top: 8px;">
+                        <label class="btn btn-secondary file-upload" style="width: 100%; font-size: 12px;">
+                            📄 Upload Text File
+                            <input type="file" id="fileUpload" accept=".txt,.text">
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Font -->
+                <div class="section">
+                    <div class="section-label">Font</div>
+                    <div class="field">
+                        <select id="fontSelect">
+                            <option value="">Loading fonts…</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- Page Setup -->
+                <div class="section">
+                    <div class="section-label">Page Setup</div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="field-label">Paper Size</label>
+                            <select id="paperSize">
+                                <option value="">Auto-fit</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Orientation</label>
+                            <select id="orientation">
+                                <option value="portrait">Portrait</option>
+                                <option value="landscape">Landscape</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label class="field-label">Margin (mm)</label>
+                        <input type="number" id="margin" value="20" min="0" max="100" step="1">
+                    </div>
+                </div>
+
+                <!-- Typography -->
+                <div class="section">
+                    <div class="section-label">Typography</div>
+                    <div class="field-row">
+                        <div class="field">
+                            <label class="field-label">Line Height</label>
+                            <input type="number" id="lineHeight" value="200" min="50" max="1000" step="10">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Line Spacing</label>
+                            <input type="number" id="lineSpacing" value="1.0" min="0.5" max="4.0" step="0.1">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Styling -->
+                <div class="section">
+                    <div class="section-label">Styling</div>
+                    <div class="toggle-row">
+                        <span class="toggle-label">Smooth Curves</span>
+                        <label class="toggle">
+                            <input type="checkbox" id="smooth" checked>
+                            <span class="toggle-track"></span>
+                            <span class="toggle-thumb"></span>
+                        </label>
+                    </div>
+                    <div class="toggle-row">
+                        <span class="toggle-label">Auto Kerning</span>
+                        <label class="toggle">
+                            <input type="checkbox" id="autoKern">
+                            <span class="toggle-track"></span>
+                            <span class="toggle-thumb"></span>
+                        </label>
+                    </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
+                            <label class="field-label">Jitter</label>
+                            <input type="number" id="jitter" value="0" min="0" max="5" step="0.1">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Ink Color</label>
+                            <input type="color" id="color" value="#000000">
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="sidebar-actions">
+                <button class="btn btn-primary" id="generateBtn" onclick="generate()">
+                    ✦ Generate
+                </button>
+                <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
+                    ↓ Download
+                </button>
+            </div>
+        </aside>
+
+        <!-- Preview -->
+        <main class="preview-area">
+            <div class="preview-toolbar">
+                <span class="preview-info" id="previewInfo">No preview yet</span>
+                <span class="preview-info" id="previewDims"></span>
+            </div>
+            <div class="preview-container" id="previewContainer">
+                <div class="empty-state" id="emptyState">
+                    <div class="empty-state-icon">✍</div>
+                    <div class="empty-state-text">Enter text and click <strong>Generate</strong></div>
+                    <div class="empty-state-hint">Your handwriting SVG will appear here</div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // ── State ──
+        let currentSvgBlob = null;
+
+        // ── Init ──
+        async function init() {
+            await loadFonts();
+            await loadPaperSizes();
+
+            document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+
+            // Keyboard shortcut: Ctrl/Cmd + Enter to generate
+            document.addEventListener('keydown', (e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                    e.preventDefault();
+                    generate();
+                }
+            });
+        }
+
+        async function loadFonts() {
+            try {
+                const res = await fetch('/api/fonts');
+                const fonts = await res.json();
+                const select = document.getElementById('fontSelect');
+                select.innerHTML = '';
+
+                if (fonts.length === 0) {
+                    select.innerHTML = '<option value="">(no fonts found)</option>';
+                    return;
+                }
+
+                fonts.forEach((f, i) => {
+                    const opt = document.createElement('option');
+                    opt.value = f;
+                    opt.textContent = f;
+                    if (i === 0) opt.selected = true;
+                    select.appendChild(opt);
+                });
+            } catch (err) {
+                console.error('Failed to load fonts:', err);
+            }
+        }
+
+        async function loadPaperSizes() {
+            try {
+                const res = await fetch('/api/paper-sizes');
+                const sizes = await res.json();
+                const select = document.getElementById('paperSize');
+
+                // Keep the Auto-fit option
+                Object.keys(sizes).forEach(name => {
+                    const s = sizes[name];
+                    const opt = document.createElement('option');
+                    opt.value = name;
+                    opt.textContent = `${name}  (${s.width}×${s.height} mm)`;
+                    select.appendChild(opt);
+                });
+
+                // Default to A4
+                select.value = 'A4';
+            } catch (err) {
+                console.error('Failed to load paper sizes:', err);
+            }
+        }
+
+        function handleFileUpload(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                document.getElementById('textInput').value = ev.target.result;
+                setStatus('ready', `Loaded: ${file.name}`);
+            };
+            reader.readAsText(file);
+        }
+
+        // ── Generate ──
+        async function generate() {
+            const text = document.getElementById('textInput').value;
+            if (!text.trim()) {
+                setStatus('error', 'Please enter some text');
+                return;
+            }
+
+            const btn = document.getElementById('generateBtn');
+            btn.disabled = true;
+            btn.textContent = '⟳ Generating…';
+            setStatus('loading', 'Generating SVG…');
+
+            const payload = {
+                text: text,
+                font: document.getElementById('fontSelect').value,
+                smooth: document.getElementById('smooth').checked,
+                jitter: parseFloat(document.getElementById('jitter').value) || 0,
+                auto_kern: document.getElementById('autoKern').checked,
+                color: document.getElementById('color').value,
+                line_height: parseFloat(document.getElementById('lineHeight').value) || 200,
+                line_spacing: parseFloat(document.getElementById('lineSpacing').value) || 1.0,
+                paper_size: document.getElementById('paperSize').value || null,
+                orientation: document.getElementById('orientation').value,
+                margin: parseFloat(document.getElementById('margin').value) || 20
+            };
+
+            try {
+                const res = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'Server error');
+                }
+
+                const svgText = await res.text();
+                showPreview(svgText, payload);
+                currentSvgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+                document.getElementById('downloadBtn').disabled = false;
+                setStatus('ready', 'SVG generated successfully');
+            } catch (err) {
+                setStatus('error', err.message);
+                console.error(err);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '✦ Generate';
+            }
+        }
+
+        function showPreview(svgText, payload) {
+            const container = document.getElementById('previewContainer');
+            const emptyState = document.getElementById('emptyState');
+            if (emptyState) emptyState.remove();
+
+            // Create wrapper
+            let wrapper = container.querySelector('.preview-svg-wrapper');
+            if (!wrapper) {
+                wrapper = document.createElement('div');
+                wrapper.className = 'preview-svg-wrapper';
+                container.appendChild(wrapper);
+            }
+
+            wrapper.innerHTML = svgText;
+
+            // Update info
+            const svg = wrapper.querySelector('svg');
+            if (svg) {
+                const w = svg.getAttribute('width') || '?';
+                const h = svg.getAttribute('height') || '?';
+                document.getElementById('previewDims').textContent = `${w} × ${h}`;
+            }
+            const ps = payload.paper_size || 'Auto-fit';
+            const orient = payload.paper_size ? ` ${payload.orientation}` : '';
+            document.getElementById('previewInfo').textContent = `${ps}${orient} · ${payload.font || 'default'}`;
+        }
+
+        // ── Download ──
+        function downloadSvg() {
+            if (!currentSvgBlob) return;
+            const url = URL.createObjectURL(currentSvgBlob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'handwriting.svg';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        // ── Status ──
+        function setStatus(state, message) {
+            const dot = document.getElementById('statusDot');
+            const text = document.getElementById('statusText');
+            dot.className = 'status-dot ' + state;
+            text.textContent = message;
+        }
+
+        init();
+    </script>
+</body>
+</html>

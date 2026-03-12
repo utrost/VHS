@@ -20,6 +20,10 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desiredMessiness.
 - `--smooth`: Enable Catmull-Rom spline smoothing to create fluid curves from captured points.
 - `--line-height [FLOAT]`: Override the vertical space between lines (default: 200.0).
+- `--line-spacing [FLOAT]`: Multiplier for line height (e.g. `1.5` = 150% spacing). Default: `1.0`.
+- `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`.
+- `--orientation [portrait|landscape]`: Page orientation when `--paper-size` is set. Default: `portrait`.
+- `--margin [FLOAT]`: Page margin in mm on all sides (default: 20.0). Used with `--paper-size`.
 
 ## Directory Structure
 

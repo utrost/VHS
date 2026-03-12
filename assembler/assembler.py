@@ -12,6 +12,16 @@ from typing import Dict, List, Optional, Tuple, Any
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+# Paper size presets in mm (width, height) — portrait orientation
+PAPER_SIZES = {
+    "A3": (297, 420),
+    "A4": (210, 297),
+    "A5": (148, 210),
+    "A6": (105, 148),
+    "Letter": (216, 279),
+    "Legal": (216, 356),
+}
+
 class GlyphLibrary:
     def __init__(self, glyphs_dir: str):
         self.glyphs_dir = glyphs_dir
@@ -199,14 +209,18 @@ class Typesetter:
             
         return min_distance
 
-    def typeset_text(self, text: str, override_line_height: Optional[float] = None, auto_kern: bool = False) -> List[List[List[Dict[str, float]]]]:
+    def typeset_text(self, text: str, override_line_height: Optional[float] = None, auto_kern: bool = False, line_spacing: float = 1.0) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
         Each stroke is a list of 'points' (dicts with x, y, p).
+        
+        line_spacing: multiplier applied to line_height for the vertical
+                      distance between baselines (e.g. 1.5 = 150% spacing).
         """
         
         current_line_height = override_line_height if override_line_height is not None else self.line_height
+        effective_line_advance = current_line_height * line_spacing
         
         compiled_shapes = []
         # Store raw shapes for optical kerning calculation (before final placement)
@@ -224,7 +238,7 @@ class Typesetter:
 
             if char_at_i == '\n':
                 cursor_x = 0
-                cursor_y += current_line_height
+                cursor_y += effective_line_advance
                 last_shape_placed = None
                 i += 1
                 continue
@@ -387,7 +401,18 @@ class Renderer:
         
         return smoothed_path
 
-    def generate_svg(self, compiled_shapes: List[List[List[Dict[str, float]]]], output_file: str):
+    def generate_svg(self, compiled_shapes: List[List[List[Dict[str, float]]]], output_file: str,
+                     page_width_mm: Optional[float] = None, page_height_mm: Optional[float] = None,
+                     margin_mm: float = 20.0):
+        """
+        Generate an SVG file from compiled shapes.
+        
+        When page_width_mm/page_height_mm are set, the SVG is sized to that
+        fixed page and content is offset by margin_mm on all sides.
+        Otherwise the SVG auto-fits to the content bounding box (original behaviour).
+        """
+        fixed_page = page_width_mm is not None and page_height_mm is not None
+
         # Calculate full bounding box
         all_x = []
         all_y = []
@@ -398,34 +423,44 @@ class Renderer:
                     all_x.append(point['x'])
                     all_y.append(point['y'])
         
-        if not all_x:
-            min_x, min_y, width, height = 0.0, 0.0, 100.0, 100.0
+        if fixed_page:
+            # Fixed page mode — dimensions come from paper preset
+            width = page_width_mm
+            height = page_height_mm
+            vb_x = 0.0
+            vb_y = 0.0
+        elif not all_x:
+            vb_x, vb_y, width, height = 0.0, 0.0, 100.0, 100.0
         else:
             padding = 10.0
-            min_x = min(all_x) - padding
-            min_y = min(all_y) - padding
+            vb_x = min(all_x) - padding
+            vb_y = min(all_y) - padding
             max_x = max(all_x) + padding
             max_y = max(all_y) + padding
-            width = max_x - min_x
-            height = max_y - min_y
+            width = max_x - vb_x
+            height = max_y - vb_y
 
         # Build SVG using ElementTree
         ET.register_namespace("", "http://www.w3.org/2000/svg")
         
         svg = ET.Element("svg", {
             "xmlns": "http://www.w3.org/2000/svg",
-            "viewBox": f"{min_x:.2f} {min_y:.2f} {width:.2f} {height:.2f}",
+            "viewBox": f"{vb_x:.2f} {vb_y:.2f} {width:.2f} {height:.2f}",
             "width": f"{width}mm",
             "height": f"{height}mm" 
         })
 
-        g = ET.SubElement(svg, "g", {
+        g_attrs = {
             "fill": "none",
             "stroke": self.color,
             "stroke-width": "2",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
-        })
+        }
+        if fixed_page:
+            g_attrs["transform"] = f"translate({margin_mm:.2f},{margin_mm:.2f})"
+
+        g = ET.SubElement(svg, "g", g_attrs)
 
         for shape in compiled_shapes:
             for stroke in shape:
@@ -461,7 +496,18 @@ class Renderer:
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
 
+    def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None, margin_mm=20.0):
+        """Generate SVG and return it as a UTF-8 string (for web serving)."""
+        import io
+        buf = io.BytesIO()
+        self.generate_svg(compiled_shapes, buf, page_width_mm=page_width_mm,
+                          page_height_mm=page_height_mm, margin_mm=margin_mm)
+        buf.seek(0)
+        return buf.read().decode("utf-8")
+
 if __name__ == "__main__":
+    paper_choices = list(PAPER_SIZES.keys())
+
     parser = argparse.ArgumentParser(description="VHS Assembler: Convert text to vector handwriting SVG.")
     parser.add_argument("text", nargs="?", help="Text to render (optional if --file is used)")
     parser.add_argument("output", help="Output SVG filename")
@@ -470,8 +516,16 @@ if __name__ == "__main__":
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--smooth", action="store_true", help="Enable spline smoothing for curves")
     parser.add_argument("--line-height", type=float, help="Override line height for multiline text")
+    parser.add_argument("--line-spacing", type=float, default=1.0,
+                        help="Multiplier for line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
     parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
     parser.add_argument("--color", default="black", help="Hex code or color name for the stroke (default: black)")
+    parser.add_argument("--paper-size", choices=paper_choices, default=None,
+                        help=f"Fixed paper size for the output SVG. Choices: {', '.join(paper_choices)}")
+    parser.add_argument("--orientation", choices=["portrait", "landscape"], default="portrait",
+                        help="Page orientation when --paper-size is set (default: portrait)")
+    parser.add_argument("--margin", type=float, default=20.0,
+                        help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
     
     args = parser.parse_args()
     
@@ -507,7 +561,18 @@ if __name__ == "__main__":
 
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path)
-    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height, auto_kern=args.auto_kern)
+    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
+                                     auto_kern=args.auto_kern, line_spacing=args.line_spacing)
     
     renderer = Renderer(jitter_amount=args.jitter, smoothing=args.smooth, color=args.color)
-    renderer.generate_svg(shapes, args.output)
+
+    # Resolve paper dimensions
+    page_w, page_h = None, None
+    if args.paper_size:
+        pw, ph = PAPER_SIZES[args.paper_size]
+        if args.orientation == "landscape":
+            pw, ph = ph, pw
+        page_w, page_h = float(pw), float(ph)
+        logger.info(f"Page: {args.paper_size} {args.orientation} ({page_w}×{page_h} mm), margin {args.margin} mm")
+
+    renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h, margin_mm=args.margin)
