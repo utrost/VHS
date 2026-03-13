@@ -133,5 +133,5 @@ vhs-cli.bat --file letter.txt output.svg --font MyHandwriting \
 ## 6. Troubleshooting
 
 *   **"My letters are floating!"**: You likely ignored the Red Line during capture. Open the JSON file and check `baseline_y`. The assembler tries to fix this, but garbage in = garbage out.
-*   **"It looks too perfect"**: Add `--jitter 1.0` to shake things up.
+*   **"It looks too perfect"**: Add `--jitter 1.0` to shake things up. Jitter is deterministic — the same input produces the same output. Use `--seed 42` to get a different jitter pattern.
 *   **"My text runs off the page"**: Make sure you are using `--paper-size`. The renderer automatically scales content to fit the page. Without a paper size, the SVG auto-fits to the content bounding box (no fixed dimensions).

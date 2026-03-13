@@ -78,6 +78,8 @@ def api_generate():
     orientation = data.get("orientation", "portrait")
     margin = float(data.get("margin", 20.0))
     stroke_width = float(data.get("stroke_width", 2.0))
+    seed_val = data.get("seed")
+    seed = int(seed_val) if seed_val is not None else None
 
     # Resolve glyphs path
     if font_name:
@@ -111,7 +113,7 @@ def api_generate():
                                      kern_aggressiveness=kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
-                        stroke_width=stroke_width)
+                        stroke_width=stroke_width, seed=seed)
 
     svg_str = renderer.generate_svg_string(shapes, page_width_mm=page_w,
                                            page_height_mm=page_h, margin_mm=margin)

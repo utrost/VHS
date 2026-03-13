@@ -82,8 +82,10 @@ Applied post-shaping to simulate mechanical imperfection:
 
 $$P\_{new} \= P\_{old} \+ N(0, \\sigma)$$
 
+Jitter is **deterministic**: the RNG is seeded from a hash of the content, so the same input always produces the same output. An explicit `--seed` parameter allows overriding the auto-derived seed.
+
 ### **D. Curve Smoothing**
-Raw capture data is polygonal. The renderer uses **Catmull-Rom Spline Interpolation** to generate fluid curves from the point data, simulating natural pen movement.
+Raw capture data is polygonal. The renderer uses **Catmull-Rom Spline Interpolation** with **adaptive step counts** (2–12 per segment, based on segment length) to generate fluid curves. Short segments get fewer interpolation steps to avoid over-smoothing; long curves get more for smoother results.
 
 ### **E. Baseline Normalization**
 Reference metadata (`baseline_y`) is used to vertically align glyphs. All Y-coordinates are normalized relative to this baseline ($y=0$), ensuring correct alignment of ascenders and descenders regardless of the capture canvas position.
@@ -101,7 +103,7 @@ The Web UI provides a bridge between the browser and the Python Assembler engine
 System robustness is maintained via a multi-layered testing strategy:
 
 *   **Core Unit Tests (`test_assembler.py`):** 11 tests verifying low-level logic like kerning clusters, zone-aware kerning, ligature recognition, and basic SVG sizing.
-*   **CLI Integration Tests (`test_cli.py`):** 28 tests executing the `assembler.py` script via subprocess. These tests use a temporary mock font to verify all CLI flags (paper sizes, margins, kerning aggressiveness, smoothing, jitter, error handling) in a clean environment.
+*   **CLI Integration Tests (`test_cli.py`):** 30 tests executing the `assembler.py` script via subprocess. These tests use a temporary mock font to verify all CLI flags (paper sizes, margins, kerning aggressiveness, deterministic jitter, smoothing, error handling) in a clean environment.
 *   **Manual Validation Scripts:** A library of 10 human-executable scripts (`Validation Scripts/`) for subjective quality assessment.
 
 ## **6\. Appendix: Capture Inventory Checklist**

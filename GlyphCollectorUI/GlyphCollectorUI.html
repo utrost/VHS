@@ -64,6 +64,17 @@
                 <span class="text-xs opacity-75 font-normal">(Enter)</span>
             </button>
 
+            <button onclick="undo()"
+                class="h-12 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition"
+                title="Rückgängig (Ctrl+Z)">
+                Undo
+            </button>
+            <button onclick="redo()"
+                class="h-12 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition"
+                title="Wiederherstellen (Ctrl+Shift+Z)">
+                Redo
+            </button>
+
             <button onclick="clearAll()"
                 class="h-12 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition">
                 Reset
@@ -147,16 +158,29 @@
 
         // --- State ---
         let slots = [];
+        let lastActiveSlot = null; // Track which slot was last drawn on
 
         // --- Initialization ---
         function init() {
-            // Load from inputs if possible, or keep defaults
-            // (Optional: Load from localStorage here in future)
-            generateGrid();
+            // Try to restore a previous session from localStorage
+            if (!autoRestore()) {
+                generateGrid();
+            }
 
             document.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') saveAndReset();
+                if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
+                    e.preventDefault();
+                    undo();
+                }
+                if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
+                    e.preventDefault();
+                    redo();
+                }
             });
+
+            // Auto-save when character input changes
+            document.getElementById('charInput').addEventListener('input', autoSave);
         }
 
         function toggleSettings() {
@@ -220,6 +244,7 @@
                     canvas,
                     ctx,
                     strokes: [],
+                    undoStack: [],
                     currentStroke: null
                 };
 
@@ -238,6 +263,8 @@
                 canvas.setPointerCapture(e.pointerId);
                 slot.currentStroke = [];
                 slot.strokes.push(slot.currentStroke);
+                slot.undoStack = []; // New stroke clears redo history
+                lastActiveSlot = slot;
                 addPoint(e, slot);
                 document.getElementById('status').innerText = `Zeichne Variante ${slot.id + 1}...`;
             });
@@ -256,6 +283,7 @@
                 slot.currentStroke = null;
                 document.getElementById('status').innerText = "Bereit";
                 updateTotalCount();
+                autoSave();
             });
 
             canvas.addEventListener('contextmenu', e => e.preventDefault());
@@ -328,13 +356,38 @@
             document.getElementById('strokeCount').innerText = total;
         }
 
+        function undo() {
+            if (!lastActiveSlot || lastActiveSlot.strokes.length === 0) return;
+            const removed = lastActiveSlot.strokes.pop();
+            lastActiveSlot.undoStack.push(removed);
+            redraw(lastActiveSlot);
+            updateTotalCount();
+            autoSave();
+            document.getElementById('status').innerText =
+                `Rückgängig (Variante ${lastActiveSlot.id + 1})`;
+        }
+
+        function redo() {
+            if (!lastActiveSlot || lastActiveSlot.undoStack.length === 0) return;
+            const restored = lastActiveSlot.undoStack.pop();
+            lastActiveSlot.strokes.push(restored);
+            redraw(lastActiveSlot);
+            updateTotalCount();
+            autoSave();
+            document.getElementById('status').innerText =
+                `Wiederherstellen (Variante ${lastActiveSlot.id + 1})`;
+        }
+
         function clearAll() {
             slots.forEach(slot => {
                 slot.strokes = [];
+                slot.undoStack = [];
                 slot.currentStroke = null;
                 drawGuides(slot);
             });
+            lastActiveSlot = null;
             updateTotalCount();
+            clearAutoSave();
             document.getElementById('charInput').focus();
         }
 
@@ -345,6 +398,68 @@
             return inputName.split('')
                 .map(c => c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0'))
                 .join('');
+        }
+
+        // --- Auto-Save (localStorage) ---
+        const STORAGE_KEY = 'vhs_glyph_session';
+
+        function autoSave() {
+            try {
+                const charInput = document.getElementById('charInput').value;
+                const sessionData = {
+                    char: charInput,
+                    config: { FONT_FAMILY, VARIANT_COUNT, CANVAS_WIDTH, CANVAS_HEIGHT, BASELINE_Y, X_HEIGHT },
+                    slots: slots.map(s => ({ id: s.id, strokes: s.strokes }))
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
+            } catch (e) {
+                // localStorage may be full or unavailable — fail silently
+            }
+        }
+
+        function autoRestore() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) return false;
+                const data = JSON.parse(raw);
+                if (!data || !data.slots) return false;
+
+                // Restore config if it matches current grid size
+                if (data.config) {
+                    FONT_FAMILY = data.config.FONT_FAMILY || FONT_FAMILY;
+                    VARIANT_COUNT = data.config.VARIANT_COUNT || VARIANT_COUNT;
+                    CANVAS_WIDTH = data.config.CANVAS_WIDTH || CANVAS_WIDTH;
+                    CANVAS_HEIGHT = data.config.CANVAS_HEIGHT || CANVAS_HEIGHT;
+                    BASELINE_Y = data.config.BASELINE_Y || BASELINE_Y;
+                    X_HEIGHT = data.config.X_HEIGHT || X_HEIGHT;
+                }
+
+                // Rebuild grid with restored config
+                generateGrid();
+
+                // Restore strokes into slots
+                for (const saved of data.slots) {
+                    if (saved.id < slots.length && saved.strokes && saved.strokes.length > 0) {
+                        slots[saved.id].strokes = saved.strokes;
+                        redraw(slots[saved.id]);
+                    }
+                }
+
+                // Restore character input
+                if (data.char) {
+                    document.getElementById('charInput').value = data.char;
+                }
+
+                updateTotalCount();
+                document.getElementById('status').innerText = "Sitzung wiederhergestellt";
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function clearAutoSave() {
+            try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
         }
 
         function saveAndReset() {
@@ -388,7 +503,7 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
 
-            clearAll();
+            clearAll(); // Also clears auto-save
             document.getElementById('status').innerText = `Gespeichert: ${safeName}.json`;
             document.getElementById('charInput').value = '';
             document.getElementById('charInput').focus();

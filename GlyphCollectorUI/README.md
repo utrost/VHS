@@ -6,6 +6,8 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
 
 -   **Variant Capture**: Draw multiple variants of a single character (default: 10).
 -   **Pressure Sensitivity**: Captures pressure data (if supported by input device/tablet).
+-   **Undo/Redo**: Per-stroke undo (Ctrl+Z / Cmd+Z) and redo (Ctrl+Shift+Z / Cmd+Shift+Z). Buttons also available in the header.
+-   **Auto-Save**: Drawing sessions are automatically saved to localStorage after every stroke. If the browser is closed accidentally, work is restored on the next page load.
 -   **JSON Export**: Exports drawings as JSON files compatible with the VHS Assembler.
 -   **Configurable Grid**:
     -   Adjust the number of variants.
@@ -36,3 +38,9 @@ Click the **Settings (⚙️)** button in the header to open the configuration p
 -   **x-Height Y**: Vertical position of the blue dashed x-height line.
 
 > **Note**: Applying new settings will regenerate the grid and clear any current drawings.
+
+## Keyboard Shortcuts
+
+-   **Enter**: Save JSON and reset
+-   **Ctrl+Z** / **Cmd+Z**: Undo last stroke (on the last-drawn variant)
+-   **Ctrl+Shift+Z** / **Cmd+Shift+Z**: Redo last undone stroke

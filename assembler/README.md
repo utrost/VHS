@@ -17,8 +17,9 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 
 - `--file [PATH]`, `-f [PATH]`: Read input text from a file instead of the command line.
 - `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `myFont`). Defaults to root `glyphs/`.
-- `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desiredMessiness.
-- `--no-smooth`: Disable Catmull-Rom spline smoothing (smoothing is enabled by default).
+- `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desired messiness. Jitter is deterministic (same input produces same output). Use `--seed` to override.
+- `--seed [INT]`: Random seed for deterministic jitter. If omitted, a stable seed is derived from the content itself.
+- `--no-smooth`: Disable Catmull-Rom spline smoothing (smoothing is enabled by default). Smoothing uses adaptive interpolation — short segments get fewer steps, long curves get more.
 - `--line-height [FLOAT]`: Override the vertical space between lines (default: 100.0).
 - `--line-spacing [FLOAT]`: Multiplier for line height (e.g. `1.5` = 150% spacing). Default: `1.0`.
 - `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`.

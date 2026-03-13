@@ -31,7 +31,13 @@ Ran 11 tests in ...s
 OK
 ```
 
+Additionally, run the CLI integration tests:
+```bash
+python3 -m unittest test_cli -v
+```
+**Expected:** All 30 tests pass.
+
 **Expected:**
-- [ ] All 11 tests pass
+- [ ] All 11 unit tests pass
 - [ ] No errors or failures
 - [ ] No temporary files left behind

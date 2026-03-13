@@ -346,18 +346,21 @@ class Typesetter:
 
                     if auto_kern and last_shape_placed:
                         # Extract zone boundaries from both glyphs' metadata
+                        # and transform them to placed coordinates.
+                        # _process_glyph maps: new_y = (y - baseline_y) + cursor_y
+                        # So in placed coords: baseline → cursor_y,
+                        #   x_height → (x_height - baseline_y) + cursor_y
                         bl_a = last_glyph_data.get('metadata', {}).get('baseline_y') if last_glyph_data else None
                         xh_a = last_glyph_data.get('metadata', {}).get('x_height') if last_glyph_data else None
                         bl_b = glyph_data.get('metadata', {}).get('baseline_y')
                         xh_b = glyph_data.get('metadata', {}).get('x_height')
-                        # Use zone info only if both glyphs have metadata;
-                        # average the values for the pair (they should normally match
-                        # within a font, but averaging handles mixed fonts gracefully)
+
                         bl = None
                         xh = None
                         if bl_a is not None and bl_b is not None and xh_a is not None and xh_b is not None:
-                            bl = (bl_a + bl_b) / 2.0
-                            xh = (xh_a + xh_b) / 2.0
+                            # Transform to placed coordinate system
+                            bl = cursor_y  # baseline maps to cursor_y for both glyphs
+                            xh = ((xh_a - bl_a) + (xh_b - bl_b)) / 2.0 + cursor_y
 
                         gap = self.calculate_optical_kerning(
                             last_shape_placed, placed_strokes,
@@ -460,49 +463,49 @@ class Typesetter:
 
 class Renderer:
     def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False, color: str = "black",
-                 stroke_width: float = 2.0):
+                 stroke_width: float = 2.0, seed: Optional[int] = None):
         self.jitter_amount = jitter_amount
         self.smoothing = smoothing
         self.color = color
         self.stroke_width = stroke_width
+        self.seed = seed
 
-    def _catmull_rom_spline(self, points: List[Dict[str, float]], steps: int = 5) -> List[Tuple[float, float]]:
+    def _catmull_rom_spline(self, points: List[Dict[str, float]]) -> List[Tuple[float, float]]:
         """
-        Interpolates points using Catmull-Rom splines.
+        Interpolates points using Catmull-Rom splines with adaptive step count.
+        Short segments get fewer interpolation steps; long segments get more.
         """
         if len(points) < 2:
             return [(p['x'], p['y']) for p in points]
 
         # Extract coords
         P = [(p['x'], p['y']) for p in points]
-        
+
         # Duplicate endpoints to handle open curves
         P = [P[0]] + P + [P[-1]]
-        
+
         smoothed_path = []
-        
-        def lerp(a, b, t):
-            return a + (b - a) * t
 
         for i in range(len(P) - 3):
             p0, p1, p2, p3 = P[i], P[i+1], P[i+2], P[i+3]
-            
+
+            # Adaptive step count based on segment length
+            seg_len = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
+            steps = max(2, min(12, int(seg_len / 3)))
+
             for s in range(steps):
                 t = s / steps
                 t2 = t * t
                 t3 = t2 * t
-                
-                # Catmull-Rom Matrix calculation
-                # q(t) = 0.5 * [ (2*p1) + (-p0 + p2)*t + (2*p0 - 5*p1 + 4*p2 - p3)*t2 + (-p0 + 3*p1 - 3*p2 + p3)*t3 ]
-                
+
                 x = 0.5 * ((2 * p1[0]) + (-p0[0] + p2[0]) * t + (2 * p0[0] - 5 * p1[0] + 4 * p2[0] - p3[0]) * t2 + (-p0[0] + 3 * p1[0] - 3 * p2[0] + p3[0]) * t3)
                 y = 0.5 * ((2 * p1[1]) + (-p0[1] + p2[1]) * t + (2 * p0[1] - 5 * p1[1] + 4 * p2[1] - p3[1]) * t2 + (-p0[1] + 3 * p1[1] - 3 * p2[1] + p3[1]) * t3)
-                
+
                 smoothed_path.append((x, y))
-        
+
         # Add the very last point explicitly
-        smoothed_path.append(P[-2]) 
-        
+        smoothed_path.append(P[-2])
+
         return smoothed_path
 
     def generate_svg(self, compiled_shapes: List[List[List[Dict[str, float]]]], output_file: str,
@@ -516,6 +519,19 @@ class Renderer:
         Otherwise the SVG auto-fits to the content bounding box (original behaviour).
         """
         fixed_page = page_width_mm is not None and page_height_mm is not None
+
+        # Seed RNG for deterministic jitter (same input → same output)
+        if self.jitter_amount > 0:
+            if self.seed is not None:
+                random.seed(self.seed)
+            else:
+                # Derive a stable seed from the content itself
+                content_hash = 0
+                for shape in compiled_shapes:
+                    for stroke in shape:
+                        for point in stroke:
+                            content_hash ^= hash((round(point['x'], 2), round(point['y'], 2)))
+                random.seed(content_hash)
 
         # Calculate full bounding box
         all_x = []
@@ -654,6 +670,8 @@ if __name__ == "__main__":
     parser.add_argument("--kern-aggressiveness", type=float, default=0.5,
                         help="How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). "
                              "0.0 = no extra tightening, 1.0 = fully ignore non-shared zones. Default: 0.5")
+    parser.add_argument("--seed", type=int, default=None,
+                        help="Random seed for deterministic jitter. If omitted, seed is derived from content.")
     parser.add_argument("--color", default="black", help="Hex code or color name for the stroke (default: black)")
     parser.add_argument("--stroke-width", type=float, default=2.0,
                         help="Stroke width in SVG units (default: 2.0). Automatically scaled in fixed-page mode.")
@@ -712,5 +730,5 @@ if __name__ == "__main__":
                                      kern_aggressiveness=args.kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
-                        stroke_width=args.stroke_width)
+                        stroke_width=args.stroke_width, seed=args.seed)
     renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h, margin_mm=args.margin)

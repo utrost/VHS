@@ -336,14 +336,29 @@ class TestSmoothingAndJitter(CLITestBase):
         self.assertGreater(smooth_d_len, raw_d_len,
                            "Smoothed SVG should have longer path data (more interpolated points)")
 
-    def test_jitter_changes_coordinates(self):
-        """Running twice with jitter should produce different path data."""
+    def test_jitter_is_deterministic(self):
+        """Running twice with same content should produce identical jitter (content-seeded)."""
         root1 = self._run_with_font(["abc"], "vs06_jit1.svg", ["--jitter", "2.0"])
         root2 = self._run_with_font(["abc"], "vs06_jit2.svg", ["--jitter", "2.0"])
         d1 = root1.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
         d2 = root2.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
-        # With jitter, random noise makes them almost certainly different
-        self.assertNotEqual(d1, d2, "Jitter should produce non-deterministic output")
+        self.assertEqual(d1, d2, "Deterministic jitter should produce identical output for same input")
+
+    def test_jitter_with_explicit_seed(self):
+        """Different --seed values should produce different jitter."""
+        root1 = self._run_with_font(["abc"], "vs06_seed1.svg", ["--jitter", "2.0", "--seed", "42"])
+        root2 = self._run_with_font(["abc"], "vs06_seed2.svg", ["--jitter", "2.0", "--seed", "99"])
+        d1 = root1.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
+        d2 = root2.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
+        self.assertNotEqual(d1, d2, "Different seeds should produce different jitter")
+
+    def test_jitter_modifies_coordinates(self):
+        """Jitter should produce different coordinates than no jitter."""
+        root_no = self._run_with_font(["abc"], "vs06_nojit.svg", ["--no-smooth"])
+        root_jit = self._run_with_font(["abc"], "vs06_jit.svg", ["--jitter", "2.0", "--no-smooth"])
+        d_no = root_no.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
+        d_jit = root_jit.findall(f".//{{{SVG_NS}}}path")[0].get("d", "")
+        self.assertNotEqual(d_no, d_jit, "Jitter should modify coordinates")
 
 
 # ═══════════════════════════════════════════════════════════════════

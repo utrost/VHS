@@ -67,7 +67,7 @@ The web UI provides a modern visual interface with live SVG preview, file upload
 
 The system includes a comprehensive automated test suite:
 - **Unit Tests**: 11 tests covering the core engine logic (kerning, zone-aware kerning, ligatures, metrics).
-- **CLI Tests**: 28 tests verifying the command-line interface, including paper sizes, margins, kerning aggressiveness, and error handling.
+- **CLI Tests**: 30 tests verifying the command-line interface, including paper sizes, margins, kerning aggressiveness, deterministic jitter, and error handling.
 
 Run all tests:
 ```bash
