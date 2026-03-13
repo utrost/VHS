@@ -47,7 +47,8 @@ To support batching, the JSON schema aggregates all variants of a single charact
 
 *   **Batch Pattern:** Displays 5 horizontal canvas slots to allow rapid repetition (muscle memory).  
 *   **Sanitization:** Automatically maps input characters to **Unicode Hex filenames** (e.g., `A` $\rightarrow$ `0041.json`, `sch` $\rightarrow$ `007300630068.json`) to prevent case-insensitivity conflicts on Windows.
-*   **Input:** Uses Pointer Events API to capture pressure and tilt where available.  
+*   **Smooth Preview:** The canvas applies Catmull-Rom spline interpolation to the display in real time, so the user sees how their strokes will look after smoothing. This is visual-only — raw point data is preserved in the exported JSON. The preview can be toggled off to inspect the raw polygonal capture.
+*   **Input:** Uses Pointer Events API to capture pressure and tilt where available.
 *   **Guides:** \* **Red Solid Line (**$y=250$**):** Absolute Baseline.  
   * **Blue Dashed Line (**$y=150$**):** x-Height reference.
 

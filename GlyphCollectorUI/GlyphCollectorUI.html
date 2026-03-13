@@ -75,6 +75,12 @@
                 Redo
             </button>
 
+            <button id="smoothToggle" onclick="toggleSmooth()"
+                class="h-12 px-3 bg-green-100 hover:bg-green-200 text-green-700 font-medium rounded-lg transition"
+                title="Glättungsvorschau ein/aus">
+                Smooth ✓
+            </button>
+
             <button onclick="clearAll()"
                 class="h-12 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition">
                 Reset
@@ -119,6 +125,11 @@
                 <input type="number" id="cfgXHeight" class="w-20 p-1 border rounded text-right" value="60">
             </div>
 
+            <div class="flex justify-between items-center">
+                <label class="text-sm font-bold text-slate-600">Anzeige-Zoom</label>
+                <input type="number" id="cfgDisplayScale" class="w-20 p-1 border rounded text-right" value="3" min="1" max="5" step="1">
+            </div>
+
             <div class="pt-4 border-t mt-4">
                 <button onclick="applySettings()"
                     class="w-full bg-red-100 hover:bg-red-200 text-red-700 font-bold py-2 rounded-lg transition text-sm">
@@ -155,6 +166,7 @@
         let CANVAS_HEIGHT = 140;
         let BASELINE_Y = 100;    // Red line
         let X_HEIGHT = 60;      // Blue dashed line
+        let DISPLAY_SCALE = 3;  // CSS display multiplier (canvas coords stay unchanged)
 
         // --- State ---
         let slots = [];
@@ -195,6 +207,7 @@
             const h = parseInt(document.getElementById('cfgHeight').value);
             const base = parseInt(document.getElementById('cfgBaseline').value);
             const xh = parseInt(document.getElementById('cfgXHeight').value);
+            const ds = parseInt(document.getElementById('cfgDisplayScale').value) || 3;
 
             if (fontName && count && w && h && base && xh) {
                 FONT_FAMILY = fontName;
@@ -203,6 +216,7 @@
                 CANVAS_HEIGHT = h;
                 BASELINE_Y = base;
                 X_HEIGHT = xh;
+                DISPLAY_SCALE = Math.max(1, Math.min(5, ds));
                 generateGrid();
                 toggleSettings();
             } else {
@@ -226,8 +240,8 @@
                 canvas.id = `slot-${i}`;
                 // Set explicit style size to ensure CSS respects it if needed, 
                 // though width/height attrs should suffice for raw pixels.
-                canvas.style.width = `${CANVAS_WIDTH}px`;
-                canvas.style.height = `${CANVAS_HEIGHT}px`;
+                canvas.style.width = `${CANVAS_WIDTH * DISPLAY_SCALE}px`;
+                canvas.style.height = `${CANVAS_HEIGHT * DISPLAY_SCALE}px`;
 
 
                 const label = document.createElement('div');
@@ -329,6 +343,39 @@
             ctx.setLineDash([]);
         }
 
+        // --- Smooth Preview ---
+        let SMOOTH_PREVIEW = true;
+
+        function catmullRomPoints(stroke) {
+            // Generate smoothed points using Catmull-Rom interpolation
+            // (visual preview only — raw data is preserved for export)
+            if (stroke.length < 3) return stroke;
+            const result = [stroke[0]];
+            for (let i = 0; i < stroke.length - 1; i++) {
+                const p0 = stroke[Math.max(0, i - 1)];
+                const p1 = stroke[i];
+                const p2 = stroke[Math.min(stroke.length - 1, i + 1)];
+                const p3 = stroke[Math.min(stroke.length - 1, i + 2)];
+                const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+                const steps = Math.max(2, Math.min(8, Math.floor(segLen / 3)));
+                for (let s = 1; s <= steps; s++) {
+                    const t = s / steps;
+                    const t2 = t * t, t3 = t2 * t;
+                    const x = 0.5 * ((2 * p1.x) +
+                        (-p0.x + p2.x) * t +
+                        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+                    const y = 0.5 * ((2 * p1.y) +
+                        (-p0.y + p2.y) * t +
+                        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+                    const p = p1.p + (p2.p - p1.p) * t; // Interpolate pressure
+                    result.push({ x, y, p });
+                }
+            }
+            return result;
+        }
+
         function redraw(slot) {
             drawGuides(slot);
             const { ctx, strokes } = slot;
@@ -336,10 +383,20 @@
             ctx.lineJoin = 'round';
 
             strokes.forEach(stroke => {
-                if (stroke.length < 2) return;
-                for (let i = 1; i < stroke.length; i++) {
-                    const p1 = stroke[i - 1];
-                    const p2 = stroke[i];
+                if (stroke.length === 0) return;
+                // Render single-point strokes as dots (for commas, periods, etc.)
+                if (stroke.length === 1) {
+                    const pt = stroke[0];
+                    ctx.beginPath();
+                    ctx.arc(pt.x, pt.y, 1 + (pt.p * 1.25), 0, Math.PI * 2);
+                    ctx.fillStyle = '#0f172a';
+                    ctx.fill();
+                    return;
+                }
+                const pts = SMOOTH_PREVIEW ? catmullRomPoints(stroke) : stroke;
+                for (let i = 1; i < pts.length; i++) {
+                    const p1 = pts[i - 1];
+                    const p2 = pts[i];
                     ctx.beginPath();
                     ctx.moveTo(p1.x, p1.y);
                     ctx.lineTo(p2.x, p2.y);
@@ -378,6 +435,20 @@
                 `Wiederherstellen (Variante ${lastActiveSlot.id + 1})`;
         }
 
+        function toggleSmooth() {
+            SMOOTH_PREVIEW = !SMOOTH_PREVIEW;
+            const btn = document.getElementById('smoothToggle');
+            if (SMOOTH_PREVIEW) {
+                btn.textContent = 'Smooth ✓';
+                btn.className = 'h-12 px-3 bg-green-100 hover:bg-green-200 text-green-700 font-medium rounded-lg transition';
+            } else {
+                btn.textContent = 'Smooth ✗';
+                btn.className = 'h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition';
+            }
+            // Redraw all slots with new setting
+            slots.forEach(redraw);
+        }
+
         function clearAll() {
             slots.forEach(slot => {
                 slot.strokes = [];
@@ -408,7 +479,7 @@
                 const charInput = document.getElementById('charInput').value;
                 const sessionData = {
                     char: charInput,
-                    config: { FONT_FAMILY, VARIANT_COUNT, CANVAS_WIDTH, CANVAS_HEIGHT, BASELINE_Y, X_HEIGHT },
+                    config: { FONT_FAMILY, VARIANT_COUNT, CANVAS_WIDTH, CANVAS_HEIGHT, BASELINE_Y, X_HEIGHT, DISPLAY_SCALE },
                     slots: slots.map(s => ({ id: s.id, strokes: s.strokes }))
                 };
                 localStorage.setItem(STORAGE_KEY, JSON.stringify(sessionData));
@@ -432,6 +503,7 @@
                     CANVAS_HEIGHT = data.config.CANVAS_HEIGHT || CANVAS_HEIGHT;
                     BASELINE_Y = data.config.BASELINE_Y || BASELINE_Y;
                     X_HEIGHT = data.config.X_HEIGHT || X_HEIGHT;
+                    DISPLAY_SCALE = data.config.DISPLAY_SCALE || DISPLAY_SCALE;
                 }
 
                 // Rebuild grid with restored config

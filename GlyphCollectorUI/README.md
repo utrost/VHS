@@ -7,6 +7,7 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
 -   **Variant Capture**: Draw multiple variants of a single character (default: 10).
 -   **Pressure Sensitivity**: Captures pressure data (if supported by input device/tablet).
 -   **Undo/Redo**: Per-stroke undo (Ctrl+Z / Cmd+Z) and redo (Ctrl+Shift+Z / Cmd+Shift+Z). Buttons also available in the header.
+-   **Smooth Preview**: Live Catmull-Rom spline smoothing applied to the canvas display. Toggle with the **Smooth** button in the header. This is visual-only — raw capture data is preserved in the exported JSON.
 -   **Auto-Save**: Drawing sessions are automatically saved to localStorage after every stroke. If the browser is closed accidentally, work is restored on the next page load.
 -   **JSON Export**: Exports drawings as JSON files compatible with the VHS Assembler.
 -   **Configurable Grid**:

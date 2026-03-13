@@ -18,6 +18,9 @@ The quality of your output depends entirely on the quality of your input.
 *   **The Blue Line**: This is the **x-Height**.
     *   Ideally, the top of your `a`, `c`, `e`, `o` should touch this line.
 
+### Smooth Preview
+The Collector UI applies **live Catmull-Rom smoothing** to the canvas so you can see how your strokes will look after the assembler processes them. Click the **Smooth** button in the header to toggle between the smoothed preview and the raw polygonal capture. Note: this is visual-only — the exported JSON always contains the raw capture data.
+
 ### Consistency vs. Variation
 *   **Draw Naturally**: Use your normal writing speed. Slowing down creates "shaky" lines (jitter).
 *   **Create Variants**: Draw 5-10 versions of each letter.
