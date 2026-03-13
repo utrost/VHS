@@ -1,6 +1,6 @@
 # VS-06: Smoothing and Jitter
 
-**Objective:** Verify that `--smooth` and `--jitter` affect the visual output.
+**Objective:** Verify that `--no-smooth` and `--jitter` affect the visual output. Smoothing is on by default.
 
 ## Prerequisites
 - Font `utrost` available in `glyphs/utrost/`
@@ -10,17 +10,17 @@
 ### 1. Generate without smoothing
 ```bash
 cd assembler
-python3 assembler.py "Smooth test" vs06_raw.svg --font utrost
+python3 assembler.py "Smooth test" vs06_raw.svg --font utrost --no-smooth
 ```
 
-### 2. Generate with smoothing
+### 2. Generate with smoothing (default)
 ```bash
-python3 assembler.py "Smooth test" vs06_smooth.svg --font utrost --smooth
+python3 assembler.py "Smooth test" vs06_smooth.svg --font utrost
 ```
 
 ### 3. Generate with smoothing + jitter
 ```bash
-python3 assembler.py "Smooth test" vs06_jitter.svg --font utrost --smooth --jitter 1.0
+python3 assembler.py "Smooth test" vs06_jitter.svg --font utrost --jitter 1.0
 ```
 
 ### 4. Visual comparison

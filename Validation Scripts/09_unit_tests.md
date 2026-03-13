@@ -22,14 +22,16 @@ test_paper_size_dimensions ... ok
 test_paper_size_landscape ... ok
 test_renderer_svg_generation ... ok
 test_typesetting_metrics ... ok
+test_zone_aware_kerning_different_zones ... ok
+test_zone_aware_kerning_same_zone ... ok
 
 ----------------------------------------------------------------------
-Ran 9 tests in ...s
+Ran 11 tests in ...s
 
 OK
 ```
 
 **Expected:**
-- [ ] All 9 tests pass
+- [ ] All 11 tests pass
 - [ ] No errors or failures
 - [ ] No temporary files left behind

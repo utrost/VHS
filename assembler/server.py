@@ -70,12 +70,14 @@ def api_generate():
     smooth = data.get("smooth", True)
     jitter = float(data.get("jitter", 0.0))
     auto_kern = data.get("auto_kern", False)
+    kern_aggressiveness = float(data.get("kern_aggressiveness", 0.5))
     color = data.get("color", "black")
     line_height = data.get("line_height")
     line_spacing = float(data.get("line_spacing", 1.0))
     paper_size = data.get("paper_size")
     orientation = data.get("orientation", "portrait")
     margin = float(data.get("margin", 20.0))
+    stroke_width = float(data.get("stroke_width", 2.0))
 
     # Resolve glyphs path
     if font_name:
@@ -91,16 +93,6 @@ def api_generate():
     if not os.path.exists(kerning_path):
         kerning_path = os.path.join(script_dir, "kerning.json")
 
-    # Build pipeline
-    lib = GlyphLibrary(glyphs_path)
-    typesetter = Typesetter(lib, kerning_config_path=kerning_path)
-
-    override_lh = float(line_height) if line_height is not None else None
-    shapes = typesetter.typeset_text(text, override_line_height=override_lh,
-                                     auto_kern=auto_kern, line_spacing=line_spacing)
-
-    renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color)
-
     # Resolve page dims
     page_w, page_h = None, None
     if paper_size and paper_size in PAPER_SIZES:
@@ -108,6 +100,18 @@ def api_generate():
         if orientation == "landscape":
             pw, ph = ph, pw
         page_w, page_h = float(pw), float(ph)
+
+    # Build pipeline
+    lib = GlyphLibrary(glyphs_path)
+    typesetter = Typesetter(lib, kerning_config_path=kerning_path)
+
+    override_lh = float(line_height) if line_height is not None else None
+    shapes = typesetter.typeset_text(text, override_line_height=override_lh,
+                                     auto_kern=auto_kern, line_spacing=line_spacing,
+                                     kern_aggressiveness=kern_aggressiveness)
+
+    renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
+                        stroke_width=stroke_width)
 
     svg_str = renderer.generate_svg_string(shapes, page_width_mm=page_w,
                                            page_height_mm=page_h, margin_mm=margin)

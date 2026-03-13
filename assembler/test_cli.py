@@ -274,10 +274,11 @@ class TestLineSpacing(CLITestBase):
             if parts and parts[0] == "M":
                 ys.append(float(parts[2]))
         ys.sort()
-        # Gap = difference between distinct Y clusters
-        unique_ys = sorted(set(round(y, 0) for y in ys))
-        if len(unique_ys) >= 2:
-            return unique_ys[-1] - unique_ys[0]
+        # With "a\na", and each "a" having 2 strokes, we expect 4 Y values.
+        # ys[0], ys[1] are Line 1; ys[2], ys[3] are Line 2.
+        # The gap we want is Line2[0] - Line1[0].
+        if len(ys) >= 3:
+            return ys[2] - ys[0]
         return 0
 
     def test_double_spacing_doubles_gap(self):
@@ -301,12 +302,16 @@ class TestMargins(CLITestBase):
     def test_small_margin(self):
         root = self._run_with_font(["ab"], "vs05_m5.svg",
                                    ["--paper-size", "A5", "--margin", "5"])
-        self.assertEqual(self._get_translate(root), "translate(5.00,5.00)")
+        transform = self._get_translate(root)
+        self.assertTrue(transform.startswith("translate(5.00,5.00)"),
+                        f"Transform should start with margin translate, got: {transform}")
 
     def test_large_margin(self):
         root = self._run_with_font(["ab"], "vs05_m40.svg",
                                    ["--paper-size", "A5", "--margin", "40"])
-        self.assertEqual(self._get_translate(root), "translate(40.00,40.00)")
+        transform = self._get_translate(root)
+        self.assertTrue(transform.startswith("translate(40.00,40.00)"),
+                        f"Transform should start with margin translate, got: {transform}")
 
     def test_no_translate_without_paper_size(self):
         """Auto-fit mode should not add a translate."""
@@ -323,9 +328,9 @@ class TestSmoothingAndJitter(CLITestBase):
     """VS-06: --smooth and --jitter affect path data."""
 
     def test_smooth_produces_more_points(self):
-        """Smoothing interpolates extra points, so the path d= string should be longer."""
-        root_raw = self._run_with_font(["abc"], "vs06_raw.svg")
-        root_smooth = self._run_with_font(["abc"], "vs06_smooth.svg", ["--smooth"])
+        """Smoothing (default) interpolates extra points vs --no-smooth."""
+        root_raw = self._run_with_font(["abc"], "vs06_raw.svg", ["--no-smooth"])
+        root_smooth = self._run_with_font(["abc"], "vs06_smooth.svg")
         raw_d_len = sum(len(p.get("d", "")) for p in root_raw.findall(f".//{{{SVG_NS}}}path"))
         smooth_d_len = sum(len(p.get("d", "")) for p in root_smooth.findall(f".//{{{SVG_NS}}}path"))
         self.assertGreater(smooth_d_len, raw_d_len,
@@ -366,6 +371,12 @@ class TestLigaturesAndKerning(CLITestBase):
         root = self._run_with_font(["abc"], "vs07_kern.svg", ["--auto-kern"])
         self.assertGreater(self._count_paths(root), 0)
 
+    def test_kern_aggressiveness_flag(self):
+        """--kern-aggressiveness should be accepted and produce valid SVG."""
+        root = self._run_with_font(["abc"], "vs07_kern_aggr.svg",
+                                   ["--auto-kern", "--kern-aggressiveness", "0.8"])
+        self.assertGreater(self._count_paths(root), 0)
+
 
 # ═══════════════════════════════════════════════════════════════════
 # VS-08: Full end-to-end letter
@@ -379,7 +390,7 @@ class TestFullLetterScenario(CLITestBase):
         txt = self._write_text_file("vs08.txt", self._LETTER)
         root = self._run_with_font(["--file", txt], "vs08_a4p.svg",
                                    ["--paper-size", "A4", "--orientation", "portrait",
-                                    "--line-spacing", "1.3", "--margin", "25", "--smooth"])
+                                    "--line-spacing", "1.3", "--margin", "25"])
         self.assertEqual(root.get("width"), "210.0mm")
         self.assertEqual(root.get("height"), "297.0mm")
         self.assertGreater(self._count_paths(root), 0)

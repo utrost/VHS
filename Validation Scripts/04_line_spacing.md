@@ -20,19 +20,19 @@ EOF
 
 ### 2. Generate with default spacing (1.0)
 ```bash
-python3 assembler.py --file vs04_input.txt vs04_spacing_1x.svg --font utrost --smooth \
+python3 assembler.py --file vs04_input.txt vs04_spacing_1x.svg --font utrost \
   --paper-size A4 --line-spacing 1.0
 ```
 
 ### 3. Generate with 1.5× spacing
 ```bash
-python3 assembler.py --file vs04_input.txt vs04_spacing_1.5x.svg --font utrost --smooth \
+python3 assembler.py --file vs04_input.txt vs04_spacing_1.5x.svg --font utrost \
   --paper-size A4 --line-spacing 1.5
 ```
 
 ### 4. Generate with 2.0× spacing
 ```bash
-python3 assembler.py --file vs04_input.txt vs04_spacing_2x.svg --font utrost --smooth \
+python3 assembler.py --file vs04_input.txt vs04_spacing_2x.svg --font utrost \
   --paper-size A4 --line-spacing 2.0
 ```
 

@@ -18,12 +18,17 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--file [PATH]`, `-f [PATH]`: Read input text from a file instead of the command line.
 - `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `myFont`). Defaults to root `glyphs/`.
 - `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desiredMessiness.
-- `--smooth`: Enable Catmull-Rom spline smoothing to create fluid curves from captured points.
-- `--line-height [FLOAT]`: Override the vertical space between lines (default: 200.0).
+- `--no-smooth`: Disable Catmull-Rom spline smoothing (smoothing is enabled by default).
+- `--line-height [FLOAT]`: Override the vertical space between lines (default: 100.0).
 - `--line-spacing [FLOAT]`: Multiplier for line height (e.g. `1.5` = 150% spacing). Default: `1.0`.
 - `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`.
 - `--orientation [portrait|landscape]`: Page orientation when `--paper-size` is set. Default: `portrait`.
 - `--margin [FLOAT]`: Page margin in mm on all sides (default: 20.0). Used with `--paper-size`.
+- `--auto-kern`: Enable automatic optical kerning to reduce whitespace.
+- `--kern-aggressiveness [FLOAT]`: How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). `0.0` = no extra tightening, `1.0` = fully ignore non-shared zones. Default: `0.5`. Only effective with `--auto-kern`.
+- `--stroke-width [FLOAT]`: Stroke width in SVG units (default: 2.0). Automatically scaled in fixed-page mode to maintain consistent visual weight.
+
+> **Note:** When `--paper-size` is set, the renderer automatically scales the content to fit within the available page area (page minus margins). Glyph coordinates (captured in device units) are mapped to millimetres via this uniform scale. Changing `--line-height` or `--line-spacing` adjusts the relative proportions between lines; the final on-page size is determined by the auto-scale.
 
 ## Directory Structure
 
@@ -38,11 +43,14 @@ Each font directory can have its own `kerning.json`.
 1. **Loading**: Loads all `.json` glyph files from the `../glyphs` directory.
 2. **Typesetting**:
    - Calculates spacing based on glyph bounding boxes.
-   - select variants stochastically (randomly, but avoiding immediate repetition).
+   - Selects variants stochastically (randomly, but avoiding immediate repetition).
    - Applies kerning rules (if defined in `kerning.json`).
+   - **Zone-aware optical kerning**: When `--auto-kern` is enabled, the scanline-based algorithm classifies each glyph's strokes into vertical zones (upper, ground, lower) using `baseline_y` and `x_height` from glyph metadata. Letter pairs occupying different zones (e.g., "Te") can kern tighter because their strokes don't collide. The `--kern-aggressiveness` parameter controls how much non-shared zones are relaxed.
+   - Supports word wrapping via the `max_width` parameter — when a word would exceed the available width, the entire word is moved to the next line.
 3. **Rendering**:
    - Generates an SVG with a single path element per stroke.
    - Applies jitter if requested.
+   - **Auto-scaling**: When a fixed paper size is set, the renderer computes the content bounding box and applies a uniform scale transform so that all content fits within the available page area (page dimensions minus margins). Stroke width is inversely scaled to remain visually consistent.
 
 ## Ligatures
 The assembler supports automatic ligature substitution via **Greedy Matching**.

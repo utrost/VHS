@@ -10,7 +10,7 @@
 ### 1. Test ligature substitution
 ```bash
 cd assembler
-python3 assembler.py "butter" vs07_ligature.svg --font utrost --smooth
+python3 assembler.py "butter" vs07_ligature.svg --font utrost
 ```
 
 Open `vs07_ligature.svg` in a browser.
@@ -21,8 +21,8 @@ Open `vs07_ligature.svg` in a browser.
 
 ### 2. Test auto-kerning
 ```bash
-python3 assembler.py "WAVE" vs07_no_kern.svg --font utrost --smooth
-python3 assembler.py "WAVE" vs07_auto_kern.svg --font utrost --smooth --auto-kern
+python3 assembler.py "WAVE" vs07_no_kern.svg --font utrost
+python3 assembler.py "WAVE" vs07_auto_kern.svg --font utrost --auto-kern
 ```
 
 Open both SVGs in a browser.
@@ -31,9 +31,23 @@ Open both SVGs in a browser.
 - [ ] Auto-kerned version has tighter, more optically even spacing
 - [ ] Non-kerned version may have wider or uneven gaps between letters
 
-### 3. Test German characters
+### 3. Test zone-aware kerning aggressiveness
 ```bash
-python3 assembler.py "Größe Übung Ärger straße" vs07_german.svg --font utrost --smooth
+python3 assembler.py "Typically" vs07_kern_low.svg --font utrost --auto-kern --kern-aggressiveness 0.0
+python3 assembler.py "Typically" vs07_kern_mid.svg --font utrost --auto-kern --kern-aggressiveness 0.5
+python3 assembler.py "Typically" vs07_kern_high.svg --font utrost --auto-kern --kern-aggressiveness 1.0
+```
+
+Open all three SVGs in a browser.
+
+**Expected:**
+- [ ] Higher aggressiveness kerns letter pairs like "Ty" tighter (T's upper horizontal stroke doesn't conflict with y's ground-level body)
+- [ ] Letter pairs sharing the same zone (e.g., "ca") kern similarly across all aggressiveness levels
+- [ ] All three produce valid, non-overlapping text at default tracking
+
+### 4. Test German characters
+```bash
+python3 assembler.py "Größe Übung Ärger straße" vs07_german.svg --font utrost
 ```
 
 **Expected:**
@@ -43,5 +57,5 @@ python3 assembler.py "Größe Übung Ärger straße" vs07_german.svg --font utro
 
 ## Cleanup
 ```bash
-rm vs07_ligature.svg vs07_no_kern.svg vs07_auto_kern.svg vs07_german.svg
+rm vs07_ligature.svg vs07_no_kern.svg vs07_auto_kern.svg vs07_kern_low.svg vs07_kern_mid.svg vs07_kern_high.svg vs07_german.svg
 ```

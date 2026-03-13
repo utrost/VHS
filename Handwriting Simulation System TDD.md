@@ -5,18 +5,20 @@
 The VHS system provides a deterministic pipeline for generating realistic handwriting for pen plotters. It replaces neural-network-based generation with a stochastic "Shaping Engine" utilizing a custom-captured library of single-stroke vector glyphs.  
 **Key Objectives:**
 
-* **True Single-Stroke:** Output paths are 1-pixel wide vectors (no outlines/double-tracking).  
-* **Multilingual Native:** Full support for German Umlauts (ä, ö, ü), ß, and special punctuation via raw capture.  
-* **Automated Spacing:** Kerning is calculated mathematically from vector bounding boxes, removing the need for manual UI adjustments.
-* **Multi-Font Support:** Capable of managing and rendering multiple distinct handwriting styles/fonts.
+*   **True Single-Stroke:** Output paths are 1-pixel wide vectors (no outlines/double-tracking).  
+*   **Multilingual Native:** Full support for German Umlauts (ä, ö, ü), ß, and special punctuation via raw capture.  
+*   **Automated Spacing:** Zone-aware kerning is calculated mathematically from vector bounding boxes, with vertical zone classification (upper/ground/lower) for smarter letter-pair spacing.
+*   **Fixed Layouts:** Support for standard paper sizes (A4, A3, etc.) with configurable margins and line spacing.
+*   **Modern Web Access:** A Flask-powered web interface for real-time preview and generation.
 
 ## **2\. System Architecture**
 
 | Module | Component | Technology | Responsibility |
 | :---- | :---- | :---- | :---- |
 | **Capture** | Batch Glyph Collector | HTML5/JS (Canvas) | Captures raw pointer coordinates ($x,y,p,t$). Output: JSON. |
-| **Storage** | Glyph Library | JSON Files | Can be organized by subdirectory: `glyphs/{FontName}/`. Includes optional font-specific `kerning.json`. |
-| **Synthesis** | The Assembler | Python | Converts characters to SVG paths with **baseline normalization**, **stochastic variation**, **kerning**, and **curve smoothing**. |
+| **Storage** | Glyph Library | JSON Files | Organized by subdirectory: `glyphs/{FontName}/`. |
+| **Synthesis** | The Assembler | Python | Core engine for typesetting, shaping, and SVG rendering. |
+| **Interface** | Assembler Web UI | Flask / HTML5 | Browser-based front-end for the Assembler engine. |
 
 ## **3\. Data Specification (Glyph JSON)**
 
@@ -43,24 +45,28 @@ To support batching, the JSON schema aggregates all variants of a single charact
 
 ## **4\. The Glyph Collector UI (Frontend)**
 
-* **Batch Pattern:** Displays 5 horizontal canvas slots to allow rapid repetition (muscle memory).  
-* **Sanitization:** Automatically maps input characters to **Unicode Hex filenames** (e.g., `A` $\rightarrow$ `0041.json`, `sch` $\rightarrow$ `007300630068.json`) to prevent case-insensitivity conflicts on Windows.
-* **Input:** Uses Pointer Events API to capture pressure and tilt where available.  
-* **Guides:** \* **Red Solid Line (**$y=250$**):** Absolute Baseline.  
+*   **Batch Pattern:** Displays 5 horizontal canvas slots to allow rapid repetition (muscle memory).  
+*   **Sanitization:** Automatically maps input characters to **Unicode Hex filenames** (e.g., `A` $\rightarrow$ `0041.json`, `sch` $\rightarrow$ `007300630068.json`) to prevent case-insensitivity conflicts on Windows.
+*   **Input:** Uses Pointer Events API to capture pressure and tilt where available.  
+*   **Guides:** \* **Red Solid Line (**$y=250$**):** Absolute Baseline.  
   * **Blue Dashed Line (**$y=150$**):** x-Height reference.
 
 ## **5\. Backend Logic: The Assembler (Python)**
 
 ### **A. Automated Proportional Spacing (Kerning)**
 
-The UI does not capture width. The Python script calculates it dynamically to prevent "monospaced" look. Handles `\n` by resetting X and advancing Y by `line_height`.
 
 1.  **Normalization:** For each selected variant, calculate the Bounding Box ($x\_{min}, x\_{max}$).  
 2.  **Trim:** Shift all points left by subtracting $x\_{min}$ ($NewX \= OldX \- x\_{min}$).  
 3.  **Advance Width:** The cursor moves by $(x\_{max} \- x\_{min}) \+ \\text{TrackingBuffer}$.  
-4.  **Overrides:** A kerning.json file handles exceptions:  
-    *   **Space:** Fixed width (e.g., 10mm).  
-    *   **Line Height:** Vertical distance between lines (default 200).
+4.  **Fixed Paper Sizes:** Supports A3, A4, A5, A6, Letter, and Legal. Orientation (Portrait/Landscape) swaps width/height.
+5.  **Line Spacing Multiplier:** A multiplier (default 1.0) applied to the base `line_height` to control inter-line gaps.
+6.  **Margins:** In fixed-page mode, content is inset by a configurable margin (mm) using a global SVG `translate` transform.
+7.  **Auto-Scaling:** Glyph coordinates are in capture-device units (not mm). In fixed-page mode, the renderer computes a uniform scale factor from the content bounding box to fit within the available area (page minus margins). The transform chain is `translate(margin, margin) scale(s) translate(-content_origin)`. Stroke width is inversely scaled ($w_{svg} = w_{base} / s$) to maintain consistent visual weight.
+8.  **Word Wrapping:** The typesetter accepts an optional `max_width` parameter. When a word would exceed the available width, the entire word (all glyphs since the last space) is shifted to the next line.
+9.  **Zone-Aware Optical Kerning:** When auto-kerning is enabled, the scanline algorithm classifies each glyph's strokes into vertical zones (upper: above `x_height`, ground: between `x_height` and `baseline_y`, lower: below `baseline_y`). Scanlines in zones occupied by both glyphs use strict minimum distance; scanlines in non-shared zones are relaxed by a configurable `kern_aggressiveness` factor (0.0–1.0, default 0.5). This allows pairs like "Te" to kern tighter than "TK", since 'e' occupies only the ground zone and doesn't conflict with T's upper horizontal stroke.
+7.  **Overrides:** A `kerning.json` file handles exceptions:  
+    *   **Space:** Fixed width (e.g., 25.0).  
     *   **Narrow Punctuation:** Enforce min-width for ., ,, '.
     *   **Location:** `glyphs/{FontName}/kerning.json` (Font-specific configuration).
 
@@ -81,6 +87,22 @@ Raw capture data is polygonal. The renderer uses **Catmull-Rom Spline Interpolat
 
 ### **E. Baseline Normalization**
 Reference metadata (`baseline_y`) is used to vertically align glyphs. All Y-coordinates are normalized relative to this baseline ($y=0$), ensuring correct alignment of ascenders and descenders regardless of the capture canvas position.
+
+## **7\. Web UI Architecture**
+
+The Web UI provides a bridge between the browser and the Python Assembler engine.
+
+*   **Backend (Flask):** A lightweight server (`server.py`) that imports the Assembler classes directly. It exposes a JSON API for font listing and SVG generation.
+*   **Frontend (Single-Page App):** A modern dark-themed interface (`index.html`) using vanilla CSS for layout and interactivity (no heavy frameworks).
+*   **Live Preview:** SVG data is returned directly as a string and rendered inline in the browser.
+
+## **8\. Verification & Testing**
+
+System robustness is maintained via a multi-layered testing strategy:
+
+*   **Core Unit Tests (`test_assembler.py`):** 11 tests verifying low-level logic like kerning clusters, zone-aware kerning, ligature recognition, and basic SVG sizing.
+*   **CLI Integration Tests (`test_cli.py`):** 28 tests executing the `assembler.py` script via subprocess. These tests use a temporary mock font to verify all CLI flags (paper sizes, margins, kerning aggressiveness, smoothing, jitter, error handling) in a clean environment.
+*   **Manual Validation Scripts:** A library of 10 human-executable scripts (`Validation Scripts/`) for subjective quality assessment.
 
 ## **6\. Appendix: Capture Inventory Checklist**
 

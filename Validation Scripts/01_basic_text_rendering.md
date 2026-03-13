@@ -11,7 +11,7 @@
 ### 1. Run the assembler with inline text
 ```bash
 cd assembler
-python3 assembler.py "Hello World" vs01_hello.svg --font utrost --smooth
+python3 assembler.py "Hello World" vs01_hello.svg --font utrost
 ```
 
 ### 2. Verify output file exists

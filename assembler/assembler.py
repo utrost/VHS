@@ -112,7 +112,7 @@ class Typesetter:
         # Defaults
         self.tracking_buffer = 5.0 
         self.space_width = 30.0
-        self.line_height = 200.0 # Default line height
+        self.line_height = 100.0 # Default line height
         self.kerning_exceptions: Dict[str, Dict[str, float]] = {}
 
         if kerning_config_path and os.path.exists(kerning_config_path):
@@ -130,10 +130,37 @@ class Typesetter:
         self.last_variant_indices: Dict[str, int] = {} 
 
     
-    def calculate_optical_kerning(self, shapes_a: List[List[Dict[str, float]]], shapes_b: List[List[Dict[str, float]]], resolution: int = 50) -> float:
+    @staticmethod
+    def _get_zone(y: float, x_height_y: float, baseline_y: float) -> str:
+        """Classify a y-coordinate into a vertical zone.
+
+        Canvas coordinates: y increases downward.
+        - upper: above x-height line (y < x_height_y)
+        - ground: between x-height and baseline (x_height_y <= y <= baseline_y)
+        - lower: below baseline (y > baseline_y)
         """
-        Calculates the minimum horizontal distance between two shapes.
-        Positive value means they are apart, negative means they overlap.
+        if y < x_height_y:
+            return 'upper'
+        elif y > baseline_y:
+            return 'lower'
+        return 'ground'
+
+    def calculate_optical_kerning(self, shapes_a: List[List[Dict[str, float]]],
+                                  shapes_b: List[List[Dict[str, float]]],
+                                  baseline_y: Optional[float] = None,
+                                  x_height_y: Optional[float] = None,
+                                  kern_aggressiveness: float = 0.5,
+                                  resolution: int = 50) -> float:
+        """
+        Calculates the minimum horizontal distance between two shapes,
+        with zone-aware weighting.
+
+        When baseline_y and x_height_y are provided, scanlines are classified
+        into vertical zones (upper / ground / lower). Scanlines where both
+        glyphs have ink in the same zone use the strict minimum distance.
+        Scanlines where the glyphs occupy different zones allow tighter
+        kerning, controlled by kern_aggressiveness (0.0 = no extra tightening,
+        1.0 = ignore non-shared zone scanlines entirely).
         """
         if not shapes_a or not shapes_b:
             return 0.0
@@ -141,52 +168,47 @@ class Typesetter:
         # Flatten points to find vertical bounds
         all_points_a = [p for stroke in shapes_a for p in stroke]
         all_points_b = [p for stroke in shapes_b for p in stroke]
-        
+
         if not all_points_a or not all_points_b:
             return 0.0
 
         min_y = min(p['y'] for p in all_points_a + all_points_b)
         max_y = max(p['y'] for p in all_points_a + all_points_b)
-        
+
         height = max_y - min_y
         if height <= 0:
             return 0.0
-            
+
         step = height / resolution
-        
+
+        zone_aware = baseline_y is not None and x_height_y is not None
+
         # Buckets for rightmost X of A and leftmost X of B
-        # Initialize with extreme values
-        # buckets_a[i] = max x found in slice i
-        # buckets_b[i] = min x found in slice i
         buckets_a = {i: float('-inf') for i in range(resolution + 1)}
         buckets_b = {i: float('inf') for i in range(resolution + 1)}
-        
+
         def fill_buckets(shapes, buckets, is_max):
             for stroke in shapes:
                 for i in range(len(stroke) - 1):
                     p1 = stroke[i]
                     p2 = stroke[i+1]
-                    
-                    # Segment Y range
+
                     seg_min_y = min(p1['y'], p2['y'])
                     seg_max_y = max(p1['y'], p2['y'])
-                    
+
                     start_idx = max(0, int((seg_min_y - min_y) / step))
                     end_idx = min(resolution, int((seg_max_y - min_y) / step) + 1)
-                    
+
                     for idx in range(start_idx, end_idx):
                         y_scan = min_y + (idx * step)
-                        
-                        # Check INTERSECTION with scanline y_scan
-                        # Avoid division by zero for horizontal lines
+
                         if abs(p1['y'] - p2['y']) < 1e-9:
                             continue
-                            
-                        # Linear interpolation for X
+
                         t = (y_scan - p1['y']) / (p2['y'] - p1['y'])
                         if 0 <= t <= 1:
                             x_intersect = p1['x'] + t * (p2['x'] - p1['x'])
-                            
+
                             if is_max:
                                 buckets[idx] = max(buckets[idx], x_intersect)
                             else:
@@ -194,43 +216,89 @@ class Typesetter:
 
         fill_buckets(shapes_a, buckets_a, is_max=True)
         fill_buckets(shapes_b, buckets_b, is_max=False)
-        
-        min_distance = float('inf')
-        
+
+        # Determine which zones each glyph occupies (from actual stroke data)
+        if zone_aware:
+            zones_a = set()
+            zones_b = set()
+            for p in all_points_a:
+                zones_a.add(self._get_zone(p['y'], x_height_y, baseline_y))
+            for p in all_points_b:
+                zones_b.add(self._get_zone(p['y'], x_height_y, baseline_y))
+            shared_zones = zones_a & zones_b
+
+        min_distance_shared = float('inf')
+        min_distance_unshared = float('inf')
+        has_shared = False
+
         for i in range(resolution + 1):
             if buckets_a[i] != float('-inf') and buckets_b[i] != float('inf'):
                 dist = buckets_b[i] - buckets_a[i]
-                if dist < min_distance:
-                    min_distance = dist
-                    
-        if min_distance == float('inf'):
-            # No vertical overlap
-            return 0.0
-            
-        return min_distance
 
-    def typeset_text(self, text: str, override_line_height: Optional[float] = None, auto_kern: bool = False, line_spacing: float = 1.0) -> List[List[List[Dict[str, float]]]]:
+                if zone_aware:
+                    y_scan = min_y + (i * step)
+                    zone = self._get_zone(y_scan, x_height_y, baseline_y)
+                    if zone in shared_zones:
+                        has_shared = True
+                        if dist < min_distance_shared:
+                            min_distance_shared = dist
+                    else:
+                        if dist < min_distance_unshared:
+                            min_distance_unshared = dist
+                else:
+                    if dist < min_distance_shared:
+                        min_distance_shared = dist
+                        has_shared = True
+
+        if not has_shared and min_distance_unshared == float('inf'):
+            return 0.0
+
+        if not zone_aware or not has_shared:
+            # No zone info or no shared zones — use overall minimum
+            final = min(min_distance_shared, min_distance_unshared)
+            if final == float('inf'):
+                return 0.0
+            return final
+
+        # Blend: in shared zones use strict distance; for unshared zones,
+        # kern_aggressiveness controls how much we ignore the unshared
+        # constraint. At 1.0 we fully ignore unshared scanlines; at 0.0
+        # we treat them the same as shared.
+        if min_distance_unshared == float('inf'):
+            return min_distance_shared
+
+        blended_unshared = min_distance_unshared * (1.0 - kern_aggressiveness)
+        return min(min_distance_shared, blended_unshared) if blended_unshared < min_distance_shared else min_distance_shared
+
+    def typeset_text(self, text: str, override_line_height: Optional[float] = None,
+                     auto_kern: bool = False, line_spacing: float = 1.0,
+                     max_width: Optional[float] = None,
+                     kern_aggressiveness: float = 0.5) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
         Each stroke is a list of 'points' (dicts with x, y, p).
-        
+
         line_spacing: multiplier applied to line_height for the vertical
                       distance between baselines (e.g. 1.5 = 150% spacing).
+        max_width:    if set, automatically wrap lines that exceed this width.
         """
-        
+
         current_line_height = override_line_height if override_line_height is not None else self.line_height
         effective_line_advance = current_line_height * line_spacing
-        
+
         compiled_shapes = []
-        # Store raw shapes for optical kerning calculation (before final placement)
-        # But wait, we need them placed relative to 0,0 of the CHAR to calculate distance?
-        # Actually, best to store the LAST placed shape to compare against.
-        
+
         cursor_x = 0.0
         cursor_y = 0.0 # Baseline
 
         last_shape_placed = None # List of strokes of the previous character (in absolute coords)
+        last_glyph_data = None   # Glyph data dict of the previous character (for zone metadata)
+
+        # Word-wrap state: track shapes added since the last space so we can
+        # move the whole word to the next line when it overflows.
+        word_start_x = 0.0          # cursor_x at the start of the current word
+        word_shape_start_idx = 0    # index into compiled_shapes where current word begins
 
         i = 0
         while i < len(text):
@@ -240,63 +308,97 @@ class Typesetter:
                 cursor_x = 0
                 cursor_y += effective_line_advance
                 last_shape_placed = None
+                last_glyph_data = None
+                word_start_x = 0.0
+                word_shape_start_idx = len(compiled_shapes)
                 i += 1
                 continue
 
             if char_at_i == ' ':
                 cursor_x += self.space_width
                 last_shape_placed = None
+                last_glyph_data = None
+                # A space commits the previous word — next word starts here
+                word_start_x = cursor_x
+                word_shape_start_idx = len(compiled_shapes)
                 i += 1
                 continue
 
             # Greedy Matching for Ligatures
             match_found = False
             max_lookahead = min(self.library.max_key_length, len(text) - i)
-            
+
             for length in range(max_lookahead, 0, -1):
                 candidate = text[i : i + length]
                 glyph_data = self.library.get_glyph(candidate)
-                
+
                 if glyph_data and glyph_data.get('variants'):
                     # Match found! Use this glyph
-                    
+
                     # 1. First, calculate where it WOULD go naturally
                     # This adds the strokes to compiled_shapes
                     width, placed_strokes = self._process_glyph(glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
-                    
+
                     # 2. Optical Kerning
                     manual_tracking_offset = 0.0
                     if candidate in self.kerning_exceptions:
                         manual_tracking_offset = self.kerning_exceptions[candidate].get('tracking_offset', 0.0)
 
                     if auto_kern and last_shape_placed:
-                        # Calculate gap between last_shape_placed and placed_strokes
-                        gap = self.calculate_optical_kerning(last_shape_placed, placed_strokes)
-                        
-                        # We want the gap to be exactly self.tracking_buffer
-                        # Current gap is 'gap'. Target is 'self.tracking_buffer'.
-                        # Shift needed = gap - self.tracking_buffer
-                        
+                        # Extract zone boundaries from both glyphs' metadata
+                        bl_a = last_glyph_data.get('metadata', {}).get('baseline_y') if last_glyph_data else None
+                        xh_a = last_glyph_data.get('metadata', {}).get('x_height') if last_glyph_data else None
+                        bl_b = glyph_data.get('metadata', {}).get('baseline_y')
+                        xh_b = glyph_data.get('metadata', {}).get('x_height')
+                        # Use zone info only if both glyphs have metadata;
+                        # average the values for the pair (they should normally match
+                        # within a font, but averaging handles mixed fonts gracefully)
+                        bl = None
+                        xh = None
+                        if bl_a is not None and bl_b is not None and xh_a is not None and xh_b is not None:
+                            bl = (bl_a + bl_b) / 2.0
+                            xh = (xh_a + xh_b) / 2.0
+
+                        gap = self.calculate_optical_kerning(
+                            last_shape_placed, placed_strokes,
+                            baseline_y=bl, x_height_y=xh,
+                            kern_aggressiveness=kern_aggressiveness)
                         shift = gap - self.tracking_buffer
-                        
-                        # Apply shift to both cursor_x AND the points of the just-placed glyph
                         cursor_x -= shift
                         for stroke in placed_strokes:
                             for p in stroke:
                                 p['x'] -= shift
-                    
+
                     # Update for next loop
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
                     last_shape_placed = placed_strokes
-                    
+                    last_glyph_data = glyph_data
+
+                    # 3. Word-wrap check: did the cursor exceed max_width?
+                    if max_width is not None and cursor_x > max_width and word_start_x > 0:
+                        # Move the current word to the next line
+                        shift_x = word_start_x
+                        shift_y = effective_line_advance
+                        for si in range(word_shape_start_idx, len(compiled_shapes)):
+                            for stroke in compiled_shapes[si]:
+                                for p in stroke:
+                                    p['x'] -= shift_x
+                                    p['y'] += shift_y
+                        # Also shift the placed_strokes ref (it's the same objects)
+                        cursor_x -= shift_x
+                        cursor_y += shift_y
+                        word_start_x = 0.0
+                        word_shape_start_idx = len(compiled_shapes) - 1  # current glyph
+
                     i += length
                     match_found = True
                     break
-            
+
             if not match_found:
                 logger.warning(f"No glyph found for '{text[i]}', skipping.")
                 cursor_x += self.space_width # Placeholder advance
                 last_shape_placed = None
+                last_glyph_data = None
                 i += 1
 
         return compiled_shapes
@@ -357,10 +459,12 @@ class Typesetter:
         return final_width, placed_strokes
 
 class Renderer:
-    def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False, color: str = "black"):
+    def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False, color: str = "black",
+                 stroke_width: float = 2.0):
         self.jitter_amount = jitter_amount
         self.smoothing = smoothing
         self.color = color
+        self.stroke_width = stroke_width
 
     def _catmull_rom_spline(self, points: List[Dict[str, float]], steps: int = 5) -> List[Tuple[float, float]]:
         """
@@ -429,6 +533,27 @@ class Renderer:
             height = page_height_mm
             vb_x = 0.0
             vb_y = 0.0
+
+            # Compute scale factor to fit content within the available area
+            avail_w = page_width_mm - 2 * margin_mm
+            avail_h = page_height_mm - 2 * margin_mm
+            if all_x and avail_w > 0 and avail_h > 0:
+                content_w = max(all_x) - min(all_x)
+                content_h = max(all_y) - min(all_y)
+                content_offset_x = min(all_x)
+                content_offset_y = min(all_y)
+                if content_w > 0 and content_h > 0:
+                    scale = min(avail_w / content_w, avail_h / content_h)
+                elif content_w > 0:
+                    scale = avail_w / content_w
+                elif content_h > 0:
+                    scale = avail_h / content_h
+                else:
+                    scale = 1.0
+            else:
+                scale = 1.0
+                content_offset_x = 0.0
+                content_offset_y = 0.0
         elif not all_x:
             vb_x, vb_y, width, height = 0.0, 0.0, 100.0, 100.0
         else:
@@ -453,12 +578,19 @@ class Renderer:
         g_attrs = {
             "fill": "none",
             "stroke": self.color,
-            "stroke-width": "2",
             "stroke-linecap": "round",
             "stroke-linejoin": "round"
         }
         if fixed_page:
-            g_attrs["transform"] = f"translate({margin_mm:.2f},{margin_mm:.2f})"
+            # Scale content to fit the available page area, offset to margin
+            g_attrs["stroke-width"] = f"{self.stroke_width / scale:.4f}"
+            g_attrs["transform"] = (
+                f"translate({margin_mm:.2f},{margin_mm:.2f}) "
+                f"scale({scale:.6f}) "
+                f"translate({-content_offset_x:.2f},{-content_offset_y:.2f})"
+            )
+        else:
+            g_attrs["stroke-width"] = str(self.stroke_width)
 
         g = ET.SubElement(svg, "g", g_attrs)
 
@@ -514,12 +646,17 @@ if __name__ == "__main__":
     parser.add_argument("--file", "-f", help="Read text from file instead of command line argument")
     parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
-    parser.add_argument("--smooth", action="store_true", help="Enable spline smoothing for curves")
-    parser.add_argument("--line-height", type=float, help="Override line height for multiline text")
+    parser.add_argument("--no-smooth", action="store_true", help="Disable spline smoothing (smoothing is on by default)")
+    parser.add_argument("--line-height", type=float, help="Override line height for multiline text (default: 100.0)")
     parser.add_argument("--line-spacing", type=float, default=1.0,
                         help="Multiplier for line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
     parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
+    parser.add_argument("--kern-aggressiveness", type=float, default=0.5,
+                        help="How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). "
+                             "0.0 = no extra tightening, 1.0 = fully ignore non-shared zones. Default: 0.5")
     parser.add_argument("--color", default="black", help="Hex code or color name for the stroke (default: black)")
+    parser.add_argument("--stroke-width", type=float, default=2.0,
+                        help="Stroke width in SVG units (default: 2.0). Automatically scaled in fixed-page mode.")
     parser.add_argument("--paper-size", choices=paper_choices, default=None,
                         help=f"Fixed paper size for the output SVG. Choices: {', '.join(paper_choices)}")
     parser.add_argument("--orientation", choices=["portrait", "landscape"], default="portrait",
@@ -559,13 +696,6 @@ if __name__ == "__main__":
         logger.error(f"Glyphs directory not found: {glyphs_path}")
         exit(1)
 
-    lib = GlyphLibrary(glyphs_path)
-    typesetter = Typesetter(lib, kerning_config_path=kerning_path)
-    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
-                                     auto_kern=args.auto_kern, line_spacing=args.line_spacing)
-    
-    renderer = Renderer(jitter_amount=args.jitter, smoothing=args.smooth, color=args.color)
-
     # Resolve paper dimensions
     page_w, page_h = None, None
     if args.paper_size:
@@ -575,4 +705,12 @@ if __name__ == "__main__":
         page_w, page_h = float(pw), float(ph)
         logger.info(f"Page: {args.paper_size} {args.orientation} ({page_w}×{page_h} mm), margin {args.margin} mm")
 
+    lib = GlyphLibrary(glyphs_path)
+    typesetter = Typesetter(lib, kerning_config_path=kerning_path)
+    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
+                                     auto_kern=args.auto_kern, line_spacing=args.line_spacing,
+                                     kern_aggressiveness=args.kern_aggressiveness)
+
+    renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
+                        stroke_width=args.stroke_width)
     renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h, margin_mm=args.margin)

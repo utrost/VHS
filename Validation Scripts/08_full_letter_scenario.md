@@ -24,13 +24,13 @@ EOF
 
 ### 2. Generate on A4 Portrait
 ```bash
-python3 assembler.py --file vs08_letter.txt vs08_letter_a4.svg --font utrost --smooth \
+python3 assembler.py --file vs08_letter.txt vs08_letter_a4.svg --font utrost \
   --paper-size A4 --orientation portrait --line-spacing 1.3 --margin 25 --line-height 250
 ```
 
 ### 3. Generate on A5 Landscape
 ```bash
-python3 assembler.py --file vs08_letter.txt vs08_letter_a5.svg --font utrost --smooth \
+python3 assembler.py --file vs08_letter.txt vs08_letter_a5.svg --font utrost \
   --paper-size A5 --orientation landscape --line-spacing 1.2 --margin 15 --line-height 200
 ```
 

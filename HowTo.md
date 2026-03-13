@@ -46,6 +46,18 @@ Ligatures are special glyphs that represent multiple characters (e.g., "tt" or "
 **When the assembler sees "butter", it will prioritize your `tt` glyph over two separate `t` glyphs.**
 *   **Common Candidates**: `th`, `he`, `in`, `er`, `an`, `re`, `on`, `at`, `en`, `nd`, `sch`, `ch`.
 
+### Zone-Aware Auto-Kerning
+The assembler's `--auto-kern` flag uses a scanline-based algorithm that understands vertical zones. Each glyph's strokes are classified as **upper** (above x-height), **ground** (between x-height and baseline), or **lower** (below baseline) based on the `baseline_y` and `x_height` stored in glyph metadata.
+
+When two letters occupy different zones (e.g., "Te" — T has upper strokes, e sits in the ground zone), the kerning algorithm allows them to move closer because their strokes won't collide. Use `--kern-aggressiveness` (0.0–1.0) to control how much tighter non-overlapping zones are kerned:
+*   `0.0` = no extra tightening (same as non-zone-aware kerning)
+*   `0.5` = moderate (default)
+*   `1.0` = fully ignore non-shared zones (maximum tightening)
+
+```bash
+./vhs-cli.sh "The quick brown fox" output.svg --font MyHandwriting --auto-kern --kern-aggressiveness 0.7
+```
+
 ### The "Negative Tracking" Trick
 To make letters touch (for a cursive look):
 1.  Create a `kerning.json` file in your font folder.
@@ -55,7 +67,7 @@ To make letters touch (for a cursive look):
 {
     "space_width": 30.0,
     "tracking_buffer": -5.0,
-    "line_height": 200.0,
+    "line_height": 100.0,
     "exceptions": {
         ".": { "min_width": 15.0 }
     }
@@ -65,20 +77,32 @@ This forces the next character to start *before* the previous one ends, creating
 
 ## 5. Generating Text
 
-Open your terminal in `VHS/assembler/` and run:
+Use the provided start scripts in the project root to run the assembler.
 
+**macOS/Linux:**
 ```bash
-python assembler.py "Your text here" output.svg --font MyHandwriting --smooth
+./vhs-cli.sh "Your text here" output.svg --font MyHandwriting
+```
+
+**Windows:**
+```cmd
+vhs-cli.bat "Your text here" output.svg --font MyHandwriting
 ```
 
 *   `--font MyHandwriting`: Tells it to look in `glyphs/MyHandwriting/`.
-*   `--smooth`: Turns your jagged input points into fluid, curvy strokes (highly recommended for realism).
+*   Smoothing is enabled by default (Catmull-Rom splines turn raw input into fluid, curvy strokes). Use `--no-smooth` to disable it and get raw polygonal output.
 
 ### 5.1 Using Multiline Files
 For longer texts, save them as a `.txt` file and run:
 
+**macOS/Linux:**
 ```bash
-python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth --line-height 250
+./vhs-cli.sh --file letter.txt output.svg --font MyHandwriting --line-height 120
+```
+
+**Windows:**
+```cmd
+vhs-cli.bat --file letter.txt output.svg --font MyHandwriting --line-height 120
 ```
 
 *   `--file`: Reads the input from a text file.
@@ -87,17 +111,27 @@ python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth -
 ### 5.2 Paper Size and Line Spacing
 To produce an SVG at a specific page size (useful for printing or pen plotters):
 
+**macOS/Linux:**
 ```bash
-python assembler.py --file letter.txt output.svg --font MyHandwriting --smooth \
+./vhs-cli.sh --file letter.txt output.svg --font MyHandwriting \
   --paper-size A4 --orientation landscape --line-spacing 1.2 --margin 25
 ```
 
-*   `--paper-size`: Sets a fixed page size (`A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`).
+**Windows:**
+```cmd
+vhs-cli.bat --file letter.txt output.svg --font MyHandwriting \
+  --paper-size A4 --orientation landscape --line-spacing 1.2 --margin 25
+```
+
+*   `--paper-size`: Sets a fixed page size (`A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`). Content is automatically scaled to fit within the page area.
 *   `--orientation`: `portrait` (default) or `landscape`.
 *   `--line-spacing`: Multiplier for `--line-height` (e.g. `1.5` = 150% spacing).
 *   `--margin`: Page margin in mm on all four sides (default: 20).
+
+> **How auto-scaling works:** Glyph coordinates are captured in device units (e.g. tablet pixels), not millimetres. When a paper size is set, the renderer computes a uniform scale factor so the content bounding box fits within the available area (page minus margins). This means `--line-height` controls the *relative* spacing between lines — the absolute on-page size is determined automatically.
 
 ## 6. Troubleshooting
 
 *   **"My letters are floating!"**: You likely ignored the Red Line during capture. Open the JSON file and check `baseline_y`. The assembler tries to fix this, but garbage in = garbage out.
 *   **"It looks too perfect"**: Add `--jitter 1.0` to shake things up.
+*   **"My text runs off the page"**: Make sure you are using `--paper-size`. The renderer automatically scales content to fit the page. Without a paper size, the SVG auto-fits to the content bounding box (no fixed dimensions).

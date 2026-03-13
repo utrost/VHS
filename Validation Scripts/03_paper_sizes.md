@@ -19,7 +19,7 @@ EOF
 
 ### 2. Generate A4 Portrait
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a4_portrait.svg --font utrost --smooth \
+python3 assembler.py --file vs03_input.txt vs03_a4_portrait.svg --font utrost \
   --paper-size A4 --orientation portrait
 ```
 
@@ -31,7 +31,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a4_portrait.svg
 
 ### 3. Generate A4 Landscape
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a4_landscape.svg --font utrost --smooth \
+python3 assembler.py --file vs03_input.txt vs03_a4_landscape.svg --font utrost \
   --paper-size A4 --orientation landscape
 ```
 
@@ -43,7 +43,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a4_landscape.svg
 
 ### 4. Generate A5 Portrait
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a5_portrait.svg --font utrost --smooth \
+python3 assembler.py --file vs03_input.txt vs03_a5_portrait.svg --font utrost \
   --paper-size A5 --orientation portrait
 ```
 
@@ -55,7 +55,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a5_portrait.svg
 
 ### 5. Generate A3 Landscape
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a3_landscape.svg --font utrost --smooth \
+python3 assembler.py --file vs03_input.txt vs03_a3_landscape.svg --font utrost \
   --paper-size A3 --orientation landscape
 ```
 
@@ -74,6 +74,7 @@ Open all four SVGs side by side in a browser.
 - [ ] A4 Landscape is wider than tall
 - [ ] A5 is noticeably smaller than A4
 - [ ] Text appears in the top-left area inside the default margin
+- [ ] Content is automatically scaled to fit within the page (no overflow beyond margins)
 
 ## Cleanup
 ```bash

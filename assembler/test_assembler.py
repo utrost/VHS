@@ -179,8 +179,47 @@ class TestAssembler(unittest.TestCase):
         ns = "http://www.w3.org/2000/svg"
         g = root.find(f"{{{ns}}}g")
         self.assertIsNotNone(g)
-        self.assertEqual(g.get("transform"), "translate(25.00,25.00)")
+        transform = g.get("transform")
+        self.assertTrue(transform.startswith("translate(25.00,25.00)"),
+                        f"Transform should start with margin translate, got: {transform}")
         os.remove(output_file)
+
+    def test_zone_aware_kerning_different_zones(self):
+        """Glyphs in different zones should kern tighter with higher aggressiveness."""
+        typesetter = Typesetter(self.lib)
+        # Shape A: upper zone only (y 20–50, well above baseline_y=100)
+        shapes_upper = [[{'x': 0, 'y': 20, 'p': 0.5}, {'x': 30, 'y': 20, 'p': 0.5},
+                         {'x': 15, 'y': 50, 'p': 0.5}]]
+        # Shape B: ground zone only (y 70–95, between x_height=60 and baseline=100)
+        shapes_ground = [[{'x': 25, 'y': 70, 'p': 0.5}, {'x': 50, 'y': 95, 'p': 0.5}]]
+
+        # Without zone awareness
+        dist_no_zone = typesetter.calculate_optical_kerning(shapes_upper, shapes_ground)
+        # With zone awareness and high aggressiveness
+        dist_zone = typesetter.calculate_optical_kerning(
+            shapes_upper, shapes_ground,
+            baseline_y=100.0, x_height_y=60.0,
+            kern_aggressiveness=0.9)
+        # Zone-aware should return same or tighter (smaller) distance
+        self.assertLessEqual(dist_zone, dist_no_zone)
+
+    def test_zone_aware_kerning_same_zone(self):
+        """Glyphs sharing the same zone should kern the same regardless of aggressiveness."""
+        typesetter = Typesetter(self.lib)
+        # Both in ground zone (y 70–95)
+        shapes_a = [[{'x': 0, 'y': 70, 'p': 0.5}, {'x': 20, 'y': 95, 'p': 0.5}]]
+        shapes_b = [[{'x': 25, 'y': 70, 'p': 0.5}, {'x': 45, 'y': 95, 'p': 0.5}]]
+
+        dist_low = typesetter.calculate_optical_kerning(
+            shapes_a, shapes_b,
+            baseline_y=100.0, x_height_y=60.0,
+            kern_aggressiveness=0.0)
+        dist_high = typesetter.calculate_optical_kerning(
+            shapes_a, shapes_b,
+            baseline_y=100.0, x_height_y=60.0,
+            kern_aggressiveness=1.0)
+        # Same zone means aggressiveness has no effect
+        self.assertAlmostEqual(dist_low, dist_high, places=2)
 
 if __name__ == '__main__':
     unittest.main()

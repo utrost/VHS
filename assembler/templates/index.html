@@ -418,7 +418,7 @@ Line breaks are preserved."></textarea>
                     <div class="field-row">
                         <div class="field">
                             <label class="field-label">Line Height</label>
-                            <input type="number" id="lineHeight" value="200" min="50" max="1000" step="10">
+                            <input type="number" id="lineHeight" value="100" min="50" max="1000" step="10">
                         </div>
                         <div class="field">
                             <label class="field-label">Line Spacing</label>
@@ -448,13 +448,28 @@ Line breaks are preserved."></textarea>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
+                            <label class="field-label">Kern Aggressiveness</label>
+                            <input type="range" id="kernAggressiveness" value="0.5" min="0" max="1" step="0.1"
+                                   style="width: 100%;">
+                            <span style="font-size: 11px; color: #888;" id="kernAggressivenessValue">0.5</span>
+                        </div>
+                    </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
                             <label class="field-label">Jitter</label>
                             <input type="number" id="jitter" value="0" min="0" max="5" step="0.1">
                         </div>
                         <div class="field">
+                            <label class="field-label">Stroke Width</label>
+                            <input type="number" id="strokeWidth" value="2.0" min="0.5" max="10" step="0.5">
+                        </div>
+                    </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
                             <label class="field-label">Ink Color</label>
                             <input type="color" id="color" value="#000000">
                         </div>
+                        <div class="field"></div>
                     </div>
                 </div>
 
@@ -497,6 +512,11 @@ Line breaks are preserved."></textarea>
             await loadPaperSizes();
 
             document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+
+            // Update kern aggressiveness label on slider change
+            document.getElementById('kernAggressiveness').addEventListener('input', (e) => {
+                document.getElementById('kernAggressivenessValue').textContent = e.target.value;
+            });
 
             // Keyboard shortcut: Ctrl/Cmd + Enter to generate
             document.addEventListener('keydown', (e) => {
@@ -583,12 +603,14 @@ Line breaks are preserved."></textarea>
                 smooth: document.getElementById('smooth').checked,
                 jitter: parseFloat(document.getElementById('jitter').value) || 0,
                 auto_kern: document.getElementById('autoKern').checked,
+                kern_aggressiveness: parseFloat(document.getElementById('kernAggressiveness').value) || 0.5,
                 color: document.getElementById('color').value,
-                line_height: parseFloat(document.getElementById('lineHeight').value) || 200,
+                line_height: parseFloat(document.getElementById('lineHeight').value) || 100,
                 line_spacing: parseFloat(document.getElementById('lineSpacing').value) || 1.0,
                 paper_size: document.getElementById('paperSize').value || null,
                 orientation: document.getElementById('orientation').value,
-                margin: parseFloat(document.getElementById('margin').value) || 20
+                margin: parseFloat(document.getElementById('margin').value) || 20,
+                stroke_width: parseFloat(document.getElementById('strokeWidth').value) || 2.0
             };
 
             try {
