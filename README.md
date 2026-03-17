@@ -11,6 +11,8 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 - **`glyphs/`**: Storage for captured glyph data (JSON format). Personal glyph data is gitignored.
 - **`vhs-cli.*` / `vhs-gui.*`**: Platform-specific scripts to run the CLI and Web UI from the root.
 
+![VHS Glyph Collector — capturing handwriting variants](docs/glyph-collector.jpg)
+
 ## Quick Start
 
 ### 1. Capture Glyphs
