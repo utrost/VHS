@@ -13,6 +13,12 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 
 ![VHS Glyph Collector — capturing handwriting variants](docs/glyph-collector.jpg)
 
+### Example Output
+
+![Example: "Hello World" rendered by VHS](docs/example-hello-world.png)
+
+*Generated SVG output — single-stroke paths ready for pen plotting.*
+
 ## Quick Start
 
 ### 1. Capture Glyphs
