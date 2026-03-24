@@ -44,7 +44,7 @@ class GlyphLibrary:
     def load_library(self):
         json_pattern = os.path.join(self.glyphs_dir, "*.json")
         json_files = glob.glob(json_pattern)
-        
+
         if not json_files:
             logger.warning(f"No .json files found in {self.glyphs_dir}")
 
@@ -63,7 +63,7 @@ class GlyphLibrary:
                 logger.error(f"Invalid JSON in {file_path}")
             except Exception as e:
                 logger.error(f"Error loading {file_path}: {e}")
-        
+
         logger.info(f"Loaded {len(self.library)} glyphs from {self.glyphs_dir}")
 
     def _preprocess_variants(self, glyph_data: Dict[str, Any]):
@@ -79,14 +79,14 @@ class GlyphLibrary:
             min_x = float('inf')
             max_x = float('-inf')
             has_points = False
-            
-            # Identify min/max x
+
+            # Identify min/max x from raw strokes
             for stroke in variant.get('strokes', []):
                 for point in stroke:
                     has_points = True
                     min_x = min(min_x, point['x'])
                     max_x = max(max_x, point['x'])
-            
+
             if has_points:
                 variant['metrics'] = {
                     'min_x': min_x,
@@ -102,15 +102,36 @@ class GlyphLibrary:
                     'baseline_offset': 0.0
                 }
 
+            # Pre-calculate metrics from normalized_strokes if present
+            if 'normalized_strokes' in variant:
+                norm_min_x = float('inf')
+                norm_max_x = float('-inf')
+                norm_has_points = False
+                for stroke in variant['normalized_strokes']:
+                    for point in stroke:
+                        norm_has_points = True
+                        norm_min_x = min(norm_min_x, point['x'])
+                        norm_max_x = max(norm_max_x, point['x'])
+                if norm_has_points:
+                    variant['normalized_metrics'] = {
+                        'min_x': norm_min_x,
+                        'max_x': norm_max_x,
+                        'width': norm_max_x - norm_min_x,
+                        'baseline_offset': baseline_y
+                    }
+
     def get_glyph(self, char: str) -> Optional[Dict[str, Any]]:
         return self.library.get(char)
 
 class Typesetter:
-    def __init__(self, library: GlyphLibrary, kerning_config_path: Optional[str] = None):
+    def __init__(self, library: GlyphLibrary, kerning_config_path: Optional[str] = None,
+                 use_bezier: bool = True, use_normalized: bool = True):
         self.library = library
-        
+        self.use_bezier = use_bezier
+        self.use_normalized = use_normalized
+
         # Defaults
-        self.tracking_buffer = 5.0 
+        self.tracking_buffer = 5.0
         self.space_width = 30.0
         self.line_height = 100.0 # Default line height
         self.kerning_exceptions: Dict[str, Dict[str, float]] = {}
@@ -127,9 +148,10 @@ class Typesetter:
             except Exception as e:
                 logger.error(f"Failed to load kerning config: {e}")
 
-        self.last_variant_indices: Dict[str, int] = {} 
+        self.last_variant_indices: Dict[str, int] = {}
+        self._compiled_beziers: List[Optional[List[List[Dict[str, Any]]]]] = []
 
-    
+
     @staticmethod
     def _get_zone(y: float, x_height_y: float, baseline_y: float) -> str:
         """Classify a y-coordinate into a vertical zone.
@@ -144,6 +166,20 @@ class Typesetter:
         elif y > baseline_y:
             return 'lower'
         return 'ground'
+
+    @staticmethod
+    def _nearest_pressure(raw_points: List[Dict[str, float]], target_x: float, target_y: float) -> float:
+        """Find pressure of the nearest raw point to the given target coordinates."""
+        if not raw_points:
+            return 0.5
+        best_dist = float('inf')
+        best_p = 0.5
+        for pt in raw_points:
+            d = (pt['x'] - target_x) ** 2 + (pt['y'] - target_y) ** 2
+            if d < best_dist:
+                best_dist = d
+                best_p = pt.get('p', 0.5)
+        return best_p
 
     def calculate_optical_kerning(self, shapes_a: List[List[Dict[str, float]]],
                                   shapes_b: List[List[Dict[str, float]]],
@@ -288,6 +324,7 @@ class Typesetter:
         effective_line_advance = current_line_height * line_spacing
 
         compiled_shapes = []
+        self._compiled_beziers = []
 
         cursor_x = 0.0
         cursor_y = 0.0 # Baseline
@@ -371,6 +408,13 @@ class Typesetter:
                         for stroke in placed_strokes:
                             for p in stroke:
                                 p['x'] -= shift
+                        # Also shift bezier data if present
+                        bezier_entry = self._compiled_beziers[-1]
+                        if bezier_entry is not None:
+                            for bstroke in bezier_entry:
+                                for seg in bstroke:
+                                    for key in ('p0', 'p1', 'p2', 'p3'):
+                                        seg[key]['x'] -= shift
 
                     # Update for next loop
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
@@ -387,6 +431,13 @@ class Typesetter:
                                 for p in stroke:
                                     p['x'] -= shift_x
                                     p['y'] += shift_y
+                            # Also shift bezier data
+                            if si < len(self._compiled_beziers) and self._compiled_beziers[si] is not None:
+                                for bstroke in self._compiled_beziers[si]:
+                                    for seg in bstroke:
+                                        for key in ('p0', 'p1', 'p2', 'p3'):
+                                            seg[key]['x'] -= shift_x
+                                            seg[key]['y'] += shift_y
                         # Also shift the placed_strokes ref (it's the same objects)
                         cursor_x -= shift_x
                         cursor_y += shift_y
@@ -402,6 +453,7 @@ class Typesetter:
                 cursor_x += self.space_width # Placeholder advance
                 last_shape_placed = None
                 last_glyph_data = None
+                self._compiled_beziers.append(None)
                 i += 1
 
         return compiled_shapes
@@ -410,33 +462,40 @@ class Typesetter:
         # Stochastic Selection
         variants = glyph_data['variants']
         num_variants = len(variants)
-        
+
         if num_variants > 1:
             last_idx = self.last_variant_indices.get(char_key)
             available_indices = [i for i in range(num_variants) if i != last_idx]
-            
+
             if not available_indices:
                 available_indices = list(range(num_variants))
-            
+
             selected_idx = random.choice(available_indices)
             self.last_variant_indices[char_key] = selected_idx
             selected_variant = variants[selected_idx]
         else:
             selected_variant = variants[0]
-        
-        # Use Pre-calculated Metrics
-        metrics = selected_variant.get('metrics', {'min_x': 0.0, 'width': 0.0, 'baseline_offset': 0.0})
+
+        # Choose data source: normalized_strokes preferred when available and enabled
+        use_norm = self.use_normalized and 'normalized_strokes' in selected_variant
+        if use_norm and 'normalized_metrics' in selected_variant:
+            metrics = selected_variant['normalized_metrics']
+            strokes = selected_variant['normalized_strokes']
+        else:
+            metrics = selected_variant.get('metrics', {'min_x': 0.0, 'width': 0.0, 'baseline_offset': 0.0})
+            strokes = selected_variant['strokes']
+
         content_width = metrics['width']
         min_x_original = metrics['min_x']
         baseline_offset = metrics['baseline_offset']
-        
+
         # Kerning Exceptions (min_width)
         min_width = 0.0
         if char_key in self.kerning_exceptions:
             min_width = self.kerning_exceptions[char_key].get('min_width', 0.0)
-        
+
         final_width = max(content_width, min_width)
-        
+
         # Centering if content is smaller than min_width
         x_offset = cursor_x
         if content_width < min_width:
@@ -444,9 +503,8 @@ class Typesetter:
             x_offset += centering
 
         # Normalize and Place Points
-        strokes = selected_variant['strokes']
         placed_strokes = []
-        
+
         for stroke in strokes:
             new_stroke = []
             for point in stroke:
@@ -458,17 +516,51 @@ class Typesetter:
             placed_strokes.append(new_stroke)
 
         compiled_shapes.append(placed_strokes)
-        
+
+        # Handle Bezier curves: transform control points the same way
+        bezier_strokes = None
+        if self.use_bezier and 'bezier_curves' in selected_variant:
+            # For bezier coordinate transform, use raw stroke metrics (bezier is in raw coordinate space)
+            raw_metrics = selected_variant.get('metrics', {'min_x': 0.0, 'baseline_offset': 0.0})
+            raw_min_x = raw_metrics['min_x']
+            raw_baseline = raw_metrics['baseline_offset']
+            # If content was centered for min_width, apply same offset
+            bz_x_offset = x_offset if not use_norm else cursor_x
+            if use_norm and content_width < min_width:
+                bz_x_offset = cursor_x + (min_width - content_width) / 2.0
+
+            raw_strokes = selected_variant['strokes']
+            bezier_strokes = []
+            for s_idx, bezier_stroke in enumerate(selected_variant['bezier_curves']):
+                raw_pts = raw_strokes[s_idx] if s_idx < len(raw_strokes) else []
+                transformed_stroke = []
+                for seg in bezier_stroke:
+                    new_seg = {}
+                    for key in ('p0', 'p1', 'p2', 'p3'):
+                        pt = seg[key]
+                        new_seg[key] = {
+                            'x': (pt['x'] - raw_min_x) + bz_x_offset,
+                            'y': (pt['y'] - raw_baseline) + cursor_y
+                        }
+                    # Interpolate pressure from raw stroke points
+                    new_seg['pressure_start'] = self._nearest_pressure(raw_pts, seg['p0']['x'], seg['p0']['y'])
+                    new_seg['pressure_end'] = self._nearest_pressure(raw_pts, seg['p3']['x'], seg['p3']['y'])
+                    transformed_stroke.append(new_seg)
+                bezier_strokes.append(transformed_stroke)
+
+        self._compiled_beziers.append(bezier_strokes)
+
         return final_width, placed_strokes
 
 class Renderer:
     def __init__(self, jitter_amount: float = 0.0, smoothing: bool = False, color: str = "black",
-                 stroke_width: float = 2.0, seed: Optional[int] = None):
+                 stroke_width: float = 2.0, seed: Optional[int] = None, use_bezier: bool = True):
         self.jitter_amount = jitter_amount
         self.smoothing = smoothing
         self.color = color
         self.stroke_width = stroke_width
         self.seed = seed
+        self.use_bezier = use_bezier
 
     def _catmull_rom_spline(self, points: List[Dict[str, float]]) -> List[Tuple[float, float]]:
         """
@@ -508,15 +600,40 @@ class Renderer:
 
         return smoothed_path
 
+    def _bezier_to_svg_path(self, bezier_segments: List[Dict[str, Any]]) -> str:
+        """Convert a list of cubic Bezier segments to an SVG path d-string using C commands."""
+        if not bezier_segments:
+            return ""
+        seg0 = bezier_segments[0]
+        p0 = seg0['p0']
+        px, py = p0['x'], p0['y']
+        if self.jitter_amount > 0:
+            px += random.gauss(0, self.jitter_amount)
+            py += random.gauss(0, self.jitter_amount)
+        path = f"M {px:.2f} {py:.2f} "
+        for seg in bezier_segments:
+            coords = []
+            for key in ('p1', 'p2', 'p3'):
+                cx, cy = seg[key]['x'], seg[key]['y']
+                if self.jitter_amount > 0:
+                    cx += random.gauss(0, self.jitter_amount)
+                    cy += random.gauss(0, self.jitter_amount)
+                coords.append(f"{cx:.2f} {cy:.2f}")
+            path += f"C {coords[0]} {coords[1]} {coords[2]} "
+        return path.strip()
+
     def generate_svg(self, compiled_shapes: List[List[List[Dict[str, float]]]], output_file: str,
                      page_width_mm: Optional[float] = None, page_height_mm: Optional[float] = None,
-                     margin_mm: float = 20.0):
+                     margin_mm: float = 20.0, bezier_data: Optional[List] = None):
         """
         Generate an SVG file from compiled shapes.
-        
+
         When page_width_mm/page_height_mm are set, the SVG is sized to that
         fixed page and content is offset by margin_mm on all sides.
         Otherwise the SVG auto-fits to the content bounding box (original behaviour).
+
+        bezier_data: optional parallel list to compiled_shapes. Each entry is either
+                     None (no bezier data) or a list of bezier strokes for that shape.
         """
         fixed_page = page_width_mm is not None and page_height_mm is not None
 
@@ -536,13 +653,23 @@ class Renderer:
         # Calculate full bounding box
         all_x = []
         all_y = []
-        
+
         for shape in compiled_shapes:
             for stroke in shape:
                 for point in stroke:
                     all_x.append(point['x'])
                     all_y.append(point['y'])
-        
+
+        # Include bezier control points in bounding box
+        if bezier_data and self.use_bezier:
+            for shape_bezier in bezier_data:
+                if shape_bezier is not None:
+                    for bstroke in shape_bezier:
+                        for seg in bstroke:
+                            for key in ('p0', 'p1', 'p2', 'p3'):
+                                all_x.append(seg[key]['x'])
+                                all_y.append(seg[key]['y'])
+
         if fixed_page:
             # Fixed page mode — dimensions come from paper preset
             width = page_width_mm
@@ -583,12 +710,12 @@ class Renderer:
 
         # Build SVG using ElementTree
         ET.register_namespace("", "http://www.w3.org/2000/svg")
-        
+
         svg = ET.Element("svg", {
             "xmlns": "http://www.w3.org/2000/svg",
             "viewBox": f"{vb_x:.2f} {vb_y:.2f} {width:.2f} {height:.2f}",
             "width": f"{width}mm",
-            "height": f"{height}mm" 
+            "height": f"{height}mm"
         })
 
         g_attrs = {
@@ -610,11 +737,27 @@ class Renderer:
 
         g = ET.SubElement(svg, "g", g_attrs)
 
-        for shape in compiled_shapes:
-            for stroke in shape:
+        for shape_idx, shape in enumerate(compiled_shapes):
+            shape_bezier = None
+            if self.use_bezier and bezier_data and shape_idx < len(bezier_data):
+                shape_bezier = bezier_data[shape_idx]
+
+            for stroke_idx, stroke in enumerate(shape):
+                # Check if we have bezier data for this stroke
+                stroke_bezier = None
+                if shape_bezier is not None and stroke_idx < len(shape_bezier):
+                    stroke_bezier = shape_bezier[stroke_idx]
+
+                if stroke_bezier:
+                    # Bezier path — skip Catmull-Rom, already smooth
+                    points_str = self._bezier_to_svg_path(stroke_bezier)
+                    if points_str:
+                        ET.SubElement(g, "path", {"d": points_str})
+                    continue
+
                 if len(stroke) < 2:
                     continue
-                
+
                 if self.smoothing:
                     path_coords = self._catmull_rom_spline(stroke)
                 else:
@@ -622,14 +765,14 @@ class Renderer:
 
                 points_str = ""
                 for i, (px, py) in enumerate(path_coords):
-                    
+
                     if self.jitter_amount > 0:
                         px += random.gauss(0, self.jitter_amount)
                         py += random.gauss(0, self.jitter_amount)
-                    
+
                     cmd = "M" if i == 0 else "L"
                     points_str += f"{cmd} {px:.2f} {py:.2f} "
-                
+
                 ET.SubElement(g, "path", {"d": points_str.strip()})
 
         tree = ET.ElementTree(svg)
@@ -637,19 +780,21 @@ class Renderer:
             try:
                 ET.indent(tree, space="  ", level=0)
             except AttributeError:
-                pass 
-                
+                pass
+
             tree.write(output_file, encoding="utf-8", xml_declaration=True)
             logger.info(f"SVG saved to {output_file}")
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
 
-    def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None, margin_mm=20.0):
+    def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
+                            margin_mm=20.0, bezier_data=None):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
         self.generate_svg(compiled_shapes, buf, page_width_mm=page_width_mm,
-                          page_height_mm=page_height_mm, margin_mm=margin_mm)
+                          page_height_mm=page_height_mm, margin_mm=margin_mm,
+                          bezier_data=bezier_data)
         buf.seek(0)
         return buf.read().decode("utf-8")
 
@@ -663,6 +808,10 @@ if __name__ == "__main__":
     parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--no-smooth", action="store_true", help="Disable spline smoothing (smoothing is on by default)")
+    parser.add_argument("--no-bezier", action="store_true",
+                        help="Ignore bezier_curves from glyph JSON even if present")
+    parser.add_argument("--no-normalize", action="store_true",
+                        help="Ignore normalized_strokes from glyph JSON even if present")
     parser.add_argument("--line-height", type=float, help="Override line height for multiline text (default: 100.0)")
     parser.add_argument("--line-spacing", type=float, default=1.0,
                         help="Multiplier for line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
@@ -681,9 +830,9 @@ if __name__ == "__main__":
                         help="Page orientation when --paper-size is set (default: portrait)")
     parser.add_argument("--margin", type=float, default=20.0,
                         help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
-    
+
     args = parser.parse_args()
-    
+
     input_text = ""
     if args.file:
         try:
@@ -697,19 +846,19 @@ if __name__ == "__main__":
     else:
         logger.error("No input provided. Use 'text' argument or --file.")
         exit(1)
-    
+
     script_dir = os.path.dirname(os.path.abspath(__file__))
     base_glyphs_dir = os.path.join(script_dir, "../glyphs")
-    
+
     kerning_path = os.path.join(script_dir, "kerning.json")
     glyphs_path = base_glyphs_dir
-    
+
     if args.font:
         glyphs_path = os.path.join(base_glyphs_dir, args.font)
         font_kerning = os.path.join(glyphs_path, "kerning.json")
         if os.path.exists(font_kerning):
             kerning_path = font_kerning
-    
+
     if not os.path.exists(glyphs_path):
         logger.error(f"Glyphs directory not found: {glyphs_path}")
         exit(1)
@@ -723,12 +872,17 @@ if __name__ == "__main__":
         page_w, page_h = float(pw), float(ph)
         logger.info(f"Page: {args.paper_size} {args.orientation} ({page_w}×{page_h} mm), margin {args.margin} mm")
 
+    use_bezier = not args.no_bezier
+    use_normalized = not args.no_normalize
+
     lib = GlyphLibrary(glyphs_path)
-    typesetter = Typesetter(lib, kerning_config_path=kerning_path)
+    typesetter = Typesetter(lib, kerning_config_path=kerning_path,
+                            use_bezier=use_bezier, use_normalized=use_normalized)
     shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
                                      kern_aggressiveness=args.kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
-                        stroke_width=args.stroke_width, seed=args.seed)
-    renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h, margin_mm=args.margin)
+                        stroke_width=args.stroke_width, seed=args.seed, use_bezier=use_bezier)
+    renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h,
+                          margin_mm=args.margin, bezier_data=typesetter._compiled_beziers)
