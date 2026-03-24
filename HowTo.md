@@ -18,6 +18,13 @@ The quality of your output depends entirely on the quality of your input.
 *   **The Blue Line**: This is the **x-Height**.
     *   Ideally, the top of your `a`, `c`, `e`, `o` should touch this line.
 
+### Template Overlay
+The Collector UI can display a **semi-transparent handwriting font** behind each canvas slot as a guide. Select a template font from the dropdown — 17 Google Fonts are available in two groups:
+*   **Formal**: Clean, structured styles for precise letterforms.
+*   **Casual**: Loose, natural styles for relaxed handwriting.
+
+The overlay helps you maintain consistent sizing, baseline alignment, and proportions across all your glyph variants. Adjust the opacity or disable the overlay entirely from the settings panel.
+
 ### Smooth Preview
 The Collector UI applies **live Catmull-Rom smoothing** to the canvas so you can see how your strokes will look after the assembler processes them. Click the **Smooth** button in the header to toggle between the smoothed preview and the raw polygonal capture. Note: this is visual-only — the exported JSON always contains the raw capture data.
 
@@ -78,6 +85,37 @@ To make letters touch (for a cursive look):
 ```
 This forces the next character to start *before* the previous one ends, creating overlaps.
 
+## 4b. Bezier Curve Fitting
+
+When you save glyphs, the Collector automatically fits **cubic Bezier curves** to your raw strokes using the Schneider algorithm. This produces smoother, more compact path data:
+
+*   **Adaptive corner detection**: Sharp direction changes are preserved as segment boundaries.
+*   **Newton-Raphson refinement**: Control points are iteratively optimized for the best fit.
+*   The fitted curves are stored as `bezier_curves` in the glyph JSON alongside the raw `strokes`.
+
+The assembler uses Bezier curves by default when available. Use `--no-bezier` to fall back to Catmull-Rom smoothed polylines.
+
+## 4c. Stroke Normalization
+
+The Collector also computes **normalized strokes** that correct for common capture inconsistencies:
+
+*   **Slant correction**: Compensates for unintentional italic lean.
+*   **Pressure smoothing**: Evens out erratic pressure spikes from tablet input.
+*   **Height normalization**: Scales strokes to a consistent x-height.
+*   **Strength blending**: Controls how aggressively corrections are applied (0.0 = no correction, 1.0 = full).
+
+Normalized strokes are stored as `normalized_strokes` in the glyph JSON. The assembler uses them automatically when available. Use `--no-normalize` to fall back to raw strokes.
+
+### Assembler Priority Chain
+
+The assembler picks the best available data for each glyph:
+
+1.  `bezier_curves` → SVG cubic Bezier `C` commands (smoothest)
+2.  `normalized_strokes` → corrected points with Catmull-Rom smoothing
+3.  `strokes` → raw capture points with optional smoothing
+
+Use `--no-bezier` and/or `--no-normalize` to override this chain.
+
 ## 5. Generating Text
 
 Use the provided start scripts in the project root to run the assembler.
@@ -94,6 +132,8 @@ vhs-cli.bat "Your text here" output.svg --font MyHandwriting
 
 *   `--font MyHandwriting`: Tells it to look in `glyphs/MyHandwriting/`.
 *   Smoothing is enabled by default (Catmull-Rom splines turn raw input into fluid, curvy strokes). Use `--no-smooth` to disable it and get raw polygonal output.
+*   `--no-bezier`: Skip Bezier curve rendering — fall back to normalized or raw strokes.
+*   `--no-normalize`: Skip normalized strokes — use raw capture points (with Bezier or smoothing).
 
 ### 5.1 Using Multiline Files
 For longer texts, save them as a `.txt` file and run:

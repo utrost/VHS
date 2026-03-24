@@ -61,20 +61,39 @@ The web UI provides a modern visual interface with live SVG preview, file upload
 ## Features
 
 - **True Single-Stroke**: Output paths are 1-pixel wide vectors — ready for pen plotters.
+- **Bezier Curve Fitting**: Schneider algorithm with adaptive corner detection and Newton-Raphson refinement converts raw polyline captures into smooth cubic Bezier curves. Produces cleaner SVG output with fewer path points and natural curvature.
+- **Stroke Normalization**: Captured strokes are automatically corrected for slant, smoothed for pressure variation, and height-normalized for consistent glyph sizing. Blending strength is configurable.
+- **Template Overlay**: Semi-transparent handwriting font guides behind the capture canvas slots. Choose from 17 Google Fonts organized in two groups (Formal and Casual) to guide your capture consistency.
 - **Fixed Paper Sizes**: Support for A3, A4, A5, A6, Letter, and Legal with Portrait/Landscape orientation. Content is automatically scaled to fit within the page area.
 - **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
-- **Curve Smoothing**: Catmull-Rom splines turn raw input into fluid, natural curves.
+- **Curve Smoothing**: Catmull-Rom splines turn raw input into fluid, natural curves (fallback when Bezier data is unavailable).
 - **Zone-Aware Auto-Kerning**: Scanline-based algorithm calculates optimal letter spacing with vertical zone awareness (upper/ground/lower). Letters in non-overlapping zones kern tighter. Configurable aggressiveness (0.0–1.0).
 - **Ligature Support**: Greedy matching for multi-character sequences (e.g., "sch", "tt", "th").
 - **Typography Controls**: Advanced control over line height, line spacing (multiplier), and page margins. Word wrapping is supported via the `max_width` parameter.
-- **Pressure Data**: Preserves pressure information from the capture phase.
+- **Pressure Data**: Preserves pressure information from the capture phase. Bezier segments carry interpolated pressure from raw stroke points.
 - **Multi-Font**: Organize different handwriting styles in separate `glyphs/` subdirectories.
 - **Windows Safe**: Unicode hex filenames (e.g., `0041.json`) prevent case-insensitivity conflicts.
+
+## Assembler Pipeline
+
+The assembler uses a priority chain when rendering glyphs:
+
+1. **Bezier curves** (`bezier_curves` in JSON) — rendered as SVG cubic Bezier `C` commands for the smoothest output
+2. **Normalized strokes** (`normalized_strokes` in JSON) — slant-corrected, pressure-smoothed, height-normalized points
+3. **Raw points** (`strokes` in JSON) — original capture data, optionally smoothed with Catmull-Rom splines
+
+Use `--no-bezier` to skip Bezier curves and fall back to normalized/raw strokes. Use `--no-normalize` to skip normalized strokes and use raw points directly. Both flags can be combined.
+
+```bash
+./vhs-cli.sh "Hello" output.svg --font MyFont --no-bezier        # skip Bezier, use normalized or raw
+./vhs-cli.sh "Hello" output.svg --font MyFont --no-normalize      # skip normalization, use Bezier or raw
+./vhs-cli.sh "Hello" output.svg --font MyFont --no-bezier --no-normalize  # raw points only
+```
 
 ## Testing
 
 The system includes a comprehensive automated test suite:
-- **Unit Tests**: 11 tests covering the core engine logic (kerning, zone-aware kerning, ligatures, metrics).
+- **Unit Tests**: 24 tests covering the core engine logic (kerning, zone-aware kerning, ligatures, metrics, Bezier path generation, normalized strokes, fallback chains, backward compatibility).
 - **CLI Tests**: 30 tests verifying the command-line interface, including paper sizes, margins, kerning aggressiveness, deterministic jitter, and error handling.
 
 Run all tests:

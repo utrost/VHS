@@ -7,6 +7,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 - CONTRIBUTING.md
 - This CHANGELOG
+- **Template Overlay in Glyph Collector**: Semi-transparent handwriting font guides behind canvas slots. 17 Google Fonts in two option groups (Formal and Casual) help maintain consistent glyph proportions during capture.
+- **Bezier Curve Fitting**: Schneider algorithm with adaptive corner detection and Newton-Raphson refinement. Captured polylines are converted to cubic Bezier curves for smoother SVG output. Stored as `bezier_curves` in glyph JSON.
+- **Stroke Normalization**: Automatic slant correction, pressure smoothing, height normalization, and configurable strength blending. Stored as `normalized_strokes` in glyph JSON.
+- **Assembler Bezier SVG paths**: The assembler reads `bezier_curves` from glyph JSON and generates SVG `<path>` elements with cubic Bezier `C` commands instead of polylines.
+- **Assembler normalized stroke support**: The assembler reads `normalized_strokes` from glyph JSON and uses them for layout and rendering when available.
+- **Assembler priority chain**: `bezier_curves` > `normalized_strokes` > raw `strokes`. Each level falls back gracefully.
+- **`--no-bezier` flag**: CLI flag to skip Bezier curve rendering and fall back to normalized/raw strokes.
+- **`--no-normalize` flag**: CLI flag to skip normalized strokes and use raw capture points.
 - **Auto-scaling in fixed-page mode**: When a paper size is set, the renderer computes a uniform scale factor so that content fits within the available page area (page minus margins). Stroke width is inversely scaled for consistent visual weight.
 - **Word wrapping**: The typesetter accepts an optional `max_width` parameter for automatic word-level line wrapping.
 - **Zone-aware auto-kerning**: Optical kerning now classifies glyph strokes into vertical zones (upper/ground/lower) using `baseline_y` and `x_height` metadata. Letter pairs in different zones (e.g., "Te") kern tighter because their strokes don't collide. Configurable via `--kern-aggressiveness` (CLI, 0.0–1.0, default 0.5) and a slider in the Web UI.
