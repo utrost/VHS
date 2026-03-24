@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>VHS — Glyph Collector</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Caveat&family=Dancing+Script&family=Indie+Flower&family=Permanent+Marker&family=Shadows+Into+Light&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Disable touch actions to prevent scrolling while drawing */
@@ -81,6 +84,12 @@
                 Smooth ✓
             </button>
 
+            <button id="templateToggle" onclick="toggleTemplate()"
+                class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
+                title="Template Overlay ein/aus (T)">
+                Template ✗
+            </button>
+
             <button onclick="clearAll()"
                 class="h-12 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition">
                 Reset
@@ -131,6 +140,35 @@
             </div>
 
             <div class="pt-4 border-t mt-4">
+                <h4 class="text-sm font-bold text-slate-700 mb-3">Template Overlay</h4>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Template Font</label>
+                    <select id="cfgTemplateFont" class="w-40 p-1 border rounded text-xs"
+                        onchange="TEMPLATE_FONT=this.value; slots.forEach(redraw);">
+                        <option value="Caveat">Caveat</option>
+                        <option value="Dancing Script">Dancing Script</option>
+                        <option value="Indie Flower">Indie Flower</option>
+                        <option value="Permanent Marker">Permanent Marker</option>
+                        <option value="Architects Daughter">Architects Daughter</option>
+                        <option value="Shadows Into Light">Shadows Into Light</option>
+                    </select>
+                </div>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Opacity: <span id="opacityLabel">15</span>%</label>
+                    <input type="range" id="cfgTemplateOpacity" min="0" max="100" value="15" class="w-32"
+                        oninput="document.getElementById('opacityLabel').textContent=this.value; TEMPLATE_OPACITY=this.value/100; slots.forEach(redraw);">
+                </div>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Show Template</label>
+                    <input type="checkbox" id="cfgTemplateShow"
+                        onchange="TEMPLATE_VISIBLE=this.checked; updateTemplateButton(); slots.forEach(redraw);">
+                </div>
+            </div>
+
+            <div class="pt-4 border-t mt-4">
                 <button onclick="applySettings()"
                     class="w-full bg-red-100 hover:bg-red-200 text-red-700 font-bold py-2 rounded-lg transition text-sm">
                     Anwenden & Reset
@@ -168,6 +206,11 @@
         let X_HEIGHT = 60;      // Blue dashed line
         let DISPLAY_SCALE = 3;  // CSS display multiplier (canvas coords stay unchanged)
 
+        // --- Template Overlay ---
+        let TEMPLATE_VISIBLE = false;
+        let TEMPLATE_OPACITY = 0.15;
+        let TEMPLATE_FONT = 'Caveat';
+
         // --- State ---
         let slots = [];
         let lastActiveSlot = null; // Track which slot was last drawn on
@@ -189,10 +232,21 @@
                     e.preventDefault();
                     redo();
                 }
+                // Toggle template overlay with 'T' (only when not typing in an input)
+                if (e.key === 't' || e.key === 'T') {
+                    const tag = document.activeElement.tagName;
+                    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+                        toggleTemplate();
+                    }
+                }
             });
 
-            // Auto-save when character input changes
-            document.getElementById('charInput').addEventListener('input', autoSave);
+            // Auto-save when character input changes; also redraw template overlays
+            const charEl = document.getElementById('charInput');
+            charEl.addEventListener('input', () => {
+                autoSave();
+                slots.forEach(redraw);
+            });
         }
 
         function toggleSettings() {
@@ -324,6 +378,24 @@
             const { ctx, canvas } = slot;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // Template overlay (drawn first, behind everything)
+            if (TEMPLATE_VISIBLE) {
+                const ch = document.getElementById('charInput').value;
+                if (ch) {
+                    const regionHeight = BASELINE_Y - X_HEIGHT;
+                    const fontSize = regionHeight * 1.35; // Scale up to fill the region visually
+                    ctx.save();
+                    ctx.globalAlpha = TEMPLATE_OPACITY;
+                    ctx.font = `${fontSize}px '${TEMPLATE_FONT}'`;
+                    ctx.fillStyle = '#9ca3af'; // light gray
+                    ctx.textBaseline = 'alphabetic';
+                    const metrics = ctx.measureText(ch);
+                    const textX = (canvas.width - metrics.width) / 2;
+                    ctx.fillText(ch, textX, BASELINE_Y);
+                    ctx.restore();
+                }
+            }
+
             // Baseline (Red)
             ctx.beginPath();
             ctx.strokeStyle = '#fca5a5';
@@ -447,6 +519,25 @@
             }
             // Redraw all slots with new setting
             slots.forEach(redraw);
+        }
+
+        function toggleTemplate() {
+            TEMPLATE_VISIBLE = !TEMPLATE_VISIBLE;
+            // Sync settings panel checkbox
+            document.getElementById('cfgTemplateShow').checked = TEMPLATE_VISIBLE;
+            updateTemplateButton();
+            slots.forEach(redraw);
+        }
+
+        function updateTemplateButton() {
+            const btn = document.getElementById('templateToggle');
+            if (TEMPLATE_VISIBLE) {
+                btn.textContent = 'Template ✓';
+                btn.className = 'h-12 px-3 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium rounded-lg transition';
+            } else {
+                btn.textContent = 'Template ✗';
+                btn.className = 'h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition';
+            }
         }
 
         function clearAll() {
