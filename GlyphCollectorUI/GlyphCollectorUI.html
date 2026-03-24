@@ -382,8 +382,21 @@
             if (TEMPLATE_VISIBLE) {
                 const ch = document.getElementById('charInput').value;
                 if (ch) {
-                    const regionHeight = BASELINE_Y - X_HEIGHT;
-                    const fontSize = regionHeight * 1.35; // Scale up to fill the region visually
+                    // Determine vertical region based on character type
+                    const ASCENDER_Y = 10; // top margin for caps/ascenders
+                    const DESCENDER_Y = CANVAS_HEIGHT - 10; // bottom for descenders
+                    const isUpper = /[A-ZÄÖÜ0-9]/.test(ch);
+                    const hasAscender = /[bdfhkltðþ]/.test(ch);
+                    const hasDescender = /[gjpqyçQ]/.test(ch);
+
+                    // Top of the character region
+                    const topY = (isUpper || hasAscender) ? ASCENDER_Y : X_HEIGHT;
+                    // Bottom of the character region
+                    const bottomY = hasDescender ? DESCENDER_Y : BASELINE_Y;
+
+                    const regionHeight = bottomY - topY;
+                    const fontSize = regionHeight * 1.2;
+
                     ctx.save();
                     ctx.globalAlpha = TEMPLATE_OPACITY;
                     ctx.font = `${fontSize}px '${TEMPLATE_FONT}'`;
@@ -391,7 +404,9 @@
                     ctx.textBaseline = 'alphabetic';
                     const metrics = ctx.measureText(ch);
                     const textX = (canvas.width - metrics.width) / 2;
-                    ctx.fillText(ch, textX, BASELINE_Y);
+                    // Place baseline proportionally within the region
+                    const baselinePos = hasDescender ? (bottomY - regionHeight * 0.2) : bottomY;
+                    ctx.fillText(ch, textX, baselinePos);
                     ctx.restore();
                 }
             }
