@@ -7,7 +7,7 @@
     <title>VHS — Glyph Collector</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Architects+Daughter&family=Caveat&family=Dancing+Script&family=Indie+Flower&family=Permanent+Marker&family=Shadows+Into+Light&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Allura&family=Amatic+SC&family=Architects+Daughter&family=Caveat&family=Dancing+Script&family=Gochi+Hand&family=Great+Vibes&family=Handlee&family=Indie+Flower&family=Kalam&family=Pacifico&family=Patrick+Hand&family=Permanent+Marker&family=Pinyon+Script&family=Sacramento&family=Shadows+Into+Light&family=Tangerine&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         /* Disable touch actions to prevent scrolling while drawing */
@@ -146,12 +146,27 @@
                     <label class="text-sm font-bold text-slate-600">Template Font</label>
                     <select id="cfgTemplateFont" class="w-40 p-1 border rounded text-xs"
                         onchange="TEMPLATE_FONT=this.value; slots.forEach(redraw);">
-                        <option value="Caveat">Caveat</option>
-                        <option value="Dancing Script">Dancing Script</option>
-                        <option value="Indie Flower">Indie Flower</option>
-                        <option value="Permanent Marker">Permanent Marker</option>
-                        <option value="Architects Daughter">Architects Daughter</option>
-                        <option value="Shadows Into Light">Shadows Into Light</option>
+                        <optgroup label="Casual Handwriting">
+                            <option value="Caveat">Caveat</option>
+                            <option value="Indie Flower">Indie Flower</option>
+                            <option value="Permanent Marker">Permanent Marker</option>
+                            <option value="Architects Daughter">Architects Daughter</option>
+                            <option value="Shadows Into Light">Shadows Into Light</option>
+                            <option value="Handlee">Handlee</option>
+                            <option value="Patrick Hand">Patrick Hand</option>
+                            <option value="Gochi Hand">Gochi Hand</option>
+                            <option value="Kalam">Kalam</option>
+                            <option value="Amatic SC">Amatic SC</option>
+                        </optgroup>
+                        <optgroup label="Script &amp; Calligraphy">
+                            <option value="Great Vibes">Great Vibes</option>
+                            <option value="Sacramento">Sacramento</option>
+                            <option value="Allura">Allura</option>
+                            <option value="Pinyon Script">Pinyon Script</option>
+                            <option value="Tangerine">Tangerine</option>
+                            <option value="Pacifico">Pacifico</option>
+                            <option value="Dancing Script">Dancing Script</option>
+                        </optgroup>
                     </select>
                 </div>
 
