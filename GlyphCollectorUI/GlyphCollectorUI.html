@@ -90,6 +90,12 @@
                 Bezier ✗
             </button>
 
+            <button id="normalizeToggle" onclick="toggleNormalize()"
+                class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
+                title="Stroke Normalization ein/aus (N)">
+                Normalize ✗
+            </button>
+
             <button id="templateToggle" onclick="toggleTemplate()"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
                 title="Template Overlay ein/aus (T)">
@@ -200,6 +206,28 @@
             </div>
 
             <div class="pt-4 border-t mt-4">
+                <h4 class="text-sm font-bold text-slate-700 mb-3">Stroke Normalization</h4>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Target Slant: <span id="slantLabel">0</span>°</label>
+                    <input type="range" id="cfgTargetSlant" min="-15" max="15" step="1" value="0" class="w-32"
+                        oninput="document.getElementById('slantLabel').textContent=this.value; NORMALIZE_TARGET_SLANT=parseInt(this.value); slots.forEach(redraw);">
+                </div>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Strength: <span id="strengthLabel">50</span>%</label>
+                    <input type="range" id="cfgNormStrength" min="0" max="100" step="1" value="50" class="w-32"
+                        oninput="document.getElementById('strengthLabel').textContent=this.value; NORMALIZE_STRENGTH=this.value/100; slots.forEach(redraw);">
+                </div>
+
+                <div class="flex justify-between items-center mb-3">
+                    <label class="text-sm font-bold text-slate-600">Normalize Pressure</label>
+                    <input type="checkbox" id="cfgNormPressure" checked
+                        onchange="NORMALIZE_PRESSURE=this.checked; slots.forEach(redraw);">
+                </div>
+            </div>
+
+            <div class="pt-4 border-t mt-4">
                 <button onclick="applySettings()"
                     class="w-full bg-red-100 hover:bg-red-200 text-red-700 font-bold py-2 rounded-lg transition text-sm">
                     Anwenden & Reset
@@ -246,6 +274,12 @@
         let BEZIER_ENABLED = false;
         let BEZIER_TOLERANCE = 2.0;
 
+        // --- Stroke Normalization ---
+        let NORMALIZE_ENABLED = false;
+        let NORMALIZE_TARGET_SLANT = 0;       // degrees (-15 to +15)
+        let NORMALIZE_STRENGTH = 0.5;         // 0-1 (blend between raw and normalized)
+        let NORMALIZE_PRESSURE = true;        // normalize pressure values
+
         // --- State ---
         let slots = [];
         let lastActiveSlot = null; // Track which slot was last drawn on
@@ -279,6 +313,13 @@
                     const tag = document.activeElement.tagName;
                     if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
                         toggleBezier();
+                    }
+                }
+                // Toggle Normalize mode with 'N'
+                if (e.key === 'n' || e.key === 'N') {
+                    const tag = document.activeElement.tagName;
+                    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && tag !== 'SELECT') {
+                        toggleNormalize();
                     }
                 }
             });
@@ -721,13 +762,147 @@
             ctx.stroke();
         }
 
+        // --- Stroke Normalization ---
+
+        function detectSlantAngle(strokes) {
+            // Detect average slant by analyzing primarily vertical stroke segments
+            let sumAngle = 0;
+            let count = 0;
+            for (const stroke of strokes) {
+                for (let i = 1; i < stroke.length; i++) {
+                    const dx = stroke[i].x - stroke[i - 1].x;
+                    const dy = stroke[i].y - stroke[i - 1].y;
+                    const len = Math.hypot(dx, dy);
+                    if (len < 1) continue;
+                    // Only consider segments that are primarily vertical (|dy| > |dx|)
+                    if (Math.abs(dy) > Math.abs(dx)) {
+                        // Angle from vertical: atan2(dx, dy) gives deviation from straight down
+                        const angle = Math.atan2(dx, dy);
+                        sumAngle += angle;
+                        count++;
+                    }
+                }
+            }
+            return count > 0 ? sumAngle / count : 0; // radians
+        }
+
+        function computeStrokesBBox(strokes) {
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const stroke of strokes) {
+                for (const pt of stroke) {
+                    if (pt.x < minX) minX = pt.x;
+                    if (pt.y < minY) minY = pt.y;
+                    if (pt.x > maxX) maxX = pt.x;
+                    if (pt.y > maxY) maxY = pt.y;
+                }
+            }
+            return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+        }
+
+        function normalizeStrokes(strokes) {
+            if (strokes.length === 0) return strokes;
+            // Flatten to check if there are any points at all
+            const totalPts = strokes.reduce((s, st) => s + st.length, 0);
+            if (totalPts === 0) return strokes;
+
+            const strength = NORMALIZE_STRENGTH;
+            if (strength === 0) return strokes;
+
+            // Determine target region from character type
+            const ch = document.getElementById('charInput').value;
+            const isUpper = /[A-ZÄÖÜ0-9]/.test(ch);
+            const ASCENDER_Y = 10;
+            const targetTop = isUpper ? ASCENDER_Y : X_HEIGHT;
+            const targetBottom = BASELINE_Y;
+            const targetHeight = targetBottom - targetTop;
+
+            // 1. Detect slant
+            const detectedSlant = detectSlantAngle(strokes);
+            const targetSlantRad = NORMALIZE_TARGET_SLANT * Math.PI / 180;
+            const slantCorrection = detectedSlant - targetSlantRad;
+
+            // 2. Apply shear transform to correct slant
+            let normalized = strokes.map(stroke => stroke.map(pt => {
+                const xNew = pt.x - pt.y * Math.tan(slantCorrection);
+                return { x: xNew, y: pt.y, p: pt.p, t: pt.t };
+            }));
+
+            // 3. Scale to fit target region while maintaining aspect ratio
+            const bbox = computeStrokesBBox(normalized);
+            if (bbox.width > 0 && bbox.height > 0) {
+                const scale = targetHeight / bbox.height;
+                // Scale uniformly to maintain aspect ratio
+                const scaledWidth = bbox.width * scale;
+                // Center horizontally within the canvas
+                const targetCenterX = CANVAS_WIDTH / 2;
+                const currentCenterX = bbox.minX + bbox.width / 2;
+                const currentCenterY = bbox.minY + bbox.height / 2;
+                const targetCenterY = targetTop + targetHeight / 2;
+
+                normalized = normalized.map(stroke => stroke.map(pt => ({
+                    x: (pt.x - currentCenterX) * scale + targetCenterX,
+                    y: (pt.y - currentCenterY) * scale + targetCenterY,
+                    p: pt.p,
+                    t: pt.t
+                })));
+            }
+
+            // 4. Normalize pressure if enabled
+            if (NORMALIZE_PRESSURE) {
+                const allPressures = [];
+                for (const stroke of normalized) {
+                    for (const pt of stroke) allPressures.push(pt.p);
+                }
+                if (allPressures.length > 0) {
+                    const meanP = allPressures.reduce((a, b) => a + b, 0) / allPressures.length;
+                    const stdP = Math.sqrt(allPressures.reduce((a, p) => a + (p - meanP) ** 2, 0) / allPressures.length) || 1;
+                    // Compress extreme deviations toward the mean (reduce std by half)
+                    normalized = normalized.map(stroke => stroke.map(pt => ({
+                        ...pt,
+                        p: Math.max(0.05, Math.min(1, meanP + (pt.p - meanP) * 0.5))
+                    })));
+                }
+            }
+
+            // 5. Blend with raw strokes based on strength
+            if (strength < 1) {
+                normalized = strokes.map((stroke, si) => stroke.map((pt, pi) => {
+                    const npt = normalized[si][pi];
+                    return {
+                        x: pt.x * (1 - strength) + npt.x * strength,
+                        y: pt.y * (1 - strength) + npt.y * strength,
+                        p: pt.p * (1 - strength) + npt.p * strength,
+                        t: pt.t
+                    };
+                }));
+            }
+
+            return normalized;
+        }
+
+        function toggleNormalize() {
+            NORMALIZE_ENABLED = !NORMALIZE_ENABLED;
+            const btn = document.getElementById('normalizeToggle');
+            if (NORMALIZE_ENABLED) {
+                btn.textContent = 'Normalize ✓';
+                btn.className = 'h-12 px-3 bg-cyan-100 hover:bg-cyan-200 text-cyan-700 font-medium rounded-lg transition';
+            } else {
+                btn.textContent = 'Normalize ✗';
+                btn.className = 'h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition';
+            }
+            slots.forEach(redraw);
+        }
+
         function redraw(slot) {
             drawGuides(slot);
             const { ctx, strokes } = slot;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
 
-            strokes.forEach(stroke => {
+            // Apply normalization if enabled (display-only, raw data untouched)
+            const displayStrokes = NORMALIZE_ENABLED ? normalizeStrokes(strokes) : strokes;
+
+            displayStrokes.forEach(stroke => {
                 if (stroke.length === 0) return;
                 // Render single-point strokes as dots (for commas, periods, etc.)
                 if (stroke.length === 1) {
@@ -738,6 +913,7 @@
                     ctx.fill();
                     return;
                 }
+                // Normalization applies AFTER Bezier fitting if both are active
                 if (BEZIER_ENABLED) {
                     drawBezierStroke(ctx, stroke);
                 } else {
@@ -932,6 +1108,12 @@
                             p2: { x: c.p2.x, y: c.p2.y },
                             p3: { x: c.p3.x, y: c.p3.y }
                         })) : []
+                    );
+                }
+                if (NORMALIZE_ENABLED) {
+                    const normStrokes = normalizeStrokes(s.strokes);
+                    variant.normalized_strokes = normStrokes.map(stroke =>
+                        stroke.map(pt => ({ x: pt.x, y: pt.y, p: pt.p, t: pt.t }))
                     );
                 }
                 return variant;
