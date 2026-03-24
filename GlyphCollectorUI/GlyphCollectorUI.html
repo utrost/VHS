@@ -216,7 +216,7 @@
 
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-bold text-slate-600">Strength: <span id="strengthLabel">50</span>%</label>
-                    <input type="range" id="cfgNormStrength" min="0" max="100" step="1" value="50" class="w-32"
+                    <input type="range" id="cfgNormStrength" min="0" max="100" step="1" value="25" class="w-32"
                         oninput="document.getElementById('strengthLabel').textContent=this.value; NORMALIZE_STRENGTH=this.value/100; slots.forEach(redraw);">
                 </div>
 
@@ -277,7 +277,7 @@
         // --- Stroke Normalization ---
         let NORMALIZE_ENABLED = false;
         let NORMALIZE_TARGET_SLANT = 0;       // degrees (-15 to +15)
-        let NORMALIZE_STRENGTH = 0.5;         // 0-1 (blend between raw and normalized)
+        let NORMALIZE_STRENGTH = 0.25;        // 0-1 (blend between raw and normalized) — subtle by default
         let NORMALIZE_PRESSURE = true;        // normalize pressure values
 
         // --- State ---
@@ -466,8 +466,8 @@
                 const ch = document.getElementById('charInput').value;
                 if (ch) {
                     // Determine vertical region based on character type
-                    const ASCENDER_Y = 10; // top margin for caps/ascenders
-                    const DESCENDER_Y = CANVAS_HEIGHT - 10; // bottom for descenders
+                    const ASCENDER_Y = 5; // top margin for caps/ascenders
+                    const DESCENDER_Y = CANVAS_HEIGHT - 5; // bottom for descenders
                     const isUpper = /[A-ZÄÖÜ0-9]/.test(ch);
                     const hasAscender = /[bdfhkltðþ]/.test(ch);
                     const hasDescender = /[gjpqyçQ]/.test(ch);
@@ -478,7 +478,8 @@
                     const bottomY = hasDescender ? DESCENDER_Y : BASELINE_Y;
 
                     const regionHeight = bottomY - topY;
-                    const fontSize = regionHeight * 1.2;
+                    // Larger multiplier: 1.5 for lowercase (fill the x-height), 1.35 for uppercase
+                    const fontSize = regionHeight * ((isUpper || hasAscender) ? 1.35 : 1.5);
 
                     ctx.save();
                     ctx.globalAlpha = TEMPLATE_OPACITY;

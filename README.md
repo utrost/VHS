@@ -22,9 +22,19 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 ## Quick Start
 
 ### 1. Capture Glyphs
-1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser.
-2. Draw multiple variants of characters.
-3. Save them as JSON files (automatically saved to your downloads, move them to `glyphs/YourFont/`).
+1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser (or use the [live version](https://simiono.com/vhs/)).
+2. Enter a character in the input field.
+3. Draw 10 variants across the canvas slots. Use a stylus/tablet for pressure sensitivity.
+4. Press **Enter** or click **Save JSON** to export.
+5. Move the JSON files to `glyphs/YourFont/`.
+
+**Capture aids** (toggle in header bar or via keyboard):
+- **Template** (`T`) — Semi-transparent handwriting font overlay as a visual guide. Pick from 17 Google Fonts in ⚙️ Settings. Adjust opacity (default 15%).
+- **Bezier** (`B`) — Fits cubic Bezier curves to your strokes in real-time. Produces smoother SVG output. Adjust tolerance in Settings (0.5–5.0).
+- **Normalize** (`N`) — Corrects slant, normalizes height, and smooths pressure. Keeps your handwriting character but cleans up wobbles. Start with low strength (25%) and increase as needed.
+- **Smooth** — Catmull-Rom spline preview (on by default).
+
+All processing is display-only — raw stroke data is always preserved. When Bezier or Normalize are active during Save, the enhanced data is included in the JSON and used by the Assembler automatically.
 
 ### 2. Generate Handwriting (CLI)
 
