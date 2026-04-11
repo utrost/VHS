@@ -1,7 +1,0 @@
-{
-  "char": "i",
-  "metadata": { "font_family": "TestFont", "baseline_y": 250, "x_height": 150, "canvas_size": [250, 350] },
-  "variants": [
-    { "id": 0, "strokes": [[{"x": 10, "y": 150, "p": 0.5}, {"x": 10, "y": 250, "p": 0.5}], [{"x": 10, "y": 135, "p": 0.5}, {"x": 10, "y": 130, "p": 0.5}]] }
-  ]
-}

@@ -2,7 +2,7 @@
 glyphs/*/
 
 # Keep test font for CI
-!glyphs/TestFont/
+!glyphs/font1/
 
 # Python
 __pycache__/
