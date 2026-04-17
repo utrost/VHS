@@ -72,14 +72,30 @@ def api_generate():
     auto_kern = data.get("auto_kern", False)
     kern_aggressiveness = float(data.get("kern_aggressiveness", 0.5))
     color = data.get("color", "black")
-    line_height = data.get("line_height")
     line_spacing = float(data.get("line_spacing", 1.0))
     paper_size = data.get("paper_size")
     orientation = data.get("orientation", "portrait")
     margin = float(data.get("margin", 20.0))
-    stroke_width = float(data.get("stroke_width", 2.0))
+    stroke_width = float(data.get("stroke_width", 0.4))
     seed_val = data.get("seed")
     seed = int(seed_val) if seed_val is not None else None
+
+    # mm layout controls (used when a paper size is selected)
+    def _opt_float(key):
+        v = data.get(key)
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    line_height_mm = _opt_float("line_height_mm")
+    lines_per_page = data.get("lines_per_page")
+    lines_per_page = int(lines_per_page) if lines_per_page not in (None, "") else None
+    start_x_in = _opt_float("start_x")
+    start_y_in = _opt_float("start_y")
+    max_width_mm_in = _opt_float("max_width_mm")
 
     # Resolve glyphs path
     if font_name:
@@ -107,16 +123,43 @@ def api_generate():
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path)
 
-    override_lh = float(line_height) if line_height is not None else None
-    shapes = typesetter.typeset_text(text, override_line_height=override_lh,
+    explicit_scale = None
+    start_x_mm = None
+    start_y_mm = None
+    max_width = None
+
+    if page_w is not None:
+        if lines_per_page is not None and lines_per_page > 0:
+            avail_h = page_h - 2 * margin
+            line_height_mm = avail_h / (lines_per_page * line_spacing)
+
+        if not line_height_mm or line_height_mm <= 0:
+            return jsonify({"error": "line_height_mm or lines_per_page is required "
+                                     "when a paper size is selected"}), 400
+
+        mm_per_glyph = line_height_mm / typesetter.line_height
+        explicit_scale = mm_per_glyph
+
+        start_x_mm = start_x_in if start_x_in is not None else margin
+        start_y_mm = start_y_in if start_y_in is not None else margin
+
+        max_width_mm = (max_width_mm_in
+                        if max_width_mm_in is not None
+                        else page_w - margin - start_x_mm)
+        max_width = (max_width_mm / mm_per_glyph) if max_width_mm and max_width_mm > 0 else None
+
+    shapes = typesetter.typeset_text(text,
                                      auto_kern=auto_kern, line_spacing=line_spacing,
+                                     max_width=max_width,
                                      kern_aggressiveness=kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
                         stroke_width=stroke_width, seed=seed)
 
     svg_str = renderer.generate_svg_string(shapes, page_width_mm=page_w,
-                                           page_height_mm=page_h, margin_mm=margin)
+                                           page_height_mm=page_h, margin_mm=margin,
+                                           explicit_scale=explicit_scale,
+                                           start_x_mm=start_x_mm, start_y_mm=start_y_mm)
 
     return Response(svg_str, mimetype="image/svg+xml")
 

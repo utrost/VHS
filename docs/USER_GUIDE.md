@@ -187,7 +187,26 @@ each font's `kerning.json`) is what `--line-height-mm` is scaled against.
 
 ---
 
-## 7. Custom fonts
+## 7. Web GUI
+
+An optional browser UI wraps the same Assembler:
+
+```bash
+pip install flask
+./vhs-gui.sh        # or: python3 assembler/server.py
+# open http://localhost:5001
+```
+
+All mm-based controls from the CLI are exposed in the sidebar: paper size,
+orientation, margin, start-x / start-y, max width (mm), line height (mm) or
+lines/page, line spacing, stroke width (mm), colour, jitter, auto-kern, and
+the kerning aggressiveness slider. Selecting a paper size requires either
+"Line Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls
+back to bounding-box output for quick previews.
+
+---
+
+## 8. Custom fonts
 
 Drop glyph JSON files into `glyphs/<yourfont>/` and select with
 `--font yourfont`. Optionally include a `glyphs/<yourfont>/kerning.json` with

@@ -807,13 +807,16 @@ class Renderer:
             logger.error(f"Failed to write SVG: {e}")
 
     def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
-                            margin_mm=20.0, bezier_data=None):
+                            margin_mm=20.0, bezier_data=None,
+                            explicit_scale=None, start_x_mm=None, start_y_mm=None):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
         self.generate_svg(compiled_shapes, buf, page_width_mm=page_width_mm,
                           page_height_mm=page_height_mm, margin_mm=margin_mm,
-                          bezier_data=bezier_data)
+                          bezier_data=bezier_data,
+                          explicit_scale=explicit_scale,
+                          start_x_mm=start_x_mm, start_y_mm=start_y_mm)
         buf.seek(0)
         return buf.read().decode("utf-8")
 
