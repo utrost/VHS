@@ -17,19 +17,24 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 
 - `--file [PATH]`, `-f [PATH]`: Read input text from a file instead of the command line.
 - `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `myFont`). Defaults to root `glyphs/`.
-- `--jitter [FLOAT]`: Apply Gaussian noise to the points to simulate organic shake/imperfection. Default is `0.0`. Suggested values: `0.5` - `1.5` depending on desired messiness. Jitter is deterministic (same input produces same output). Use `--seed` to override.
-- `--seed [INT]`: Random seed for deterministic jitter. If omitted, a stable seed is derived from the content itself.
-- `--no-smooth`: Disable Catmull-Rom spline smoothing (smoothing is enabled by default). Smoothing uses adaptive interpolation — short segments get fewer steps, long curves get more.
-- `--line-height [FLOAT]`: Override the vertical space between lines (default: 100.0).
-- `--line-spacing [FLOAT]`: Multiplier for line height (e.g. `1.5` = 150% spacing). Default: `1.0`.
-- `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`.
-- `--orientation [portrait|landscape]`: Page orientation when `--paper-size` is set. Default: `portrait`.
-- `--margin [FLOAT]`: Page margin in mm on all sides (default: 20.0). Used with `--paper-size`.
-- `--auto-kern`: Enable automatic optical kerning to reduce whitespace.
-- `--kern-aggressiveness [FLOAT]`: How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). `0.0` = no extra tightening, `1.0` = fully ignore non-shared zones. Default: `0.5`. Only effective with `--auto-kern`.
-- `--stroke-width [FLOAT]`: Stroke width in SVG units (default: 2.0). Automatically scaled in fixed-page mode to maintain consistent visual weight.
+- `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`. When set, `--line-height-mm` or `--lines-per-page` is required.
+- `--orientation [portrait|landscape]`: Page orientation. Default: `portrait`.
+- `--margin [FLOAT]`: Page margin in mm on all sides (default: `20.0`). Doubles as the default for `--start-x` / `--start-y`.
+- `--line-height-mm [FLOAT]`: Baseline-to-baseline line height in millimetres. Required with `--paper-size` unless `--lines-per-page` is used.
+- `--lines-per-page [INT]`: Derive `--line-height-mm` so this many lines (times `--line-spacing`) fit in the writable page area.
+- `--line-spacing [FLOAT]`: Multiplier on the line height (e.g. `1.3` = 30 % extra leading). Default: `1.0`.
+- `--start-x [FLOAT]`, `--start-y [FLOAT]`: Top-left of the text block in mm (default: `--margin`).
+- `--max-width-mm [FLOAT]`: Word-wrap width in mm (default: `page_w − margin − start-x`).
+- `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
+- `--color`: SVG colour name or `#rrggbb` (default: `black`).
+- `--jitter [FLOAT]`: Gaussian noise on stroke points to simulate hand tremor. Default `0.0`. Try `0.5`–`1.5`.
+- `--seed [INT]`: Random seed for deterministic jitter. If omitted, derived from the content.
+- `--no-smooth`: Disable Catmull-Rom smoothing.
+- `--auto-kern`: Enable zone-aware optical kerning.
+- `--kern-aggressiveness [FLOAT]`: `0.0` – `1.0`. Higher = tighter on non-shared zones. Default: `0.5`.
+- `--no-bezier`, `--no-normalize`: Ignore Bezier paths / normalized strokes stored in glyph JSON.
 
-> **Note:** When `--paper-size` is set, the renderer automatically scales the content to fit within the available page area (page minus margins). Glyph coordinates (captured in device units) are mapped to millimetres via this uniform scale. Changing `--line-height` or `--line-spacing` adjusts the relative proportions between lines; the final on-page size is determined by the auto-scale.
+> **How page sizing works:** the renderer scales glyphs so that one glyph-unit line equals `--line-height-mm`. The scale applies uniformly to every stroke (widths, heights, tracking). Text is placed at `(start-x, start-y)` and wraps at `--max-width-mm`; it is **not** auto-shrunk to fit the page. See [`docs/USER_GUIDE.md`](../docs/USER_GUIDE.md) for the full walkthrough.
 
 ## Directory Structure
 
@@ -51,7 +56,7 @@ Each font directory can have its own `kerning.json`.
 3. **Rendering**:
    - Generates an SVG with a single path element per stroke.
    - Applies jitter if requested.
-   - **Auto-scaling**: When a fixed paper size is set, the renderer computes the content bounding box and applies a uniform scale transform so that all content fits within the available page area (page dimensions minus margins). Stroke width is inversely scaled to remain visually consistent.
+   - **mm-based scaling**: The renderer chooses a scale factor equal to `--line-height-mm / native_glyph_line_height` and applies it uniformly to every stroke. Content is translated to `(start-x, start-y)` in millimetres. Stroke width is inversely scaled so the on-paper thickness equals `--stroke-width` mm.
 
 ## Ligatures
 The assembler supports automatic ligature substitution via **Greedy Matching**.

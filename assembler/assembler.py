@@ -831,9 +831,8 @@ if __name__ == "__main__":
                         help="Ignore bezier_curves from glyph JSON even if present")
     parser.add_argument("--no-normalize", action="store_true",
                         help="Ignore normalized_strokes from glyph JSON even if present")
-    parser.add_argument("--line-height", type=float, help="Override line height for multiline text (default: 100.0)")
     parser.add_argument("--line-spacing", type=float, default=1.0,
-                        help="Multiplier for line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
+                        help="Multiplier applied to line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
     parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
     parser.add_argument("--kern-aggressiveness", type=float, default=0.5,
                         help="How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). "
@@ -849,27 +848,23 @@ if __name__ == "__main__":
                         help="Page orientation when --paper-size is set (default: portrait)")
     parser.add_argument("--margin", type=float, default=20.0,
                         help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
-    parser.add_argument("--max-width", type=float, default=None,
-                        help="Manual word-wrap width in glyph units. Overrides the automatic "
-                             "width derived from --paper-size and --margin.")
     parser.add_argument("--line-height-mm", type=float, default=None,
-                        help="Line height (baseline-to-baseline advance) in mm. Enables "
-                             "mm-based layout: glyphs are scaled so one line on the page "
-                             "equals this height, and content is placed at (start-x, start-y) "
-                             "rather than scale-to-fit.")
+                        help="Baseline-to-baseline line height in mm. One of "
+                             "--line-height-mm or --lines-per-page is required "
+                             "with --paper-size.")
     parser.add_argument("--lines-per-page", type=int, default=None,
-                        help="Alternative to --line-height-mm: derive line height so this "
-                             "many lines (multiplied by --line-spacing) fit in the available "
-                             "page height. Requires --paper-size.")
+                        help="Derive --line-height-mm so this many lines "
+                             "(multiplied by --line-spacing) fit in the writable "
+                             "page area. Requires --paper-size.")
     parser.add_argument("--start-x", type=float, default=None,
-                        help="X position in mm of the top-left of the text block "
-                             "(default: --margin). Used only in mm-based layout.")
+                        help="X coordinate of the top-left of the text block in mm "
+                             "(default: --margin).")
     parser.add_argument("--start-y", type=float, default=None,
-                        help="Y position in mm of the top-left of the text block "
-                             "(default: --margin). Used only in mm-based layout.")
+                        help="Y coordinate of the top-left of the text block in mm "
+                             "(default: --margin).")
     parser.add_argument("--max-width-mm", type=float, default=None,
-                        help="Word-wrap width in mm. Used in mm-based layout "
-                             "(default: page_w - margin - start_x).")
+                        help="Word-wrap width in mm "
+                             "(default: page_width - margin - start-x).")
 
     args = parser.parse_args()
 
@@ -919,53 +914,45 @@ if __name__ == "__main__":
     typesetter = Typesetter(lib, kerning_config_path=kerning_path,
                             use_bezier=use_bezier, use_normalized=use_normalized)
 
-    # Resolve mm-based layout vs. legacy scale-to-fit
-    line_height_mm = args.line_height_mm
-    if args.lines_per_page is not None:
-        if page_h is None:
-            logger.error("--lines-per-page requires --paper-size")
-            exit(1)
-        avail_h = page_h - 2 * args.margin
-        line_height_mm = avail_h / (args.lines_per_page * args.line_spacing)
-        logger.info(f"--lines-per-page {args.lines_per_page} → line-height-mm {line_height_mm:.2f}")
-
-    mm_mode = line_height_mm is not None
     explicit_scale = None
     start_x_mm = None
     start_y_mm = None
+    max_width = None
 
-    if mm_mode:
-        # Native glyph-unit line height comes from the library/kerning config,
-        # unless the caller overrode it with --line-height.
-        native_lh = args.line_height if args.line_height is not None else typesetter.line_height
-        if native_lh <= 0:
-            logger.error("Native line height must be positive")
+    if page_w is not None:
+        # Fixed-page (mm-based) layout
+        line_height_mm = args.line_height_mm
+        if args.lines_per_page is not None:
+            avail_h = page_h - 2 * args.margin
+            line_height_mm = avail_h / (args.lines_per_page * args.line_spacing)
+            logger.info(f"--lines-per-page {args.lines_per_page} → line-height-mm {line_height_mm:.2f}")
+
+        if line_height_mm is None:
+            logger.error("--paper-size requires --line-height-mm or --lines-per-page")
             exit(1)
+        if line_height_mm <= 0:
+            logger.error("Line height must be positive")
+            exit(1)
+
+        native_lh = typesetter.line_height
         mm_per_glyph = line_height_mm / native_lh
         explicit_scale = mm_per_glyph
 
         start_x_mm = args.start_x if args.start_x is not None else args.margin
         start_y_mm = args.start_y if args.start_y is not None else args.margin
 
-        if args.max_width_mm is not None:
-            max_width_mm = args.max_width_mm
-        elif page_w is not None:
-            max_width_mm = page_w - args.margin - start_x_mm
-        else:
-            max_width_mm = None
-
+        max_width_mm = (args.max_width_mm
+                        if args.max_width_mm is not None
+                        else page_w - args.margin - start_x_mm)
         max_width = (max_width_mm / mm_per_glyph) if max_width_mm and max_width_mm > 0 else None
-        wrap_desc = f"{max_width_mm:.1f}mm" if max_width_mm else "off"
+
+        wrap_desc = f"{max_width_mm:.1f}mm" if max_width_mm and max_width_mm > 0 else "off"
         logger.info(
             f"mm layout: line {line_height_mm:.2f}mm, scale {mm_per_glyph:.4f}mm/unit, "
             f"origin ({start_x_mm:.1f},{start_y_mm:.1f})mm, wrap {wrap_desc}"
         )
-    else:
-        max_width = args.max_width
-        if max_width is None and page_w is not None:
-            max_width = page_w - 2 * args.margin
 
-    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
+    shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
                                      max_width=max_width,
                                      kern_aggressiveness=args.kern_aggressiveness)
