@@ -19,7 +19,8 @@ EOF
 
 ### 2. Run the assembler with file input
 ```bash
-python3 assembler.py --file vs02_input.txt vs02_multiline.svg --font utrost --line-height 250
+python3 assembler.py --file vs02_input.txt vs02_multiline.svg --font utrost \
+  --paper-size A4 --line-height-mm 10
 ```
 
 ### 3. Open in browser

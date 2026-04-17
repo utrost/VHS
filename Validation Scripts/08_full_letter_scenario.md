@@ -25,13 +25,15 @@ EOF
 ### 2. Generate on A4 Portrait
 ```bash
 python3 assembler.py --file vs08_letter.txt vs08_letter_a4.svg --font utrost \
-  --paper-size A4 --orientation portrait --line-spacing 1.3 --margin 25 --line-height 250
+  --paper-size A4 --orientation portrait --margin 25 \
+  --line-height-mm 10 --line-spacing 1.3 --stroke-width 0.4
 ```
 
 ### 3. Generate on A5 Landscape
 ```bash
 python3 assembler.py --file vs08_letter.txt vs08_letter_a5.svg --font utrost \
-  --paper-size A5 --orientation landscape --line-spacing 1.2 --margin 15 --line-height 200
+  --paper-size A5 --orientation landscape --margin 15 \
+  --line-height-mm 8 --line-spacing 1.2 --stroke-width 0.4
 ```
 
 ### 4. Visual inspection
@@ -42,7 +44,7 @@ Open both SVGs in a browser.
 - [ ] Text starts ~25mm from the top-left corner
 - [ ] All 8 lines rendered (including the empty line between paragraphs)
 - [ ] Empty line creates visible paragraph gap
-- [ ] Lines are evenly spaced at 1.3× line height
+- [ ] Baselines are 13 mm apart (10 mm line height × 1.3 line spacing)
 - [ ] Text looks like natural handwriting
 
 **Expected (A5 Landscape):**

@@ -43,14 +43,18 @@ Use the provided start scripts for your platform:
 **macOS/Linux:**
 ```bash
 ./vhs-cli.sh "Hello World" output.svg --font YourFont
-./vhs-cli.sh --file letter.txt output.svg --font YourFont --paper-size A4 --line-spacing 1.5 --margin 25
+./vhs-cli.sh --file letter.txt output.svg --font YourFont \
+  --paper-size A4 --margin 25 --line-height-mm 8 --line-spacing 1.3 --stroke-width 0.4
 ```
 
 **Windows:**
 ```cmd
 vhs-cli.bat "Hello World" output.svg --font YourFont
-vhs-cli.bat --file letter.txt output.svg --font YourFont --paper-size A4 --line-spacing 1.5 --margin 25
+vhs-cli.bat --file letter.txt output.svg --font YourFont ^
+  --paper-size A4 --margin 25 --line-height-mm 8 --line-spacing 1.3 --stroke-width 0.4
 ```
+
+All page-related values (`--line-height-mm`, `--margin`, `--start-x/y`, `--max-width-mm`, `--stroke-width`) are in **millimetres**, so the output matches real paper. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the full walkthrough.
 
 ### 3. Web UI
 
@@ -74,12 +78,13 @@ The web UI provides a modern visual interface with live SVG preview, file upload
 - **Bezier Curve Fitting**: Schneider algorithm with adaptive corner detection and Newton-Raphson refinement converts raw polyline captures into smooth cubic Bezier curves. Produces cleaner SVG output with fewer path points and natural curvature.
 - **Stroke Normalization**: Captured strokes are automatically corrected for slant, smoothed for pressure variation, and height-normalized for consistent glyph sizing. Blending strength is configurable.
 - **Template Overlay**: Semi-transparent handwriting font guides behind the capture canvas slots. Choose from 17 Google Fonts organized in two groups (Formal and Casual) to guide your capture consistency.
-- **Fixed Paper Sizes**: Support for A3, A4, A5, A6, Letter, and Legal with Portrait/Landscape orientation. Content is automatically scaled to fit within the page area.
+- **Millimetre-First Page Layout**: Every page-related control (`--line-height-mm`, `--margin`, `--start-x/y`, `--max-width-mm`, `--stroke-width`) is in millimetres. A 12 mm line on paper stays 12 mm regardless of how much text you feed it — the Assembler does not auto-shrink to fit, so you keep pixel-perfect control.
+- **Fixed Paper Sizes**: Support for A3, A4, A5, A6, Letter, and Legal with Portrait/Landscape orientation.
 - **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
 - **Curve Smoothing**: Catmull-Rom splines turn raw input into fluid, natural curves (fallback when Bezier data is unavailable).
 - **Zone-Aware Auto-Kerning**: Scanline-based algorithm calculates optimal letter spacing with vertical zone awareness (upper/ground/lower). Letters in non-overlapping zones kern tighter. Configurable aggressiveness (0.0–1.0).
 - **Ligature Support**: Greedy matching for multi-character sequences (e.g., "sch", "tt", "th").
-- **Typography Controls**: Advanced control over line height, line spacing (multiplier), and page margins. Word wrapping is supported via the `max_width` parameter.
+- **Typography Controls**: Line height in mm (or derived from `--lines-per-page`), line spacing multiplier, explicit text-block origin, page margins, and mm-based word wrapping via `--max-width-mm`.
 - **Pressure Data**: Preserves pressure information from the capture phase. Bezier segments carry interpolated pressure from raw stroke points.
 - **Multi-Font**: Organize different handwriting styles in separate `glyphs/` subdirectories.
 - **Windows Safe**: Unicode hex filenames (e.g., `0041.json`) prevent case-insensitivity conflicts.
@@ -114,8 +119,9 @@ python3 -m unittest test_assembler test_cli -v
 
 ## Documentation
 
+- [User Guide](docs/USER_GUIDE.md) — Full mm-first layout walkthrough with recipes and cheat-sheet (start here)
 - [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
-- [Assembler Reference](assembler/README.md) — CLI options, kerning, ligatures
+- [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
 - [Glyph Collector UI](GlyphCollectorUI/README.md) — Capture tool documentation
 - [Technical Design Document](Handwriting%20Simulation%20System%20TDD.md) — Architecture and data specification
 
