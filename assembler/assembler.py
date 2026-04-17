@@ -830,6 +830,9 @@ if __name__ == "__main__":
                         help="Page orientation when --paper-size is set (default: portrait)")
     parser.add_argument("--margin", type=float, default=20.0,
                         help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
+    parser.add_argument("--max-width", type=float, default=None,
+                        help="Manual word-wrap width in glyph units. Overrides the automatic "
+                             "width derived from --paper-size and --margin.")
 
     args = parser.parse_args()
 
@@ -878,8 +881,13 @@ if __name__ == "__main__":
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path,
                             use_bezier=use_bezier, use_normalized=use_normalized)
+    max_width = args.max_width
+    if max_width is None and page_w is not None:
+        max_width = page_w - 2 * args.margin
+
     shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
+                                     max_width=max_width,
                                      kern_aggressiveness=args.kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
