@@ -140,38 +140,49 @@ For longer texts, save them as a `.txt` file and run:
 
 **macOS/Linux:**
 ```bash
-./vhs-cli.sh --file letter.txt output.svg --font MyHandwriting --line-height 120
+./vhs-cli.sh --file letter.txt output.svg --font MyHandwriting \
+  --paper-size A4 --margin 20 --line-height-mm 10
 ```
 
 **Windows:**
 ```cmd
-vhs-cli.bat --file letter.txt output.svg --font MyHandwriting --line-height 120
+vhs-cli.bat --file letter.txt output.svg --font MyHandwriting ^
+  --paper-size A4 --margin 20 --line-height-mm 10
 ```
 
 *   `--file`: Reads the input from a text file.
-*   `--line-height`: Controls the vertical gap between lines.
+*   `--line-height-mm`: Baseline-to-baseline line height in millimetres. Required when `--paper-size` is set (unless `--lines-per-page` is used).
 
-### 5.2 Paper Size and Line Spacing
+### 5.2 Paper Size and Line Layout
 To produce an SVG at a specific page size (useful for printing or pen plotters):
 
 **macOS/Linux:**
 ```bash
 ./vhs-cli.sh --file letter.txt output.svg --font MyHandwriting \
-  --paper-size A4 --orientation landscape --line-spacing 1.2 --margin 25
+  --paper-size A4 --orientation landscape --margin 25 \
+  --line-height-mm 8 --line-spacing 1.2 --stroke-width 0.4
 ```
 
 **Windows:**
 ```cmd
-vhs-cli.bat --file letter.txt output.svg --font MyHandwriting \
-  --paper-size A4 --orientation landscape --line-spacing 1.2 --margin 25
+vhs-cli.bat --file letter.txt output.svg --font MyHandwriting ^
+  --paper-size A4 --orientation landscape --margin 25 ^
+  --line-height-mm 8 --line-spacing 1.2 --stroke-width 0.4
 ```
 
-*   `--paper-size`: Sets a fixed page size (`A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`). Content is automatically scaled to fit within the page area.
+*   `--paper-size`: Sets a fixed page size (`A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`).
 *   `--orientation`: `portrait` (default) or `landscape`.
-*   `--line-spacing`: Multiplier for `--line-height` (e.g. `1.5` = 150% spacing).
-*   `--margin`: Page margin in mm on all four sides (default: 20).
+*   `--margin`: Page margin in mm on all four sides (default: `20`). Also the fallback origin when `--start-x`/`--start-y` are omitted.
+*   `--line-height-mm`: Baseline-to-baseline line height in mm.
+*   `--lines-per-page`: Alternative to `--line-height-mm`: derives it as `(page_h − 2·margin) / (N · line_spacing)`.
+*   `--line-spacing`: Multiplier on top of the line height (e.g. `1.3` = 30 % extra leading).
+*   `--start-x`, `--start-y`: Top-left of the text block in mm (default: `--margin`).
+*   `--max-width-mm`: Word-wrap width in mm (default: `page_w − margin − start-x`).
+*   `--stroke-width`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 
-> **How auto-scaling works:** Glyph coordinates are captured in device units (e.g. tablet pixels), not millimetres. When a paper size is set, the renderer computes a uniform scale factor so the content bounding box fits within the available area (page minus margins). This means `--line-height` controls the *relative* spacing between lines — the absolute on-page size is determined automatically.
+> **How mm layout works:** Glyph coordinates are captured in device units (tablet pixels). The renderer multiplies them by a single scale factor so that one glyph-unit line equals `--line-height-mm`, then places the block at `(start-x, start-y)`. Content is **not** auto-shrunk to fit the page — short texts stay their real size and long texts can overflow, so you keep precise control. Stroke width is inversely scaled so `--stroke-width 0.4` gives a 0.4 mm pen regardless of glyph scale.
+>
+> See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the full layout model, recipes, and a sizing cheat-sheet.
 
 ## 6. Troubleshooting
 

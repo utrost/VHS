@@ -119,7 +119,14 @@ class CLITestBase(unittest.TestCase):
         # The assembler looks for ../glyphs/{font}/ relative to assembler.py — so we
         # override by passing a full path via env.  But that isn't supported.
         # Instead, we'll symlink our mock glyphs dir.
-        args = text_args + [out, "--font", "MockFont"] + (extra_args or [])
+        extra = list(extra_args or [])
+        # The CLI now requires an mm-based line height when --paper-size is set.
+        # Inject a default so pre-existing tests that only set --paper-size keep working.
+        if "--paper-size" in extra and not any(
+            flag in extra for flag in ("--line-height-mm", "--lines-per-page")
+        ):
+            extra += ["--line-height-mm", "10"]
+        args = text_args + [out, "--font", "MockFont"] + extra
         # We need the assembler to find glyphs at <script_dir>/../glyphs/MockFont.
         # Easiest: symlink <tmpdir>/glyphs into <script_dir>/../glyphs temporarily.
         # Safer: just call the assembler from a directory where ../glyphs resolves.

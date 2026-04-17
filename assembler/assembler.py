@@ -624,13 +624,21 @@ class Renderer:
 
     def generate_svg(self, compiled_shapes: List[List[List[Dict[str, float]]]], output_file: str,
                      page_width_mm: Optional[float] = None, page_height_mm: Optional[float] = None,
-                     margin_mm: float = 20.0, bezier_data: Optional[List] = None):
+                     margin_mm: float = 20.0, bezier_data: Optional[List] = None,
+                     explicit_scale: Optional[float] = None,
+                     start_x_mm: Optional[float] = None,
+                     start_y_mm: Optional[float] = None):
         """
         Generate an SVG file from compiled shapes.
 
         When page_width_mm/page_height_mm are set, the SVG is sized to that
         fixed page and content is offset by margin_mm on all sides.
         Otherwise the SVG auto-fits to the content bounding box (original behaviour).
+
+        When explicit_scale is set (mm-based layout), glyph coordinates are
+        multiplied by this factor (mm per glyph unit) instead of being
+        scale-to-fit. start_x_mm/start_y_mm override the page origin of the
+        text block (default: margin_mm).
 
         bezier_data: optional parallel list to compiled_shapes. Each entry is either
                      None (no bezier data) or a list of bezier strokes for that shape.
@@ -677,26 +685,37 @@ class Renderer:
             vb_x = 0.0
             vb_y = 0.0
 
-            # Compute scale factor to fit content within the available area
-            avail_w = page_width_mm - 2 * margin_mm
-            avail_h = page_height_mm - 2 * margin_mm
-            if all_x and avail_w > 0 and avail_h > 0:
-                content_w = max(all_x) - min(all_x)
-                content_h = max(all_y) - min(all_y)
-                content_offset_x = min(all_x)
-                content_offset_y = min(all_y)
-                if content_w > 0 and content_h > 0:
-                    scale = min(avail_w / content_w, avail_h / content_h)
-                elif content_w > 0:
-                    scale = avail_w / content_w
-                elif content_h > 0:
-                    scale = avail_h / content_h
+            if explicit_scale is not None:
+                # mm-based layout: caller supplies the scale (mm per glyph unit)
+                # and optional page origin. No scale-to-fit.
+                scale = explicit_scale
+                origin_x = start_x_mm if start_x_mm is not None else margin_mm
+                origin_y = start_y_mm if start_y_mm is not None else margin_mm
+                content_offset_x = min(all_x) if all_x else 0.0
+                content_offset_y = min(all_y) if all_y else 0.0
+            else:
+                # Compute scale factor to fit content within the available area
+                avail_w = page_width_mm - 2 * margin_mm
+                avail_h = page_height_mm - 2 * margin_mm
+                origin_x = margin_mm
+                origin_y = margin_mm
+                if all_x and avail_w > 0 and avail_h > 0:
+                    content_w = max(all_x) - min(all_x)
+                    content_h = max(all_y) - min(all_y)
+                    content_offset_x = min(all_x)
+                    content_offset_y = min(all_y)
+                    if content_w > 0 and content_h > 0:
+                        scale = min(avail_w / content_w, avail_h / content_h)
+                    elif content_w > 0:
+                        scale = avail_w / content_w
+                    elif content_h > 0:
+                        scale = avail_h / content_h
+                    else:
+                        scale = 1.0
                 else:
                     scale = 1.0
-            else:
-                scale = 1.0
-                content_offset_x = 0.0
-                content_offset_y = 0.0
+                    content_offset_x = 0.0
+                    content_offset_y = 0.0
         elif not all_x:
             vb_x, vb_y, width, height = 0.0, 0.0, 100.0, 100.0
         else:
@@ -725,10 +744,10 @@ class Renderer:
             "stroke-linejoin": "round"
         }
         if fixed_page:
-            # Scale content to fit the available page area, offset to margin
+            # Scale content to fit (or explicitly) and translate to page origin
             g_attrs["stroke-width"] = f"{self.stroke_width / scale:.4f}"
             g_attrs["transform"] = (
-                f"translate({margin_mm:.2f},{margin_mm:.2f}) "
+                f"translate({origin_x:.2f},{origin_y:.2f}) "
                 f"scale({scale:.6f}) "
                 f"translate({-content_offset_x:.2f},{-content_offset_y:.2f})"
             )
@@ -788,13 +807,16 @@ class Renderer:
             logger.error(f"Failed to write SVG: {e}")
 
     def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
-                            margin_mm=20.0, bezier_data=None):
+                            margin_mm=20.0, bezier_data=None,
+                            explicit_scale=None, start_x_mm=None, start_y_mm=None):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
         self.generate_svg(compiled_shapes, buf, page_width_mm=page_width_mm,
                           page_height_mm=page_height_mm, margin_mm=margin_mm,
-                          bezier_data=bezier_data)
+                          bezier_data=bezier_data,
+                          explicit_scale=explicit_scale,
+                          start_x_mm=start_x_mm, start_y_mm=start_y_mm)
         buf.seek(0)
         return buf.read().decode("utf-8")
 
@@ -812,9 +834,8 @@ if __name__ == "__main__":
                         help="Ignore bezier_curves from glyph JSON even if present")
     parser.add_argument("--no-normalize", action="store_true",
                         help="Ignore normalized_strokes from glyph JSON even if present")
-    parser.add_argument("--line-height", type=float, help="Override line height for multiline text (default: 100.0)")
     parser.add_argument("--line-spacing", type=float, default=1.0,
-                        help="Multiplier for line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
+                        help="Multiplier applied to line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
     parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
     parser.add_argument("--kern-aggressiveness", type=float, default=0.5,
                         help="How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). "
@@ -830,6 +851,23 @@ if __name__ == "__main__":
                         help="Page orientation when --paper-size is set (default: portrait)")
     parser.add_argument("--margin", type=float, default=20.0,
                         help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
+    parser.add_argument("--line-height-mm", type=float, default=None,
+                        help="Baseline-to-baseline line height in mm. One of "
+                             "--line-height-mm or --lines-per-page is required "
+                             "with --paper-size.")
+    parser.add_argument("--lines-per-page", type=int, default=None,
+                        help="Derive --line-height-mm so this many lines "
+                             "(multiplied by --line-spacing) fit in the writable "
+                             "page area. Requires --paper-size.")
+    parser.add_argument("--start-x", type=float, default=None,
+                        help="X coordinate of the top-left of the text block in mm "
+                             "(default: --margin).")
+    parser.add_argument("--start-y", type=float, default=None,
+                        help="Y coordinate of the top-left of the text block in mm "
+                             "(default: --margin).")
+    parser.add_argument("--max-width-mm", type=float, default=None,
+                        help="Word-wrap width in mm "
+                             "(default: page_width - margin - start-x).")
 
     args = parser.parse_args()
 
@@ -878,11 +916,53 @@ if __name__ == "__main__":
     lib = GlyphLibrary(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path,
                             use_bezier=use_bezier, use_normalized=use_normalized)
-    shapes = typesetter.typeset_text(input_text, override_line_height=args.line_height,
+
+    explicit_scale = None
+    start_x_mm = None
+    start_y_mm = None
+    max_width = None
+
+    if page_w is not None:
+        # Fixed-page (mm-based) layout
+        line_height_mm = args.line_height_mm
+        if args.lines_per_page is not None:
+            avail_h = page_h - 2 * args.margin
+            line_height_mm = avail_h / (args.lines_per_page * args.line_spacing)
+            logger.info(f"--lines-per-page {args.lines_per_page} → line-height-mm {line_height_mm:.2f}")
+
+        if line_height_mm is None:
+            logger.error("--paper-size requires --line-height-mm or --lines-per-page")
+            exit(1)
+        if line_height_mm <= 0:
+            logger.error("Line height must be positive")
+            exit(1)
+
+        native_lh = typesetter.line_height
+        mm_per_glyph = line_height_mm / native_lh
+        explicit_scale = mm_per_glyph
+
+        start_x_mm = args.start_x if args.start_x is not None else args.margin
+        start_y_mm = args.start_y if args.start_y is not None else args.margin
+
+        max_width_mm = (args.max_width_mm
+                        if args.max_width_mm is not None
+                        else page_w - args.margin - start_x_mm)
+        max_width = (max_width_mm / mm_per_glyph) if max_width_mm and max_width_mm > 0 else None
+
+        wrap_desc = f"{max_width_mm:.1f}mm" if max_width_mm and max_width_mm > 0 else "off"
+        logger.info(
+            f"mm layout: line {line_height_mm:.2f}mm, scale {mm_per_glyph:.4f}mm/unit, "
+            f"origin ({start_x_mm:.1f},{start_y_mm:.1f})mm, wrap {wrap_desc}"
+        )
+
+    shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
+                                     max_width=max_width,
                                      kern_aggressiveness=args.kern_aggressiveness)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
                         stroke_width=args.stroke_width, seed=args.seed, use_bezier=use_bezier)
     renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h,
-                          margin_mm=args.margin, bezier_data=typesetter._compiled_beziers)
+                          margin_mm=args.margin, bezier_data=typesetter._compiled_beziers,
+                          explicit_scale=explicit_scale,
+                          start_x_mm=start_x_mm, start_y_mm=start_y_mm)

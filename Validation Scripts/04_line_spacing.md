@@ -1,6 +1,6 @@
 # VS-04: Line Spacing Multiplier
 
-**Objective:** Verify that `--line-spacing` controls the vertical gap between lines independently of `--line-height`.
+**Objective:** Verify that `--line-spacing` controls the vertical gap between lines as a multiplier on top of `--line-height-mm`.
 
 ## Prerequisites
 - Font `utrost` available in `glyphs/utrost/`
@@ -21,19 +21,19 @@ EOF
 ### 2. Generate with default spacing (1.0)
 ```bash
 python3 assembler.py --file vs04_input.txt vs04_spacing_1x.svg --font utrost \
-  --paper-size A4 --line-spacing 1.0
+  --paper-size A4 --line-height-mm 8 --line-spacing 1.0
 ```
 
 ### 3. Generate with 1.5× spacing
 ```bash
 python3 assembler.py --file vs04_input.txt vs04_spacing_1.5x.svg --font utrost \
-  --paper-size A4 --line-spacing 1.5
+  --paper-size A4 --line-height-mm 8 --line-spacing 1.5
 ```
 
 ### 4. Generate with 2.0× spacing
 ```bash
 python3 assembler.py --file vs04_input.txt vs04_spacing_2x.svg --font utrost \
-  --paper-size A4 --line-spacing 2.0
+  --paper-size A4 --line-height-mm 8 --line-spacing 2.0
 ```
 
 ### 5. Visual comparison
