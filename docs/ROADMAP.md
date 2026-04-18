@@ -49,7 +49,7 @@ output, or a plotter/device with dynamic line weight is supported.
 
 ---
 
-### R2. Cursive joining — **Proposed**
+### R2. Cursive joining — **Proposed (opt-in only)**
 
 Glyph JSON carries `exit_x/y` and `entry_x/y` metadata. When the previous
 glyph's exit is geometrically compatible with the next glyph's entry
@@ -63,16 +63,42 @@ the two. Converts block printing into semi-connected cursive.
 - A new stroke kind — "connector" — is synthesised between compatible
   pairs. Rendered as a regular bezier path; participates in smoothing /
   drift / scaling like any other stroke.
-- Opt-in: `--connect-letters` CLI flag and matching GUI toggle.
+- **Opt-in** flag `--connect-letters` (default: off) with a matching
+  sidebar toggle. Default output is unchanged — users have to ask for
+  joining explicitly, so the feature can't regress anyone's existing
+  workflow.
 - Heuristics + tuning: a compatibility score (gap threshold, zone match,
   direction continuity) with a `--connect-aggressiveness 0.0–1.0` knob.
+  A per-font preset can ship sensible defaults (see U3).
+- Per-glyph JSON may also carry an explicit `no_connect_left` /
+  `no_connect_right` flag that the heuristic honours as a hard veto.
 
-**Effort:** medium. Biggest risk is the heuristic — compatibility that
-produces tangled or misaligned connectors looks worse than no connector
-at all. Ship behind an opt-in flag initially.
+**Effort:** medium.
 
-**Depends on:** glyphs having the metadata populated. Fonts captured
-before this feature may need a re-capture pass or a metadata migration.
+**Quality risk (when enabled):** the visual quality depends heavily on
+the glyphs having sensible exit/entry metadata and on letterforms
+captured in a style that supports connection. Three failure modes
+drive the "Medium-high" rating:
+
+1. Bad joins look *worse* than none — a tangled connector between
+   mismatched zones is more offensive than two clean unconnected
+   letters.
+2. Glyphs captured before this feature may lack the `exit_x/y`
+   metadata; without it every pair is a guess.
+3. Block-printing glyphs don't become convincing cursive just by
+   bridging — letterforms themselves aren't cursive-shaped.
+
+**Mitigations** (all baked in): (a) the opt-in gate keeps default
+output identical; (b) the compatibility score defaults conservative,
+so only high-confidence pairs connect; (c) the per-glyph veto lets
+font authors disable joining for specific characters without touching
+the code; (d) ship with a small validation script that visualises
+every pair's compatibility score so authors can tune their metadata
+before enabling joining on that font.
+
+**Depends on:** glyphs having `exit_x/y` and `entry_x/y` metadata
+populated. Fonts captured before this feature may need a re-capture
+pass or a metadata migration.
 
 ---
 
@@ -572,7 +598,7 @@ the captures consistently.
 | U2 | Live preview in GUI | High | Medium | Medium | 6 |
 | U3 | Config files + presets | Medium | Medium | Low | 7 |
 | U6 | PDF + widow/orphan | Medium | Medium | Low | 8 |
-| R2 | Cursive joining | High | Medium | Medium-high | 9 |
+| R2 | Cursive joining (opt-in) | High | Medium | Medium-high quality-risk when enabled (default output unchanged) | 9 |
 | R1 | Pressure-aware stroke | — | — | — | Won't do |
 
 R4 + U4 + U1 form a natural first bundle: together they remove the
