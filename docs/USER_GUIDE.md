@@ -150,14 +150,15 @@ automatically). A **Save…** button writes the current sidebar state
 out as a YAML file you can drop into `configs/presets/` (or pass to
 `--config`).
 
-### Output format (PNG)
+### Output formats (PNG, PDF)
 
-SVG is the default output — vector, plotter-ready, lossless. PNG is
-available as an optional raster format for sharing or embedding.
+SVG is the default output — vector, plotter-ready, lossless. PNG is a
+raster format for sharing and embedding; PDF combines every
+paginated page into a single multi-page file ready to print.
 
 | Flag | Default | Purpose |
 |------|---------|---------|
-| `--format` | `svg` | Output format. `png` requires the `cairosvg` package (`pip install cairosvg`). |
+| `--format` | `svg` | Output format. `png` needs `cairosvg`; `pdf` needs `cairosvg` + `pypdf`. |
 | `--dpi` | `300` | Raster resolution for PNG. A4 @ 300 dpi ≈ 2480×3508 px. |
 | `--transparent` | off | Transparent background for PNG (default: white). |
 
@@ -166,6 +167,35 @@ With `--format png`, the Assembler writes both the intermediate
 `output-01.svg` + `output-01.png`, `output-02.svg` + …. The web GUI
 has a "Download PNG" button with the same DPI and transparency
 controls.
+
+With `--format pdf`, each page SVG is rendered to a single PDF page
+and the pages are merged into one multi-page PDF at `output.pdf`.
+Combined with `--paginate` on a long text:
+
+```bash
+python3 assembler/assembler.py \
+    --preset letter-a4 --paginate --format pdf \
+    -f novel.txt output/novel.pdf
+# writes output/novel-01.svg, output/novel-02.svg, ... and a single
+# output/novel.pdf containing all of them.
+```
+
+The GUI "Download PDF" button exports whatever is currently previewed
+as a one-page PDF.
+
+### Pagination: widow and orphan control
+
+Naive pagination can strand a single line of a paragraph at the top
+or bottom of a page. Two defaults-on flags prevent that:
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--min-orphan-lines` | `2` | Minimum lines of a paragraph allowed at the bottom of a page. If a break would leave fewer, the line is pushed to the next page to join its paragraph body. |
+| `--min-widow-lines` | `2` | Minimum lines of a paragraph allowed at the top of a page. If a break would leave the last line alone, the break is shifted back so the widow joins its paragraph body. |
+
+Setting either to `1` disables its rule. The adjustment shifts a
+break by ±1 line per pass — no unbounded cascades. The CLI logs
+`(adjusted for widows/orphans)` when it applied any shift.
 
 ### Coverage and fallbacks
 

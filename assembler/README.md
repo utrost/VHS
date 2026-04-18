@@ -36,9 +36,10 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--no-fallbacks`: Disable default Unicode substitutions (em-dash → `--`, curly quotes → straight, ellipsis → `...`, etc).
 - `--strict-glyphs`: Exit with status 2 if the text contains any codepoint the font doesn't cover (useful in CI).
 - `--report`: Print a layout + coverage report and skip SVG emission. `--report-format {text,json}` picks the format (default `text`).
-- `--format {svg,png}`: Output format (default `svg`). `png` requires the optional `cairosvg` dependency (`pip install cairosvg`).
+- `--format {svg,png,pdf}`: Output format (default `svg`). `png` needs `cairosvg`; `pdf` needs `cairosvg` + `pypdf`.
 - `--dpi [INT]`: Raster resolution for PNG output (default `300`).
 - `--transparent`: Transparent background for PNG output (default: white).
+- `--min-orphan-lines [INT]`, `--min-widow-lines [INT]`: During `--paginate`, don't strand fewer than this many lines of a paragraph at the bottom (orphan) / top (widow) of a page. Default: `2` each. Set `1` to disable.
 - `--preset [NAME]`: Apply a bundled preset from `configs/presets/<name>.{yaml,json}`. Values are defaults; CLI flags override.
 - `--config [PATH]`: Load YAML/JSON config whose keys match CLI flags. Overrides `--preset`; loses to explicit CLI flags.
 - `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).

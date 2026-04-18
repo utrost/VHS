@@ -585,6 +585,9 @@ Line breaks are preserved."></textarea>
                     <button class="btn btn-secondary" id="downloadPngBtn" onclick="downloadPng()" disabled>
                         ↓ PNG
                     </button>
+                    <button class="btn btn-secondary" id="downloadPdfBtn" onclick="downloadPdf()" disabled>
+                        ↓ PDF
+                    </button>
                 </div>
                 <div class="field-row" style="margin-top: 4px;">
                     <div class="field">
@@ -912,6 +915,7 @@ Line breaks are preserved."></textarea>
                 currentSvgText = svgText;
                 document.getElementById('downloadBtn').disabled = false;
                 document.getElementById('downloadPngBtn').disabled = false;
+                document.getElementById('downloadPdfBtn').disabled = false;
 
                 // Coverage panel from the X-Glyph-Coverage response header
                 const covHdr = res.headers.get('X-Glyph-Coverage');
@@ -1018,6 +1022,39 @@ Line breaks are preserved."></textarea>
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        async function downloadPdf() {
+            if (!currentSvgText) return;
+            const btn = document.getElementById('downloadPdfBtn');
+            const orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⟳ Rendering…';
+            try {
+                const res = await fetch('/api/pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ svg: currentSvgText }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'PDF export failed');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'handwriting.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                setStatus('error', err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
         }
 
         async function downloadPng() {

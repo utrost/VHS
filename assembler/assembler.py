@@ -49,6 +49,86 @@ DEFAULT_UNICODE_FALLBACKS: Dict[str, str] = {
 }
 
 
+def _adjust_page_breaks(page_starts: List[int], line_paragraphs: List[int],
+                         n_lines: int, min_orphan: int = 2,
+                         min_widow: int = 2) -> List[int]:
+    """Shift naive page boundaries to avoid single-line widows and orphans.
+
+    ``page_starts`` is a list of line indices where each page starts
+    (first entry is always 0). ``line_paragraphs[i]`` is the paragraph
+    index of line i. Returns a new ``page_starts`` list of the same
+    length. Typographic conventions:
+
+    * **Orphan** — first line of a paragraph stranded at the bottom of
+      a page. If fewer than ``min_orphan`` lines of the paragraph fit
+      on the previous page, push the break earlier by one line (move
+      the orphan forward to join the rest of its paragraph).
+    * **Widow** — last line of a paragraph stranded at the top of a
+      page. If fewer than ``min_widow`` lines of the paragraph remain
+      on the next page, push the break earlier by one line (move the
+      last-but-one line of the paragraph forward so the widow isn't
+      alone).
+
+    The algorithm only shifts a break by ±1 line per pass to avoid
+    unbounded cascades. Any break at 0 or n_lines is untouched.
+    """
+    if len(page_starts) <= 1 or not line_paragraphs:
+        return list(page_starts)
+
+    new_starts = list(page_starts)
+    for k in range(1, len(new_starts)):
+        brk = new_starts[k]
+        if brk <= new_starts[k - 1] + 1 or brk >= n_lines:
+            continue  # single-line page or beyond end
+
+        prev_line = brk - 1          # last line on page k-1
+        next_line = brk              # first line on page k
+
+        # Orphan: last line on prev page is the START of its paragraph
+        # AND the paragraph continues onto this page (so that line is
+        # alone at the bottom).
+        prev_para = line_paragraphs[prev_line]
+        prev_prev_para = (line_paragraphs[prev_line - 1]
+                          if prev_line > 0 else None)
+        next_para = line_paragraphs[next_line]
+        starts_new_para = prev_prev_para is None or prev_para != prev_prev_para
+        if starts_new_para and prev_para == next_para:
+            # Count how many lines of this paragraph fit on prev page.
+            lines_on_prev = 0
+            j = prev_line
+            while j >= new_starts[k - 1] and line_paragraphs[j] == prev_para:
+                lines_on_prev += 1
+                j -= 1
+            if lines_on_prev < min_orphan:
+                new_starts[k] = brk - 1
+                continue
+
+        # Widow: first line on the new page is the END of its paragraph
+        # AND the paragraph also had lines on the previous page.
+        next_next_para = (line_paragraphs[next_line + 1]
+                          if next_line + 1 < n_lines else None)
+        ends_paragraph = next_next_para is None or next_para != next_next_para
+        if ends_paragraph and next_para == prev_para:
+            # Count remaining lines of the paragraph on this page.
+            lines_on_next = 0
+            j = next_line
+            while j < n_lines and line_paragraphs[j] == next_para:
+                lines_on_next += 1
+                j += 1
+            if lines_on_next < min_widow:
+                # Pull an extra line forward from prev page so the widow
+                # has company. Only safe if prev page still has ≥1 line.
+                if prev_line - 1 >= new_starts[k - 1]:
+                    new_starts[k] = brk - 1
+
+    # After shifting, page_starts may become non-strictly-increasing
+    # in pathological cases; clamp to preserve order and bounds.
+    for k in range(1, len(new_starts)):
+        new_starts[k] = max(new_starts[k], new_starts[k - 1] + 1)
+        new_starts[k] = min(new_starts[k], n_lines)
+    return new_starts
+
+
 def _load_config_file(path: str) -> Dict[str, Any]:
     """Load a config / preset file. Picks YAML or JSON based on extension
     (``.yaml``, ``.yml`` → YAML; ``.json`` → JSON; unknown → try YAML
@@ -816,7 +896,44 @@ class Typesetter:
                                       max_width, base_space_width,
                                       effective_line_advance)
 
+        # Tag each line with its paragraph index (derived from the
+        # line_break_after flag on each word). Used downstream by the
+        # widow / orphan adjustment in pagination.
+        self._tag_paragraphs()
+
         return compiled_shapes
+
+    def _tag_paragraphs(self):
+        """Annotate self._line_info with paragraph_idx in place.
+
+        A paragraph break happens on a word whose line_break_after is
+        True. Any line whose glyph range contains — or comes after — a
+        paragraph-closing word inherits the next paragraph index from
+        the next line onward.
+        """
+        if not self._line_info:
+            return
+        # Build a set of shape indices where a paragraph ends.
+        end_shape_indices = set()
+        for w in self._word_info:
+            if w.get('line_break_after'):
+                end_shape_indices.add(w['end_idx'])  # exclusive; same value
+
+        paragraph_idx = 0
+        for info in self._line_info:
+            info['paragraph_idx'] = paragraph_idx
+            # If the line's shape range ends on or after a paragraph
+            # boundary, bump the counter for subsequent lines.
+            s = info.get('start_idx')
+            e = info.get('end_idx')
+            if s is None or e is None:
+                # Blank line from consecutive newlines — still a break.
+                paragraph_idx += 1
+                continue
+            for boundary in end_shape_indices:
+                if s < boundary <= e:
+                    paragraph_idx += 1
+                    break
 
     def _apply_balanced_wrap(self, compiled_shapes, bezier_data, max_width,
                              space_width, line_advance):
@@ -1285,6 +1402,31 @@ class Renderer:
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
 
+    def generate_pdf(self, svg_paths: List[str], pdf_path: str):
+        """Combine one or more on-disk SVGs into a single multi-page PDF.
+
+        Each SVG becomes one page in the output, in list order.
+        Requires the optional ``cairosvg`` and ``pypdf`` dependencies.
+        """
+        try:
+            import cairosvg  # type: ignore
+            from pypdf import PdfWriter, PdfReader  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "PDF output requires cairosvg and pypdf. Install with:  "
+                "pip install cairosvg pypdf"
+            ) from exc
+        import io
+        writer = PdfWriter()
+        for svg_path in svg_paths:
+            page_bytes = cairosvg.svg2pdf(url=svg_path)
+            reader = PdfReader(io.BytesIO(page_bytes))
+            for p in reader.pages:
+                writer.add_page(p)
+        with open(pdf_path, 'wb') as f:
+            writer.write(f)
+        logger.info(f"PDF saved to {pdf_path} ({len(svg_paths)} page(s))")
+
     def generate_png(self, svg_path: str, png_path: str, dpi: int = 300,
                      transparent: bool = False):
         """Convert an on-disk SVG to PNG at the given DPI.
@@ -1405,9 +1547,15 @@ if __name__ == "__main__":
                              "skip SVG emission. Use --report-format to pick 'text' or 'json'.")
     parser.add_argument("--report-format", choices=["text", "json"], default="text",
                         help="Format used by --report. Default: text.")
-    parser.add_argument("--format", choices=["svg", "png"], default="svg",
-                        help="Output format. 'png' requires the optional cairosvg "
-                             "dependency (pip install cairosvg).")
+    parser.add_argument("--format", choices=["svg", "png", "pdf"], default="svg",
+                        help="Output format. 'png' requires cairosvg; 'pdf' requires "
+                             "cairosvg + pypdf (pip install cairosvg pypdf).")
+    parser.add_argument("--min-orphan-lines", type=int, default=2,
+                        help="During pagination, don't strand fewer than this many "
+                             "lines of a paragraph at the bottom of a page (default: 2).")
+    parser.add_argument("--min-widow-lines", type=int, default=2,
+                        help="During pagination, don't strand fewer than this many "
+                             "lines of a paragraph at the top of a page (default: 2).")
     parser.add_argument("--dpi", type=int, default=300,
                         help="Raster resolution for PNG output in dots per inch "
                              "(default: 300).")
@@ -1720,12 +1868,22 @@ if __name__ == "__main__":
         if not line_info:
             pages.append((args.output, shapes, typesetter._compiled_beziers, line_info))
         else:
+            # Build the naive page starts, then adjust for widows/orphans.
+            n_lines = len(line_info)
+            naive_starts = list(range(0, n_lines, lines_per_page))
+            line_paragraphs = [info.get('paragraph_idx', 0) for info in line_info]
+            page_starts = _adjust_page_breaks(
+                naive_starts, line_paragraphs, n_lines,
+                min_orphan=args.min_orphan_lines,
+                min_widow=args.min_widow_lines)
+            # Boundaries: [start0, start1, ..., n_lines]
+            bounds = page_starts + [n_lines]
+
             # Build the page filename template.
             root, ext = os.path.splitext(args.output)
-            total_pages = (len(line_info) + lines_per_page - 1) // lines_per_page or 1
-            for p in range(total_pages):
-                first_line = p * lines_per_page
-                last_line = min(first_line + lines_per_page, len(line_info))
+            for p in range(len(page_starts)):
+                first_line = bounds[p]
+                last_line = bounds[p + 1]
                 page_lines = line_info[first_line:last_line]
                 # Shape index range for this page
                 page_shapes_start = next((li['start_idx'] for li in page_lines
@@ -1744,19 +1902,24 @@ if __name__ == "__main__":
                 } for li in page_lines]
                 page_path = f"{root}-{p+1:02d}{ext}"
                 pages.append((page_path, page_shape_slice, page_bezier_slice, adjusted))
+            shift_note = (" (adjusted for widows/orphans)"
+                          if page_starts != naive_starts else "")
             logger.info(f"Pagination: {len(pages)} page(s) "
-                        f"({lines_per_page} lines × {effective_line_advance_mm:.2f}mm per page)")
+                        f"({lines_per_page} lines × {effective_line_advance_mm:.2f}mm per page)"
+                        f"{shift_note}")
     else:
         if args.paginate:
             logger.warning("--paginate requires --paper-size; emitting a single file.")
         pages.append((args.output, shapes, typesetter._compiled_beziers, typesetter._line_info))
 
-    # For --format png we always write the SVG first (so the raster
-    # can be regenerated later without re-typesetting) and then convert.
+    # For --format png / pdf we always write the SVG first (so the
+    # raster can be regenerated later without re-typesetting) and then
+    # convert. For PDF we collect every page's SVG and combine into a
+    # single multi-page PDF at the end.
+    pdf_intermediate_svgs: List[str] = []
     for page_path, page_shapes, page_bezier, page_lines in pages:
         svg_path = page_path
-        if args.format == "png":
-            # Swap .png → .svg for the intermediate file.
+        if args.format in ("png", "pdf"):
             root, _ = os.path.splitext(page_path)
             svg_path = root + ".svg"
         renderer.generate_svg(page_shapes, svg_path,
@@ -1777,3 +1940,22 @@ if __name__ == "__main__":
             except RuntimeError as exc:
                 logger.error(str(exc))
                 exit(1)
+        elif args.format == "pdf":
+            pdf_intermediate_svgs.append(svg_path)
+
+    if args.format == "pdf":
+        # Strip the -NN suffix for paginated output; single-page PDFs
+        # get the user's exact filename with a .pdf extension.
+        if args.paginate and pdf_intermediate_svgs:
+            root, _ = os.path.splitext(args.output)
+            # Remove any page-number suffix we added (e.g. "-01") if present
+            if root.endswith(tuple(f"-{i:02d}" for i in range(1, len(pdf_intermediate_svgs) + 1))):
+                root = root.rsplit("-", 1)[0]
+            pdf_path = root + ".pdf"
+        else:
+            pdf_path = os.path.splitext(args.output)[0] + ".pdf"
+        try:
+            renderer.generate_pdf(pdf_intermediate_svgs, pdf_path)
+        except RuntimeError as exc:
+            logger.error(str(exc))
+            exit(1)

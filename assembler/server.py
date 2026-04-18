@@ -281,6 +281,26 @@ def api_png():
     return Response(png_bytes, mimetype="image/png")
 
 
+@app.route("/api/pdf", methods=["POST"])
+def api_pdf():
+    """Convert a client-provided SVG string to a single-page PDF.
+
+    Body: {"svg": "<svg ...>...</svg>"}
+    """
+    try:
+        import cairosvg  # type: ignore
+    except ImportError:
+        return jsonify({"error": "PDF output requires cairosvg. "
+                                   "Install with: pip install cairosvg"}), 503
+
+    data = request.get_json(force=True)
+    svg_text = data.get("svg", "")
+    if not svg_text.strip():
+        return jsonify({"error": "No SVG provided"}), 400
+    pdf_bytes = cairosvg.svg2pdf(bytestring=svg_text.encode("utf-8"))
+    return Response(pdf_bytes, mimetype="application/pdf")
+
+
 @app.route("/api/coverage", methods=["POST"])
 def api_coverage():
     """Standalone coverage check — no typesetting, no SVG emission.

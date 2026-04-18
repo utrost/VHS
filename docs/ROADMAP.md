@@ -301,7 +301,7 @@ render output to a reference checksum.
 
 ---
 
-### U6. Multi-page PDF export + widow/orphan control — **Proposed**
+### U6. Multi-page PDF export + widow/orphan control — **Done**
 
 `--paginate` currently produces numbered SVG files. For real-world
 letters that's one conversion step away from usable; PDFs would be more
