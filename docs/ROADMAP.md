@@ -168,7 +168,43 @@ config files solve both reuse and sharing.
 
 ---
 
-### U4. Multi-page PDF export + widow/orphan control — **Proposed**
+### U4. Glyph-coverage feedback — **Planned**
+
+Today, a missing glyph produces a log line per occurrence and, after
+R4 lands, a one-line substitution summary. That's still too quiet —
+users shouldn't have to read the console to discover their text isn't
+fully renderable, and they shouldn't be surprised after a 20 MB render.
+
+**What changes**
+
+- Up-front coverage check: before typesetting, scan the input against
+  the loaded `GlyphLibrary` and compute
+  `{missing_codepoints: {codepoint: [positions], ...}, missing_count, total_count}`.
+- CLI:
+  - A prominent banner on stderr before rendering begins, listing every
+    missing codepoint with counts and showing a short context snippet
+    (`"…having litt—le or no money…"`) for the first occurrence of each.
+  - `--strict-glyphs` makes missing glyphs a fatal error (CI-friendly).
+  - Exit code 2 reserved for "rendered but with missing glyphs".
+- Web GUI:
+  - A dedicated "Coverage" panel under the preview. Red rows per missing
+    codepoint with count and a "Jump to first occurrence" button that
+    highlights the character in the input textarea.
+  - If the font ships a `preset.yaml` (see U3) with suggested fallbacks,
+    offer a "Apply R4 fallbacks" button that substitutes and re-renders.
+- Report integration: `--report` (U1) includes the full coverage
+  dictionary in its JSON output.
+
+**Effort:** small once R4's codepoint inventory is built — this reuses
+the same scan. The GUI highlight/jump is the biggest UI piece.
+
+**Depends on:** R4 for the substitution context; U1 for the machine-
+readable report surface. Can ship standalone with just the CLI banner
+and a simple GUI list first, then enhance.
+
+---
+
+### U5. Multi-page PDF export + widow/orphan control — **Proposed**
 
 `--paginate` currently produces numbered SVG files. For real-world
 letters that's one conversion step away from usable; PDFs would be more
@@ -198,14 +234,16 @@ pagination (easy — `_word_info` already has `line_break_after`).
 | # | Item | Value | Effort | Risk | Order |
 |---|------|-------|--------|------|-------|
 | R4 | Missing-glyph fallbacks | High | Small | Low | 1 |
-| U1 | Dry-run / report | High | Small | Low | 2 |
-| R3 | Per-glyph slant + bob | Medium-high | Small | Low | 3 |
-| U2 | Live preview in GUI | High | Medium | Medium | 4 |
-| U3 | Config files + presets | Medium | Medium | Low | 5 |
-| U4 | PDF + widow/orphan | Medium | Medium | Low | 6 |
-| R2 | Cursive joining | High | Medium | Medium-high | 7 |
+| U4 | Glyph-coverage feedback | High | Small | Low | 2 |
+| U1 | Dry-run / report | High | Small | Low | 3 |
+| R3 | Per-glyph slant + bob | Medium-high | Small | Low | 4 |
+| U2 | Live preview in GUI | High | Medium | Medium | 5 |
+| U3 | Config files + presets | Medium | Medium | Low | 6 |
+| U5 | PDF + widow/orphan | Medium | Medium | Low | 7 |
+| R2 | Cursive joining | High | Medium | Medium-high | 8 |
 | R1 | Pressure-aware stroke | — | — | — | Won't do |
 
-The first two are the lowest-risk biggest wins and should land together
-— R4 removes an obvious output defect, U1 gives users a way to see what
-the Assembler is about to produce.
+R4 + U4 + U1 form a natural first bundle: together they remove the
+single biggest current defect (silent drops) and give the user both a
+clear signal ("this text has 4 uncovered glyphs") and a clear answer
+("substituted 3, dropped 1, will fit on one page").
