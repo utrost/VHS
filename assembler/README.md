@@ -30,10 +30,15 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--space-jitter-mm [FLOAT]`: Max ± random variation per space in mm. Default: `0` (uniform).
 - `--line-drift-angle [FLOAT]`: Max ± per-line rotation in degrees (simulates drifting hand). Default: `0`.
 - `--line-drift-y [FLOAT]`: Max ± per-line baseline wobble in mm. Default: `0`.
+- `--glyph-slant-jitter [FLOAT]`: Max ± per-glyph rotation in degrees (every letter tilts in place). Default: `0`. Try `0.5`–`1.5`.
+- `--glyph-y-jitter [FLOAT]`: Max ± per-glyph baseline offset in mm. Default: `0`. Try `0.1`–`0.3`.
 - `--paginate`: Split overflowing content into numbered files (`output-01.svg`, …). Requires `--paper-size`.
 - `--no-fallbacks`: Disable default Unicode substitutions (em-dash → `--`, curly quotes → straight, ellipsis → `...`, etc).
 - `--strict-glyphs`: Exit with status 2 if the text contains any codepoint the font doesn't cover (useful in CI).
 - `--report`: Print a layout + coverage report and skip SVG emission. `--report-format {text,json}` picks the format (default `text`).
+- `--format {svg,png}`: Output format (default `svg`). `png` requires the optional `cairosvg` dependency (`pip install cairosvg`).
+- `--dpi [INT]`: Raster resolution for PNG output (default `300`).
+- `--transparent`: Transparent background for PNG output (default: white).
 - `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 - `--color`: SVG colour name or `#rrggbb` (default: `black`).
 - `--jitter [FLOAT]`: Gaussian noise on stroke points to simulate hand tremor. Default `0.0`. Try `0.5`–`1.5`.

@@ -76,7 +76,7 @@ before this feature may need a re-capture pass or a metadata migration.
 
 ---
 
-### R3. Per-character slant + intra-line bob — **Proposed**
+### R3. Per-character slant + intra-line bob — **Done**
 
 Line drift already exists per-line. Real writing also wobbles per glyph:
 small ±1° slant jitter and ±0.2 mm y-bob per letter.
@@ -226,7 +226,7 @@ and a simple GUI list first, then enhance.
 
 ---
 
-### U5. PNG export — **Proposed**
+### U5. PNG export — **Done**
 
 SVG is ideal for pen plotters and lossless print, but users often want a
 PNG for sharing on messaging apps, embedding in documents, generating

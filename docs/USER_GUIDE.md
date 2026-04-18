@@ -94,12 +94,36 @@ control.
 |------|------|---------|---------|
 | `--line-drift-angle` | degrees | `0.0` | Max ± per-line rotation. Real handwriting drifts; `0.2`–`0.5`° is plausible. |
 | `--line-drift-y` | mm | `0.0` | Max ± per-line baseline wobble. Try `0.2`–`0.6` mm. |
+| `--glyph-slant-jitter` | degrees | `0.0` | Max ± rotation applied to every letter individually. Adds a convincing "uneven hand" feel on top of line drift. Try `0.5`–`1.5`°. |
+| `--glyph-y-jitter` | mm | `0.0` | Max ± baseline offset per letter. Try `0.1`–`0.3` mm. |
+
+Line drift tilts whole lines; glyph jitter makes each letter tilt and
+bob in place. They stack naturally — a common good-looking combination
+is `--line-drift-angle 0.3 --line-drift-y 0.3 --glyph-slant-jitter 0.8
+--glyph-y-jitter 0.15`.
 
 ### Multi-page
 
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `--paginate` | off | Split content across numbered files (`output-01.svg`, `output-02.svg`, …) when it overflows the page height. Requires `--paper-size`. |
+
+### Output format (PNG)
+
+SVG is the default output — vector, plotter-ready, lossless. PNG is
+available as an optional raster format for sharing or embedding.
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--format` | `svg` | Output format. `png` requires the `cairosvg` package (`pip install cairosvg`). |
+| `--dpi` | `300` | Raster resolution for PNG. A4 @ 300 dpi ≈ 2480×3508 px. |
+| `--transparent` | off | Transparent background for PNG (default: white). |
+
+With `--format png`, the Assembler writes both the intermediate
+`output.svg` and the final `output.png`. With `--paginate` you get
+`output-01.svg` + `output-01.png`, `output-02.svg` + …. The web GUI
+has a "Download PNG" button with the same DPI and transparency
+controls.
 
 ### Coverage and fallbacks
 

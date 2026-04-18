@@ -510,7 +510,9 @@ class Typesetter:
                      space_width_override: Optional[float] = None,
                      space_jitter: float = 0.0,
                      seed: Optional[int] = None,
-                     fallbacks: Optional[Dict[str, str]] = None) -> List[List[List[Dict[str, float]]]]:
+                     fallbacks: Optional[Dict[str, str]] = None,
+                     glyph_slant_jitter: float = 0.0,
+                     glyph_y_jitter: float = 0.0) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
@@ -672,6 +674,39 @@ class Typesetter:
                                 for seg in bstroke:
                                     for key in ('p0', 'p1', 'p2', 'p3'):
                                         seg[key]['x'] -= shift
+
+                    # Per-glyph slant + y-bob (R3). Pivots around the
+                    # glyph's baseline-midpoint so each letter tilts in
+                    # place without visually sliding.
+                    if glyph_slant_jitter > 0.0 or glyph_y_jitter > 0.0:
+                        theta_deg = (rng.uniform(-glyph_slant_jitter, glyph_slant_jitter)
+                                     if glyph_slant_jitter > 0 else 0.0)
+                        dy = (rng.uniform(-glyph_y_jitter, glyph_y_jitter)
+                              if glyph_y_jitter > 0 else 0.0)
+                        if theta_deg != 0.0 or dy != 0.0:
+                            # Pivot = (mid-x of the glyph, baseline y)
+                            xs_flat = [p['x'] for s in placed_strokes for p in s]
+                            pivot_x = (min(xs_flat) + max(xs_flat)) / 2.0 if xs_flat else cursor_x
+                            pivot_y = cursor_y
+                            rad = math.radians(theta_deg)
+                            cos_t, sin_t = math.cos(rad), math.sin(rad)
+
+                            def _apply(p):
+                                dx_ = p['x'] - pivot_x
+                                dy_ = p['y'] - pivot_y
+                                p['x'] = pivot_x + dx_ * cos_t - dy_ * sin_t
+                                p['y'] = pivot_y + dx_ * sin_t + dy_ * cos_t + dy
+
+                            for stroke in placed_strokes:
+                                for p in stroke:
+                                    _apply(p)
+                            bz_entry = (self._compiled_beziers[-1]
+                                        if self._compiled_beziers else None)
+                            if bz_entry is not None:
+                                for bstroke in bz_entry:
+                                    for seg in bstroke:
+                                        for key in ('p0', 'p1', 'p2', 'p3'):
+                                            _apply(seg[key])
 
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
                     last_shape_placed = placed_strokes
@@ -1193,6 +1228,26 @@ class Renderer:
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
 
+    def generate_png(self, svg_path: str, png_path: str, dpi: int = 300,
+                     transparent: bool = False):
+        """Convert an on-disk SVG to PNG at the given DPI.
+
+        Requires the optional `cairosvg` dependency. Raises a clear
+        RuntimeError if it isn't available.
+        """
+        try:
+            import cairosvg  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "PNG output requires cairosvg. Install with:  "
+                "pip install cairosvg"
+            ) from exc
+        kwargs = {"url": svg_path, "write_to": png_path, "dpi": dpi}
+        if not transparent:
+            kwargs["background_color"] = "white"
+        cairosvg.svg2png(**kwargs)
+        logger.info(f"PNG saved to {png_path} ({dpi} dpi)")
+
     def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
                             margin_mm=20.0, bezier_data=None,
                             explicit_scale=None, start_x_mm=None, start_y_mm=None,
@@ -1272,6 +1327,12 @@ if __name__ == "__main__":
                              "hand. Default: 0 (perfectly straight). Try 0.2–0.5.")
     parser.add_argument("--line-drift-y", type=float, default=0.0,
                         help="Max ± per-line baseline wobble in mm. Default: 0. Try 0.2–0.6.")
+    parser.add_argument("--glyph-slant-jitter", type=float, default=0.0,
+                        help="Max ± per-glyph rotation in degrees. Default: 0. Try 0.5–1.5 "
+                             "for a subtly uneven hand feel.")
+    parser.add_argument("--glyph-y-jitter", type=float, default=0.0,
+                        help="Max ± per-glyph baseline offset in mm. Default: 0. Try "
+                             "0.1–0.3 mm.")
     parser.add_argument("--paginate", action="store_true",
                         help="Split content that overflows the page height into multiple "
                              "files (output-01.svg, output-02.svg, ...). Requires --paper-size.")
@@ -1287,6 +1348,15 @@ if __name__ == "__main__":
                              "skip SVG emission. Use --report-format to pick 'text' or 'json'.")
     parser.add_argument("--report-format", choices=["text", "json"], default="text",
                         help="Format used by --report. Default: text.")
+    parser.add_argument("--format", choices=["svg", "png"], default="svg",
+                        help="Output format. 'png' requires the optional cairosvg "
+                             "dependency (pip install cairosvg).")
+    parser.add_argument("--dpi", type=int, default=300,
+                        help="Raster resolution for PNG output in dots per inch "
+                             "(default: 300).")
+    parser.add_argument("--transparent", action="store_true",
+                        help="Use a transparent background for PNG output "
+                             "(default: white).")
     parser.add_argument("--max-width-mm", type=float, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
@@ -1381,6 +1451,7 @@ if __name__ == "__main__":
     space_width_override = None
     space_jitter = 0.0
     line_drift_y_glyph = 0.0
+    glyph_y_jitter_glyph = 0.0
     if explicit_scale is not None:
         if args.space_width_mm is not None:
             space_width_override = args.space_width_mm / explicit_scale
@@ -1388,6 +1459,8 @@ if __name__ == "__main__":
             space_jitter = args.space_jitter_mm / explicit_scale
         if args.line_drift_y > 0:
             line_drift_y_glyph = args.line_drift_y / explicit_scale
+        if args.glyph_y_jitter > 0:
+            glyph_y_jitter_glyph = args.glyph_y_jitter / explicit_scale
     else:
         if args.space_width_mm is not None:
             logger.warning("--space-width-mm ignored without --paper-size "
@@ -1396,6 +1469,8 @@ if __name__ == "__main__":
             logger.warning("--space-jitter-mm ignored without --paper-size.")
         if args.line_drift_y > 0:
             logger.warning("--line-drift-y ignored without --paper-size.")
+        if args.glyph_y_jitter > 0:
+            logger.warning("--glyph-y-jitter ignored without --paper-size.")
 
     fallbacks = None if args.no_fallbacks else DEFAULT_UNICODE_FALLBACKS
 
@@ -1407,7 +1482,9 @@ if __name__ == "__main__":
                                      space_width_override=space_width_override,
                                      space_jitter=space_jitter,
                                      seed=args.seed,
-                                     fallbacks=fallbacks)
+                                     fallbacks=fallbacks,
+                                     glyph_slant_jitter=args.glyph_slant_jitter,
+                                     glyph_y_jitter=glyph_y_jitter_glyph)
 
     coverage = typesetter._coverage_report
     banner = format_coverage_banner(coverage)
@@ -1544,8 +1621,15 @@ if __name__ == "__main__":
             logger.warning("--paginate requires --paper-size; emitting a single file.")
         pages.append((args.output, shapes, typesetter._compiled_beziers, typesetter._line_info))
 
+    # For --format png we always write the SVG first (so the raster
+    # can be regenerated later without re-typesetting) and then convert.
     for page_path, page_shapes, page_bezier, page_lines in pages:
-        renderer.generate_svg(page_shapes, page_path,
+        svg_path = page_path
+        if args.format == "png":
+            # Swap .png → .svg for the intermediate file.
+            root, _ = os.path.splitext(page_path)
+            svg_path = root + ".svg"
+        renderer.generate_svg(page_shapes, svg_path,
                               page_width_mm=page_w, page_height_mm=page_h,
                               margin_mm=args.margin, bezier_data=page_bezier,
                               explicit_scale=explicit_scale,
@@ -1554,3 +1638,12 @@ if __name__ == "__main__":
                               line_drift_angle_deg=args.line_drift_angle,
                               line_drift_y=line_drift_y_glyph,
                               drift_seed=args.seed)
+        if args.format == "png":
+            png_path = os.path.splitext(page_path)[0] + ".png"
+            try:
+                renderer.generate_png(svg_path, png_path,
+                                      dpi=args.dpi,
+                                      transparent=args.transparent)
+            except RuntimeError as exc:
+                logger.error(str(exc))
+                exit(1)

@@ -528,8 +528,18 @@ Line breaks are preserved."></textarea>
                             <input type="number" id="lineDriftY" value="0" min="0" max="5" step="0.1">
                         </div>
                     </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
+                            <label class="field-label">Glyph Slant (°)</label>
+                            <input type="number" id="glyphSlantJitter" value="0" min="0" max="5" step="0.1">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Glyph Y (mm)</label>
+                            <input type="number" id="glyphYJitter" value="0" min="0" max="2" step="0.05">
+                        </div>
+                    </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
-                        Simulates a drifting hand. Try 0.2–0.5° and 0.2–0.6 mm. Paper size required.
+                        Line drift: whole lines tilt/wobble. Glyph: each letter tilts/bobs in place. Try 0.3° and 0.2 mm for line, 0.8° and 0.15 mm for glyph.
                     </div>
                 </div>
 
@@ -540,9 +550,25 @@ Line breaks are preserved."></textarea>
                 <button class="btn btn-primary" id="generateBtn" onclick="generate()">
                     ✦ Generate
                 </button>
-                <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
-                    ↓ Download
-                </button>
+                <div class="field-row" style="margin-top: 4px;">
+                    <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
+                        ↓ SVG
+                    </button>
+                    <button class="btn btn-secondary" id="downloadPngBtn" onclick="downloadPng()" disabled>
+                        ↓ PNG
+                    </button>
+                </div>
+                <div class="field-row" style="margin-top: 4px;">
+                    <div class="field">
+                        <label class="field-label">PNG DPI</label>
+                        <input type="number" id="pngDpi" value="300" min="72" max="1200" step="6">
+                    </div>
+                    <div class="field" style="display: flex; align-items: end;">
+                        <label style="font-size: 12px; color: #aaa;">
+                            <input type="checkbox" id="pngTransparent"> transparent
+                        </label>
+                    </div>
+                </div>
             </div>
         </aside>
 
@@ -569,6 +595,7 @@ Line breaks are preserved."></textarea>
     <script>
         // ── State ──
         let currentSvgBlob = null;
+        let currentSvgText = '';
 
         // ── Init ──
         async function init() {
@@ -689,6 +716,8 @@ Line breaks are preserved."></textarea>
                 space_jitter_mm: valOrNull('spaceJitterMm'),
                 line_drift_angle: valOrNull('lineDriftAngle'),
                 line_drift_y: valOrNull('lineDriftY'),
+                glyph_slant_jitter: valOrNull('glyphSlantJitter'),
+                glyph_y_jitter: valOrNull('glyphYJitter'),
                 fallbacks: document.getElementById('fallbacks').checked
             };
 
@@ -707,7 +736,9 @@ Line breaks are preserved."></textarea>
                 const svgText = await res.text();
                 showPreview(svgText, payload);
                 currentSvgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+                currentSvgText = svgText;
                 document.getElementById('downloadBtn').disabled = false;
+                document.getElementById('downloadPngBtn').disabled = false;
 
                 // Coverage panel from the X-Glyph-Coverage response header
                 const covHdr = res.headers.get('X-Glyph-Coverage');
@@ -803,6 +834,41 @@ Line breaks are preserved."></textarea>
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        async function downloadPng() {
+            if (!currentSvgText) return;
+            const btn = document.getElementById('downloadPngBtn');
+            const orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⟳ Rendering…';
+            try {
+                const dpi = parseInt(document.getElementById('pngDpi').value, 10) || 300;
+                const transparent = document.getElementById('pngTransparent').checked;
+                const res = await fetch('/api/png', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ svg: currentSvgText, dpi, transparent }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'PNG export failed');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `handwriting-${dpi}dpi.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                setStatus('error', err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
         }
 
         // ── Status ──

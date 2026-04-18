@@ -553,5 +553,34 @@ class TestAssembler(unittest.TestCase):
         self.assertIn('\u2014', report['substituted'])
         self.assertIn('Z', report['missing'])
 
+    def test_glyph_slant_jitter_changes_output(self):
+        """Non-zero glyph_slant_jitter must move point coordinates."""
+        t1 = Typesetter(self.lib)
+        shapes1 = t1.typeset_text("abc", seed=1)
+        pts1 = [(p['x'], p['y']) for s in shapes1 for st in s for p in st]
+
+        t2 = Typesetter(self.lib)
+        shapes2 = t2.typeset_text("abc", seed=1, glyph_slant_jitter=2.0,
+                                  glyph_y_jitter=1.0)
+        pts2 = [(p['x'], p['y']) for s in shapes2 for st in s for p in st]
+
+        self.assertEqual(len(pts1), len(pts2))
+        diffs = sum(abs(a[0] - b[0]) + abs(a[1] - b[1])
+                    for a, b in zip(pts1, pts2))
+        self.assertGreater(diffs, 0.0,
+                           "glyph_slant_jitter / glyph_y_jitter must transform points")
+
+    def test_glyph_slant_jitter_deterministic_with_seed(self):
+        """Same seed + same jitter → byte-identical coordinates."""
+        t1 = Typesetter(self.lib)
+        s1 = t1.typeset_text("abc", seed=42, glyph_slant_jitter=1.5,
+                             glyph_y_jitter=0.5)
+        t2 = Typesetter(self.lib)
+        s2 = t2.typeset_text("abc", seed=42, glyph_slant_jitter=1.5,
+                             glyph_y_jitter=0.5)
+        p1 = [(p['x'], p['y']) for s in s1 for st in s for p in st]
+        p2 = [(p['x'], p['y']) for s in s2 for st in s for p in st]
+        self.assertEqual(p1, p2)
+
 if __name__ == '__main__':
     unittest.main()

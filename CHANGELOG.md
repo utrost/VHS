@@ -5,6 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Per-glyph slant + y-bob**: `--glyph-slant-jitter` (deg) and `--glyph-y-jitter` (mm) apply a seeded per-letter rotation pivoting on the glyph's baseline-midpoint plus a small y offset. Stacks naturally with line drift for organic-looking text. Web GUI has matching inputs.
+- **PNG export**: `--format png` with `--dpi` and `--transparent`. Uses `cairosvg` as an optional dependency; the SVG path is unchanged. Web GUI gets a "Download PNG" button with DPI / transparency controls, backed by a new `/api/png` endpoint.
 - **Unicode fallbacks + coverage feedback**: on-by-default substitution for em-dash, curly quotes, ellipsis, NBSP, and other typographic characters that hand-drawn fonts rarely cover. `--no-fallbacks` disables the pass. Every substitution and every still-missing codepoint is surfaced: CLI prints a `Glyph coverage:` banner on stderr with short context snippets; the web GUI shows a dedicated Coverage panel under the preview; and the response returns an `X-Glyph-Coverage` header / `/api/coverage` endpoint for tooling.
 - **Strict glyph mode**: `--strict-glyphs` exits with status `2` when any codepoint is uncovered after fallbacks — CI-friendly.
 - **Layout report / dry-run**: `--report` skips SVG emission and prints a structured layout + coverage summary. `--report-format {text,json}` chooses the format.

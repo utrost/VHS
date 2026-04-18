@@ -104,6 +104,8 @@ def api_generate():
     space_jitter_mm = _opt_float("space_jitter_mm") or 0.0
     line_drift_angle = _opt_float("line_drift_angle") or 0.0
     line_drift_y_mm = _opt_float("line_drift_y") or 0.0
+    glyph_slant_jitter = _opt_float("glyph_slant_jitter") or 0.0
+    glyph_y_jitter_mm = _opt_float("glyph_y_jitter") or 0.0
     fallbacks_enabled = bool(data.get("fallbacks", True))
 
     # Resolve glyphs path
@@ -160,6 +162,7 @@ def api_generate():
     space_width_override = None
     space_jitter = 0.0
     line_drift_y_glyph = 0.0
+    glyph_y_jitter_glyph = 0.0
     if explicit_scale is not None:
         if space_width_mm_in is not None:
             space_width_override = space_width_mm_in / explicit_scale
@@ -167,6 +170,8 @@ def api_generate():
             space_jitter = space_jitter_mm / explicit_scale
         if line_drift_y_mm > 0:
             line_drift_y_glyph = line_drift_y_mm / explicit_scale
+        if glyph_y_jitter_mm > 0:
+            glyph_y_jitter_glyph = glyph_y_jitter_mm / explicit_scale
 
     fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
 
@@ -178,7 +183,9 @@ def api_generate():
                                      space_width_override=space_width_override,
                                      space_jitter=space_jitter,
                                      seed=seed,
-                                     fallbacks=fallbacks)
+                                     fallbacks=fallbacks,
+                                     glyph_slant_jitter=glyph_slant_jitter,
+                                     glyph_y_jitter=glyph_y_jitter_glyph)
 
     renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
                         stroke_width=stroke_width, seed=seed)
@@ -198,6 +205,32 @@ def api_generate():
     response.headers['X-Glyph-Coverage'] = json.dumps(
         typesetter._coverage_report, default=str)
     return response
+
+
+@app.route("/api/png", methods=["POST"])
+def api_png():
+    """Convert a client-provided SVG string to PNG.
+
+    Body: {"svg": "<svg ...>...</svg>", "dpi": 300, "transparent": false}
+    """
+    try:
+        import cairosvg  # type: ignore
+    except ImportError:
+        return jsonify({"error": "PNG output requires cairosvg. "
+                                   "Install with: pip install cairosvg"}), 503
+
+    data = request.get_json(force=True)
+    svg_text = data.get("svg", "")
+    if not svg_text.strip():
+        return jsonify({"error": "No SVG provided"}), 400
+    dpi = int(data.get("dpi", 300))
+    transparent = bool(data.get("transparent", False))
+
+    kwargs = {"bytestring": svg_text.encode("utf-8"), "dpi": dpi}
+    if not transparent:
+        kwargs["background_color"] = "white"
+    png_bytes = cairosvg.svg2png(**kwargs)
+    return Response(png_bytes, mimetype="image/png")
 
 
 @app.route("/api/coverage", methods=["POST"])
