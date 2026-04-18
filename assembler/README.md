@@ -25,6 +25,12 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--line-spacing [FLOAT]`: Multiplier on the line height (e.g. `1.3` = 30 % extra leading). Default: `1.0`.
 - `--start-x [FLOAT]`, `--start-y [FLOAT]`: Top-left of the text block in mm (default: `--margin`).
 - `--max-width-mm [FLOAT]`: Word-wrap width in mm (default: `page_w − margin − start-x`).
+- `--wrap-mode {balanced,greedy}`: Line-break algorithm (default: `balanced` — minimum-raggedness DP; `greedy` is first-fit).
+- `--space-width-mm [FLOAT]`: Width of a space in mm. Overrides the font's kerning config.
+- `--space-jitter-mm [FLOAT]`: Max ± random variation per space in mm. Default: `0` (uniform).
+- `--line-drift-angle [FLOAT]`: Max ± per-line rotation in degrees (simulates drifting hand). Default: `0`.
+- `--line-drift-y [FLOAT]`: Max ± per-line baseline wobble in mm. Default: `0`.
+- `--paginate`: Split overflowing content into numbered files (`output-01.svg`, …). Requires `--paper-size`.
 - `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 - `--color`: SVG colour name or `#rrggbb` (default: `black`).
 - `--jitter [FLOAT]`: Gaussian noise on stroke points to simulate hand tremor. Default `0.0`. Try `0.5`–`1.5`.
@@ -52,11 +58,14 @@ Each font directory can have its own `kerning.json`.
    - Selects variants stochastically (randomly, but avoiding immediate repetition).
    - Applies kerning rules (if defined in `kerning.json`).
    - **Zone-aware optical kerning**: When `--auto-kern` is enabled, the scanline-based algorithm classifies each glyph's strokes into vertical zones (upper, ground, lower) using `baseline_y` and `x_height` from glyph metadata. Letter pairs occupying different zones (e.g., "Te") can kern tighter because their strokes don't collide. The `--kern-aggressiveness` parameter controls how much non-shared zones are relaxed.
-   - Supports word wrapping via the `max_width` parameter — when a word would exceed the available width, the entire word is moved to the next line.
+   - **Balanced line wrap** (default): the typesetter places every word on a single line, records each word's width, then runs a minimum-raggedness DP that minimises total squared slack. `--wrap-mode greedy` falls back to the legacy first-fit algorithm.
+   - **Per-word and per-line metadata**: `typeset_text` populates `_word_info` and `_line_info` (line start/end shape indices, baseline y). The Renderer uses these for line drift and pagination.
 3. **Rendering**:
    - Generates an SVG with a single path element per stroke.
    - Applies jitter if requested.
    - **mm-based scaling**: The renderer chooses a scale factor equal to `--line-height-mm / native_glyph_line_height` and applies it uniformly to every stroke. Content is translated to `(start-x, start-y)` in millimetres. Stroke width is inversely scaled so the on-paper thickness equals `--stroke-width` mm.
+   - **Per-line drift**: when `--line-drift-angle` or `--line-drift-y` is non-zero, each line's strokes are wrapped in a sub-group with `rotate(θ 0 baseline) translate(0 dy)`, producing a natural hand drift. Seeded with `--seed` for reproducibility.
+   - **Pagination**: when `--paginate` is set, the CLI slices `_line_info` into page-sized chunks (floor of writable height / effective line height) and re-invokes the renderer per page, producing `output-01.svg`, `output-02.svg`, ….
 
 ## Ligatures
 The assembler supports automatic ligature substitution via **Greedy Matching**.

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 - **Millimetre-first page layout**: New flags `--line-height-mm`, `--lines-per-page`, `--start-x`, `--start-y`, `--max-width-mm` give direct, millimetre-based control over line height, text-block origin, and word-wrap width. The renderer applies a single scale factor (`line_height_mm / native_line_height`) so a 12 mm line on paper stays 12 mm regardless of how much text is present — no more auto-shrink-to-fit. Exposed in both the CLI and the web GUI.
+- **Balanced line wrap** (`--wrap-mode balanced`, default): the typesetter lays every word out on a single line, records per-word widths, then runs a minimum-raggedness DP per paragraph to choose line breaks that minimise total squared slack. `--wrap-mode greedy` keeps the legacy first-fit algorithm.
+- **Natural whitespace controls**: `--space-width-mm` overrides the font default; `--space-jitter-mm` adds a seeded per-space ± variation so spaces don't look mechanically uniform.
+- **Per-line drift**: `--line-drift-angle` (deg) and `--line-drift-y` (mm) wrap each rendered line in its own `rotate(θ 0 baseline) translate(0 dy)` sub-group for an organic drifting-hand look. Seeded reproducibly via `--seed`.
+- **Pagination**: `--paginate` splits overflowing content into numbered files (`output-01.svg`, `output-02.svg`, …). Lines-per-page is derived from the writable height and effective line height.
+- **Typesetter metadata**: `typeset_text` now populates `_line_info` (per-line `{start_idx, end_idx, baseline_y}`) and `_word_info`, consumed by the Renderer for drift and by the CLI for pagination.
+- **GUI fields** for wrap mode, space width / jitter (mm), and line drift (angle + y, mm).
 - **User Guide**: `docs/USER_GUIDE.md` — full walkthrough of the mm layout model, every flag, recipes, and a sizing cheat-sheet.
 - CONTRIBUTING.md
 - This CHANGELOG

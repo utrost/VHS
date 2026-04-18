@@ -178,6 +178,10 @@ vhs-cli.bat --file letter.txt output.svg --font MyHandwriting ^
 *   `--line-spacing`: Multiplier on top of the line height (e.g. `1.3` = 30 % extra leading).
 *   `--start-x`, `--start-y`: Top-left of the text block in mm (default: `--margin`).
 *   `--max-width-mm`: Word-wrap width in mm (default: `page_w − margin − start-x`).
+*   `--wrap-mode`: `balanced` (default, minimum-raggedness DP) or `greedy` (legacy first-fit).
+*   `--space-width-mm`, `--space-jitter-mm`: Width of a space in mm, and per-space ± variation. 2.5 mm with 0.4 mm jitter reads as natural handwriting.
+*   `--line-drift-angle`, `--line-drift-y`: Per-line rotation (deg) and baseline wobble (mm) for an organic drifting-hand effect. Try `0.3` and `0.4`.
+*   `--paginate`: Split content that overflows the page into numbered files (`output-01.svg`, `output-02.svg`, …).
 *   `--stroke-width`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 
 > **How mm layout works:** Glyph coordinates are captured in device units (tablet pixels). The renderer multiplies them by a single scale factor so that one glyph-unit line equals `--line-height-mm`, then places the block at `(start-x, start-y)`. Content is **not** auto-shrunk to fit the page — short texts stay their real size and long texts can overflow, so you keep precise control. Stroke width is inversely scaled so `--stroke-width 0.4` gives a 0.4 mm pen regardless of glyph scale.

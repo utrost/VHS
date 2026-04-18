@@ -85,6 +85,9 @@ The web UI provides a modern visual interface with live SVG preview, file upload
 - **Zone-Aware Auto-Kerning**: Scanline-based algorithm calculates optimal letter spacing with vertical zone awareness (upper/ground/lower). Letters in non-overlapping zones kern tighter. Configurable aggressiveness (0.0–1.0).
 - **Ligature Support**: Greedy matching for multi-character sequences (e.g., "sch", "tt", "th").
 - **Typography Controls**: Line height in mm (or derived from `--lines-per-page`), line spacing multiplier, explicit text-block origin, page margins, and mm-based word wrapping via `--max-width-mm`.
+- **Balanced Line Breaks**: Default `--wrap-mode balanced` runs a minimum-raggedness DP per paragraph so line lengths stay uniform; `--wrap-mode greedy` falls back to first-fit. `--space-width-mm` and `--space-jitter-mm` give human-sized spaces with subtle variation.
+- **Organic Line Drift**: `--line-drift-angle` and `--line-drift-y` apply a tiny per-line rotation and baseline wobble so the output doesn't look like it's sitting on ruled lines.
+- **Multi-Page Pagination**: `--paginate` splits content that overflows into `output-01.svg`, `output-02.svg`, ….
 - **Pressure Data**: Preserves pressure information from the capture phase. Bezier segments carry interpolated pressure from raw stroke points.
 - **Multi-Font**: Organize different handwriting styles in separate `glyphs/` subdirectories.
 - **Windows Safe**: Unicode hex filenames (e.g., `0041.json`) prevent case-insensitivity conflicts.

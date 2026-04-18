@@ -206,17 +206,32 @@ yourself — the Assembler will not auto-shrink to fit.
 ## 6. How it works under the hood
 
 1. **Typesetter** walks the input text and places glyphs in an internal
-   coordinate system (glyph units). Ligatures match greedily; word-wrap
-   triggers when the cursor exceeds `max_width` (computed internally from
-   `--max-width-mm`).
-2. **Renderer** emits one SVG path per stroke, wrapped in a `<g>` with
-   `transform="translate(start-x, start-y) scale(mm_per_glyph) translate(...)"`.
+   coordinate system (glyph units). Ligatures match greedily.
+2. **Wrap**:
+   - **Balanced** (default): place every word on a single line, record each
+     word's width in `_word_info`, then run a minimum-raggedness DP per
+     paragraph to pick breakpoints that minimise $\sum (W_{max} - W_{line})^2$.
+     Each chosen line is then shifted so its first word starts at x = 0 and
+     its baseline is at `k · effective_line_advance`.
+   - **Greedy**: place glyphs one at a time; when the cursor overflows
+     `max_width`, the whole current word is moved to the next line.
+3. **Renderer** emits one SVG path per stroke, wrapped in a `<g>` with
+   `transform="translate(start-x, start-y) scale(mm_per_glyph) translate(-offset)"`.
    That single transform converts every glyph-unit coordinate into millimetres
-   on the page.
-3. **Stroke width** is divided by the scale inside the SVG so the final
-   on-paper thickness equals `--stroke-width` mm regardless of glyph scale.
-4. **Jitter** and **smoothing** are applied in glyph units before scaling, so
-   the visible wobble is proportional to the letter size.
+   on the page. **Stroke width** is divided by the scale inside the SVG so the
+   final on-paper thickness equals `--stroke-width` mm regardless of glyph
+   scale. **Jitter** and **smoothing** are applied in glyph units before
+   scaling, so the visible wobble is proportional to the letter size.
+4. **Per-line drift** (optional): when `--line-drift-angle` or
+   `--line-drift-y` is set, each line's strokes go inside a nested
+   `<g transform="rotate(θ 0 baseline) translate(0 dy)">` sub-group. θ and dy
+   are drawn from a uniform distribution and seeded by `--seed`. Rotation is
+   pinned to the line's left edge so the text does not visually slide.
+5. **Pagination** (optional): `--paginate` computes
+   `lines_per_page = ⌊(page_h − start_y − margin) / (line_height_mm × line_spacing)⌋`,
+   slices `_line_info` into page-sized chunks, and renders each chunk to a
+   file named `{base}-{NN}.{ext}`. The renderer's `content_offset_y` handling
+   puts each page's first baseline at `start_y` automatically.
 
 The glyph's "native" line height (`100` by default, configurable per-font in
 each font's `kerning.json`) is what `--line-height-mm` is scaled against.
