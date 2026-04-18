@@ -22,12 +22,33 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Run unit tests
+      - name: Install dependencies
+        run: pip install pyyaml
+
+      - name: Run unit tests (Typesetter / Renderer / helpers)
         working-directory: assembler
         run: python -m unittest test_assembler -v
+
+      - name: Run CLI tests (flags, presets, pagination, reports)
+        working-directory: assembler
+        run: python -m unittest test_cli -v
 
       - name: Run smoke test (generate SVG from test font)
         working-directory: assembler
         run: |
-          python assembler.py "Hi" /tmp/smoke_test.svg --font TestFont
-          test -s /tmp/smoke_test.svg && echo "✅ SVG generated" || exit 1
+          python assembler.py "Hi" /tmp/smoke_test.svg --font font1
+          test -s /tmp/smoke_test.svg && echo "SVG generated" || exit 1
+
+      - name: Run smoke test (mm layout with paper size)
+        working-directory: assembler
+        run: |
+          python assembler.py "Hi" /tmp/smoke_a5.svg \
+            --font font1 --paper-size A5 --margin 10 \
+            --line-height-mm 10 --stroke-width 0.4
+          test -s /tmp/smoke_a5.svg && echo "mm-layout SVG generated" || exit 1
+
+      - name: Run smoke test (--preset + --report)
+        working-directory: assembler
+        run: |
+          python assembler.py "Hi" /tmp/smoke_report.svg \
+            --preset letter-a4 --font font1 --report
