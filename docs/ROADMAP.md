@@ -6,6 +6,23 @@ are grouped by theme. **Status** values: `Proposed` (not scheduled),
 
 ---
 
+## Ground rules
+
+**CLI / GUI parity.** Every user-facing Assembler feature must be reachable
+from both the CLI and the web GUI. New flags land together with
+corresponding form fields — a feature that ships only on one side is
+treated as incomplete, not as "phase one". The single justified exception
+is functionality that's inherently unsuitable for one medium (e.g.
+`--paginate` produces multiple numbered files; the GUI shows a single
+live preview, so the flag stays CLI-only). Each such exception must be
+documented explicitly in the item's "What changes" section and in the
+User Guide.
+
+This applies retroactively: any current asymmetry is a bug and should be
+filed against the item that introduced it.
+
+---
+
 ## Realism
 
 ### R1. Pressure-aware stroke width — **Won't do (for now)**
