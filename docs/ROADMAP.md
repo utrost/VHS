@@ -1,8 +1,18 @@
 # VHS Assembler — Enhancement Roadmap
 
 Candidate improvements toward life-like handwriting and excellent UX. Items
-are grouped by theme. **Status** values: `Proposed` (not scheduled),
-`Planned` (will implement), `In progress`, `Done`, `Won't do`.
+are grouped by theme. **Status** values:
+
+- `Proposed` — not yet scheduled.
+- `Planned` — will implement.
+- `In progress` — being built.
+- `Experimental` — shipped and usable, but output quality depends on
+  font data / parameters and may not be production-ready. Experimental
+  features are always **opt-in**, carry an explicit notice in the CLI
+  help, the GUI control, and the User Guide, and can change behaviour
+  between releases until graduated to `Done`.
+- `Done` — shipped and stable.
+- `Won't do` — explicitly parked with a documented rationale.
 
 ---
 
@@ -49,7 +59,7 @@ output, or a plotter/device with dynamic line weight is supported.
 
 ---
 
-### R2. Cursive joining — **Proposed (opt-in only)**
+### R2. Cursive joining — **Proposed → Experimental when shipped**
 
 Glyph JSON carries `exit_x/y` and `entry_x/y` metadata. When the previous
 glyph's exit is geometrically compatible with the next glyph's entry
@@ -94,7 +104,13 @@ so only high-confidence pairs connect; (c) the per-glyph veto lets
 font authors disable joining for specific characters without touching
 the code; (d) ship with a small validation script that visualises
 every pair's compatibility score so authors can tune their metadata
-before enabling joining on that font.
+before enabling joining on that font; (e) the feature ships with
+**Experimental** status — `--connect-letters` prints a one-line
+"(experimental — output quality varies)" notice on stderr the first
+time it's used in a session, and the matching GUI toggle wears an
+`experimental` badge. The status graduates to `Done` once we have
+a reference font with curated metadata that produces consistently
+acceptable output.
 
 **Depends on:** glyphs having `exit_x/y` and `entry_x/y` metadata
 populated. Fonts captured before this feature may need a re-capture
@@ -598,7 +614,7 @@ the captures consistently.
 | U2 | Live preview in GUI | High | Medium | Medium | 6 |
 | U3 | Config files + presets | Medium | Medium | Low | 7 |
 | U6 | PDF + widow/orphan | Medium | Medium | Low | 8 |
-| R2 | Cursive joining (opt-in) | High | Medium | Medium-high quality-risk when enabled (default output unchanged) | 9 |
+| R2 | Cursive joining (opt-in, Experimental) | High | Medium | Medium-high quality-risk when enabled (default output unchanged) | 9 |
 | R1 | Pressure-aware stroke | — | — | — | Won't do |
 
 R4 + U4 + U1 form a natural first bundle: together they remove the
