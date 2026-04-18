@@ -5,6 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Illustrated user guides** (D1): three new walkthroughs with captured screenshots and embedded sample renders — `docs/GUIDE_ASSEMBLER_CLI.md`, `docs/GUIDE_ASSEMBLER_GUI.md`, `docs/GUIDE_GLYPHCOLLECTOR.md`. A reusable Playwright capture script (`docs/tools/capture_screenshots.py`) regenerates every image in `docs/img/` on demand; an offline-only Tailwind CSS shim (`docs/tools/collector-shim.css`) keeps Collector screenshots styled even without network access. Top-level README now links all three guides.
 - **GlyphCollector: deep capture UX**. A second wave of improvements layers on top of the GC1+GC4+GC7 bundle:
   - **GC2** Custom target sets with a free-form char list alongside the built-in presets; coverage settings persist per font.
   - **GC3** "Capture next" row ranks uncaptured chars by English letter frequency and shows how much of typical text they cover.

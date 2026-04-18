@@ -566,7 +566,7 @@ changes. Testing spread is the real cost.
 
 ## Documentation
 
-### D1. Illustrated user guides with screenshots — **Proposed (once implementation settles)**
+### D1. Illustrated user guides with screenshots — **Done**
 
 The existing docs are flag references. Once the Assembler and
 GlyphCollector roadmap items land, the visible surface changes enough
@@ -650,4 +650,4 @@ version of GC1 and GC5, so land it with or before them.
 
 | # | Item | Value | Effort | Risk | Order |
 |---|------|-------|--------|------|-------|
-| D1 | Illustrated user guides (3 × screenshots) | High | Medium | Low | after the bundles |
+| D1 | Illustrated user guides (3 × screenshots) | High | Medium | Low | **Done** |
