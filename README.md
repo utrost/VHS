@@ -123,6 +123,7 @@ python3 -m unittest test_assembler test_cli -v
 ## Documentation
 
 - [User Guide](docs/USER_GUIDE.md) — Full mm-first layout walkthrough with recipes and cheat-sheet (start here)
+- [Roadmap](docs/ROADMAP.md) — Planned realism and UX enhancements
 - [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
 - [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
 - [Glyph Collector UI](GlyphCollectorUI/README.md) — Capture tool documentation
