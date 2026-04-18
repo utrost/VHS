@@ -21,7 +21,8 @@ from flask import Flask, render_template, request, jsonify, Response
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
-from assembler import GlyphLibrary, Typesetter, Renderer, PAPER_SIZES
+from assembler import (GlyphLibrary, Typesetter, Renderer, PAPER_SIZES,
+                       DEFAULT_UNICODE_FALLBACKS, format_coverage_banner)
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -103,6 +104,7 @@ def api_generate():
     space_jitter_mm = _opt_float("space_jitter_mm") or 0.0
     line_drift_angle = _opt_float("line_drift_angle") or 0.0
     line_drift_y_mm = _opt_float("line_drift_y") or 0.0
+    fallbacks_enabled = bool(data.get("fallbacks", True))
 
     # Resolve glyphs path
     if font_name:
@@ -166,6 +168,8 @@ def api_generate():
         if line_drift_y_mm > 0:
             line_drift_y_glyph = line_drift_y_mm / explicit_scale
 
+    fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
+
     shapes = typesetter.typeset_text(text,
                                      auto_kern=auto_kern, line_spacing=line_spacing,
                                      max_width=max_width,
@@ -173,7 +177,8 @@ def api_generate():
                                      wrap_mode=wrap_mode,
                                      space_width_override=space_width_override,
                                      space_jitter=space_jitter,
-                                     seed=seed)
+                                     seed=seed,
+                                     fallbacks=fallbacks)
 
     renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
                         stroke_width=stroke_width, seed=seed)
@@ -187,7 +192,39 @@ def api_generate():
                                            line_drift_y=line_drift_y_glyph,
                                            drift_seed=seed)
 
-    return Response(svg_str, mimetype="image/svg+xml")
+    response = Response(svg_str, mimetype="image/svg+xml")
+    # Coverage report surfaces to the GUI via a custom header so the
+    # SVG body stays pure.
+    response.headers['X-Glyph-Coverage'] = json.dumps(
+        typesetter._coverage_report, default=str)
+    return response
+
+
+@app.route("/api/coverage", methods=["POST"])
+def api_coverage():
+    """Standalone coverage check — no typesetting, no SVG emission.
+
+    Intended for GUI live hints ("this text has 3 uncovered glyphs")
+    without the cost of a full render.
+    """
+    from assembler import scan_text_coverage
+
+    data = request.get_json(force=True)
+    text = data.get("text", "")
+    font_name = data.get("font", "")
+    fallbacks_enabled = bool(data.get("fallbacks", True))
+
+    if font_name:
+        glyphs_path = os.path.join(BASE_GLYPHS_DIR, font_name)
+    else:
+        glyphs_path = BASE_GLYPHS_DIR
+    if not os.path.isdir(glyphs_path):
+        return jsonify({"error": f"Font directory not found: {font_name}"}), 404
+
+    lib = GlyphLibrary(glyphs_path)
+    fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
+    _, report = scan_text_coverage(text, lib, fallbacks=fallbacks)
+    return jsonify(report)
 
 
 if __name__ == "__main__":

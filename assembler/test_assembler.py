@@ -509,5 +509,49 @@ class TestAssembler(unittest.TestCase):
         self.assertAlmostEqual(nm['min_x'], 5.0)
         self.assertAlmostEqual(nm['width'], 60.0)
 
+    def test_unicode_fallbacks_applied(self):
+        """Em-dash and curly quotes are substituted before placement, and
+        the coverage report records the substitutions."""
+        from assembler import DEFAULT_UNICODE_FALLBACKS
+        typesetter = Typesetter(self.lib)
+        # Our mock font has a, b, c. Use covered chars + fallback-able chars.
+        typesetter.typeset_text("a\u2014b\u2018c\u2019",
+                                fallbacks=DEFAULT_UNICODE_FALLBACKS)
+        report = typesetter._coverage_report
+        self.assertIn('\u2014', report['substituted'])
+        self.assertEqual(report['substituted']['\u2014']['replacement'], '--')
+        self.assertIn('\u2018', report['substituted'])
+        self.assertIn('\u2019', report['substituted'])
+        # '-' and "'" themselves may be missing from the mock font but not
+        # part of the substituted inventory.
+        self.assertEqual(report['substituted']['\u2014']['count'], 1)
+
+    def test_coverage_missing_reported(self):
+        """Characters with no glyph are recorded with counts and positions."""
+        typesetter = Typesetter(self.lib)
+        typesetter.typeset_text("aZbZ")  # Z is not in the mock font
+        report = typesetter._coverage_report
+        self.assertIn('Z', report['missing'])
+        self.assertEqual(report['missing']['Z']['count'], 2)
+        self.assertEqual(report['missing_count'], 2)
+
+    def test_coverage_clean_text(self):
+        """All-covered text produces empty substitution/missing maps."""
+        typesetter = Typesetter(self.lib)
+        typesetter.typeset_text("abc")
+        report = typesetter._coverage_report
+        self.assertEqual(report['substituted'], {})
+        self.assertEqual(report['missing'], {})
+        self.assertEqual(report['missing_count'], 0)
+
+    def test_scan_text_coverage_function(self):
+        """The module-level scan_text_coverage is usable standalone."""
+        from assembler import scan_text_coverage, DEFAULT_UNICODE_FALLBACKS
+        normalised, report = scan_text_coverage(
+            "a\u2014Zc", self.lib, fallbacks=DEFAULT_UNICODE_FALLBACKS)
+        self.assertEqual(normalised, "a--Zc")
+        self.assertIn('\u2014', report['substituted'])
+        self.assertIn('Z', report['missing'])
+
 if __name__ == '__main__':
     unittest.main()

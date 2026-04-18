@@ -485,6 +485,14 @@ Line breaks are preserved."></textarea>
                             <span class="toggle-thumb"></span>
                         </label>
                     </div>
+                    <div class="toggle-row">
+                        <span class="toggle-label">Unicode Fallbacks</span>
+                        <label class="toggle">
+                            <input type="checkbox" id="fallbacks" checked>
+                            <span class="toggle-track"></span>
+                            <span class="toggle-thumb"></span>
+                        </label>
+                    </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
                             <label class="field-label">Kern Aggressiveness</label>
@@ -550,6 +558,10 @@ Line breaks are preserved."></textarea>
                     <div class="empty-state-text">Enter text and click <strong>Generate</strong></div>
                     <div class="empty-state-hint">Your handwriting SVG will appear here</div>
                 </div>
+            </div>
+            <div id="coveragePanel" style="display: none; padding: 10px 14px; border-top: 1px solid #2a2a2a; background: #111; font-size: 12px; color: #ccc;">
+                <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">Glyph coverage</div>
+                <div id="coverageBody"></div>
             </div>
         </main>
     </div>
@@ -676,7 +688,8 @@ Line breaks are preserved."></textarea>
                 space_width_mm: valOrNull('spaceWidthMm'),
                 space_jitter_mm: valOrNull('spaceJitterMm'),
                 line_drift_angle: valOrNull('lineDriftAngle'),
-                line_drift_y: valOrNull('lineDriftY')
+                line_drift_y: valOrNull('lineDriftY'),
+                fallbacks: document.getElementById('fallbacks').checked
             };
 
             try {
@@ -695,6 +708,14 @@ Line breaks are preserved."></textarea>
                 showPreview(svgText, payload);
                 currentSvgBlob = new Blob([svgText], { type: 'image/svg+xml' });
                 document.getElementById('downloadBtn').disabled = false;
+
+                // Coverage panel from the X-Glyph-Coverage response header
+                const covHdr = res.headers.get('X-Glyph-Coverage');
+                if (covHdr) {
+                    try { updateCoveragePanel(JSON.parse(covHdr)); }
+                    catch (e) { console.warn('Bad coverage header', e); }
+                }
+
                 setStatus('ready', 'SVG generated successfully');
             } catch (err) {
                 setStatus('error', err.message);
@@ -730,6 +751,45 @@ Line breaks are preserved."></textarea>
             const ps = payload.paper_size || 'Auto-fit';
             const orient = payload.paper_size ? ` ${payload.orientation}` : '';
             document.getElementById('previewInfo').textContent = `${ps}${orient} · ${payload.font || 'default'}`;
+        }
+
+        // ── Coverage panel ──
+        function updateCoveragePanel(report) {
+            const panel = document.getElementById('coveragePanel');
+            const body = document.getElementById('coverageBody');
+            const sub = report.substituted || {};
+            const miss = report.missing || {};
+            const nSub = Object.keys(sub).length;
+            const nMiss = Object.keys(miss).length;
+            if (nSub === 0 && nMiss === 0) {
+                panel.style.display = 'none';
+                body.innerHTML = '';
+                return;
+            }
+            const rows = [];
+            if (nSub > 0) {
+                const items = Object.entries(sub)
+                    .map(([cp, r]) => `<code>${escapeHtml(cp)}</code>→<code>${escapeHtml(r.replacement)}</code> ×${r.count}`)
+                    .join(', ');
+                rows.push(`<div><strong style="color:#8fc">Substituted:</strong> ${items}</div>`);
+            }
+            if (nMiss > 0) {
+                const items = Object.entries(miss)
+                    .map(([cp, r]) => {
+                        const ctx = r.context ? ` <span style="color:#888">e.g. …${escapeHtml(r.context)}…</span>` : '';
+                        return `<div><code>${escapeHtml(cp)}</code> ×${r.count}${ctx}</div>`;
+                    })
+                    .join('');
+                rows.push(`<div style="margin-top:4px"><strong style="color:#f88">Missing:</strong>${items}</div>`);
+            }
+            body.innerHTML = rows.join('');
+            panel.style.display = 'block';
+        }
+
+        function escapeHtml(s) {
+            return (s == null ? '' : String(s))
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
         }
 
         // ── Download ──

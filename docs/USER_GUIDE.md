@@ -101,6 +101,25 @@ control.
 |------|---------|---------|
 | `--paginate` | off | Split content across numbered files (`output-01.svg`, `output-02.svg`, …) when it overflows the page height. Requires `--paper-size`. |
 
+### Coverage and fallbacks
+
+By default the Assembler substitutes common "typographic" characters that
+hand-drawn fonts rarely cover (em-dash → `--`, curly quotes → straight,
+ellipsis → `...`, non-breaking space → space, etc) and logs a coverage
+banner on stderr listing every substitution and every still-missing
+codepoint (with a short context snippet for each).
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--no-fallbacks` | off | Disable the Unicode substitution pass — only glyphs the font actually covers are drawn. |
+| `--strict-glyphs` | off | Exit with status `2` if any codepoint remains uncovered after fallbacks. CI-friendly. |
+| `--report` | off | Typeset but skip SVG emission; print a structured layout + coverage summary and exit. |
+| `--report-format` | `text` | Format for `--report`: `text` (human) or `json` (machine-readable). |
+
+`--report` is the fastest way to answer "how will this render?" before
+committing to a full output, especially when tuning `--line-height-mm`
+or `--lines-per-page` on a long file.
+
 ### Ink & style
 
 | Flag | Unit | Default | Purpose |
@@ -251,11 +270,19 @@ pip install flask
 All mm-based controls from the CLI are exposed in the sidebar: paper size,
 orientation, margin, start-x / start-y, max width (mm), line height (mm) or
 lines/page, line spacing, wrap mode, space width (mm), space jitter (mm),
-stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness, and
-line drift (angle + y, mm). Selecting a paper size requires either "Line
-Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls back
-to bounding-box output for quick previews. Pagination is CLI-only — the
-GUI shows a single preview.
+stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness,
+line drift (angle + y, mm), and a Unicode-Fallbacks toggle.
+
+A **Coverage panel** below the preview shows every substituted codepoint
+(em-dash → `--`, curly quotes → straight, …) and every still-missing
+codepoint with a short context snippet. The panel appears automatically
+whenever the rendered text contained either kind of event; it stays
+hidden for fully-covered text.
+
+Selecting a paper size requires either "Line Height (mm)" or
+"Lines / Page"; leaving paper size on "Auto-fit" falls back to
+bounding-box output for quick previews. Pagination and `--report` are
+CLI-only — the GUI shows a single live preview.
 
 ---
 

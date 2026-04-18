@@ -98,7 +98,7 @@ drunk. Document sensible ranges in the User Guide.
 
 ---
 
-### R4. Missing-glyph fallbacks — **Planned (next)**
+### R4. Missing-glyph fallbacks — **Done**
 
 Inputs frequently contain characters that no hand-captured font will
 cover: em-dashes, curly quotes, en-dashes, ellipsis. They are currently
@@ -120,7 +120,7 @@ silently skipped, leaving visible gaps.
 
 ## UX
 
-### U1. Dry-run / layout report — **Planned**
+### U1. Dry-run / layout report — **Done**
 
 Let users tune parameters before they commit to a full render.
 
@@ -190,7 +190,7 @@ config files solve both reuse and sharing.
 
 ---
 
-### U4. Glyph-coverage feedback — **Planned**
+### U4. Glyph-coverage feedback — **Done**
 
 Today, a missing glyph produces a log line per occurrence and, after
 R4 lands, a one-line substitution summary. That's still too quiet —
@@ -522,6 +522,42 @@ changes. Testing spread is the real cost.
 
 ---
 
+## Documentation
+
+### D1. Illustrated user guides with screenshots — **Proposed (once implementation settles)**
+
+The existing docs are flag references. Once the Assembler and
+GlyphCollector roadmap items land, the visible surface changes enough
+that a fresh pass with real screenshots and end-to-end walkthroughs
+will be worth more than incremental touch-ups.
+
+**What changes**
+
+Three separate illustrated guides:
+
+- `docs/GUIDE_ASSEMBLER_CLI.md` — captioned terminal captures of the
+  common recipes (A4 letter, A5 notebook, paginated manuscript), the
+  new `--report` output, and missing-glyph banners.
+- `docs/GUIDE_ASSEMBLER_GUI.md` — annotated sidebar screenshots, a
+  before/after slider for balanced vs greedy wrap, the drift / space
+  controls in action, and the coverage panel.
+- `docs/GUIDE_GLYPHCOLLECTOR.md` — capture workflow walkthrough: queue
+  mode, dashboard, per-variant redo, direct folder save, live preview.
+
+Each guide pairs a short "why you'd want this" with a screenshot,
+then the exact command or click path. Images live under `docs/img/`.
+
+**Effort:** medium. The actual writing is mechanical — the
+bottleneck is capturing screenshots that remain accurate. So this
+item is explicitly scheduled **after** the Ordering-table items above
+are done, to avoid re-shooting on every iteration.
+
+**Watch out for:** image drift. Add a short "how to refresh these
+screenshots" appendix to each guide so future maintainers can redo
+the captures consistently.
+
+---
+
 ## Ordering & rough sizing
 
 ### Assembler
@@ -567,3 +603,9 @@ through a character set without click-to-save breaks, and direct
 folder save removes the download-and-move friction that makes the
 current workflow feel clunky. GC7 is a prerequisite for the smoothest
 version of GC1 and GC5, so land it with or before them.
+
+### Documentation
+
+| # | Item | Value | Effort | Risk | Order |
+|---|------|-------|--------|------|-------|
+| D1 | Illustrated user guides (3 × screenshots) | High | Medium | Low | after the bundles |

@@ -5,6 +5,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Unicode fallbacks + coverage feedback**: on-by-default substitution for em-dash, curly quotes, ellipsis, NBSP, and other typographic characters that hand-drawn fonts rarely cover. `--no-fallbacks` disables the pass. Every substitution and every still-missing codepoint is surfaced: CLI prints a `Glyph coverage:` banner on stderr with short context snippets; the web GUI shows a dedicated Coverage panel under the preview; and the response returns an `X-Glyph-Coverage` header / `/api/coverage` endpoint for tooling.
+- **Strict glyph mode**: `--strict-glyphs` exits with status `2` when any codepoint is uncovered after fallbacks — CI-friendly.
+- **Layout report / dry-run**: `--report` skips SVG emission and prints a structured layout + coverage summary. `--report-format {text,json}` chooses the format.
 - **Millimetre-first page layout**: New flags `--line-height-mm`, `--lines-per-page`, `--start-x`, `--start-y`, `--max-width-mm` give direct, millimetre-based control over line height, text-block origin, and word-wrap width. The renderer applies a single scale factor (`line_height_mm / native_line_height`) so a 12 mm line on paper stays 12 mm regardless of how much text is present — no more auto-shrink-to-fit. Exposed in both the CLI and the web GUI.
 - **Balanced line wrap** (`--wrap-mode balanced`, default): the typesetter lays every word out on a single line, records per-word widths, then runs a minimum-raggedness DP per paragraph to choose line breaks that minimise total squared slack. `--wrap-mode greedy` keeps the legacy first-fit algorithm.
 - **Natural whitespace controls**: `--space-width-mm` overrides the font default; `--space-jitter-mm` adds a seeded per-space ± variation so spaces don't look mechanically uniform.

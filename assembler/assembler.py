@@ -22,6 +22,141 @@ PAPER_SIZES = {
     "Legal": (216, 356),
 }
 
+# Default fallback substitutions for characters rarely captured in a
+# hand-drawn font. Keys are single Unicode codepoints, values are the
+# ASCII-ish replacement the typesetter will render instead. Users can
+# extend / override via the `fallbacks` argument to `typeset_text`.
+DEFAULT_UNICODE_FALLBACKS: Dict[str, str] = {
+    "\u2014": "--",   # em dash
+    "\u2013": "-",    # en dash
+    "\u2212": "-",    # minus sign
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote
+    "\u201A": ",",    # single low-9 quote
+    "\u201C": '"',    # left double quote
+    "\u201D": '"',    # right double quote
+    "\u201E": ',,',   # double low-9 quote
+    "\u00AB": '<<',   # left-pointing double angle quote
+    "\u00BB": '>>',   # right-pointing double angle quote
+    "\u2026": "...",  # ellipsis
+    "\u00A0": " ",    # non-breaking space
+    "\u202F": " ",    # narrow no-break space
+    "\u2009": " ",    # thin space
+    "\u00B7": ".",    # middle dot
+    "\u2022": "*",    # bullet
+    "\u2032": "'",    # prime
+    "\u2033": '"',    # double prime
+}
+
+
+def scan_text_coverage(text: str, library: "GlyphLibrary",
+                       fallbacks: Optional[Dict[str, str]] = None) -> Tuple[str, Dict[str, Any]]:
+    """Scan ``text`` against ``library`` and report coverage.
+
+    Returns a tuple ``(normalised_text, report)``. The normalised text
+    has any codepoint present in ``fallbacks`` replaced with its
+    substitution. If ``fallbacks`` is ``None`` no substitutions happen.
+
+    The report dict is structured for both human display (CLI banner,
+    GUI panel) and machine consumption (``--report`` JSON):
+
+    ``{
+        'total_chars': int,
+        'substituted': {cp: {'replacement': str, 'count': int,
+                             'positions': [int]}},
+        'missing':     {cp: {'count': int, 'positions': [int],
+                             'context': str}},
+        'missing_count': int,    # total dropped codepoint occurrences
+        'dropped_chars': int,    # dropped chars (excludes \\n and space)
+    }``
+
+    ``positions`` refer to indices in the *original* text (before
+    substitution) so tools can highlight them in a textarea.
+    """
+    fallbacks = fallbacks or {}
+    report: Dict[str, Any] = {
+        'total_chars': len(text),
+        'substituted': {},
+        'missing': {},
+        'missing_count': 0,
+        'dropped_chars': 0,
+    }
+    out_chars: List[str] = []
+    for i, ch in enumerate(text):
+        # Substitution pass
+        if ch in fallbacks:
+            replacement = fallbacks[ch]
+            rec = report['substituted'].setdefault(
+                ch, {'replacement': replacement, 'count': 0, 'positions': []})
+            rec['count'] += 1
+            rec['positions'].append(i)
+            out_chars.append(replacement)
+            continue
+        out_chars.append(ch)
+
+    normalised = ''.join(out_chars)
+
+    # Coverage pass against the normalised text. Control chars and
+    # whitespace are always "covered" (typesetter handles them).
+    j = 0
+    while j < len(normalised):
+        ch = normalised[j]
+        if ch in (' ', '\n', '\t', '\r'):
+            j += 1
+            continue
+        # Try the greedy-match lookahead the typesetter uses.
+        matched = False
+        max_look = min(library.max_key_length, len(normalised) - j)
+        for length in range(max_look, 0, -1):
+            cand = normalised[j: j + length]
+            g = library.get_glyph(cand)
+            if g and g.get('variants'):
+                matched = True
+                j += length
+                break
+        if matched:
+            continue
+        # Single char unmatched — treat as missing.
+        rec = report['missing'].setdefault(
+            ch, {'count': 0, 'positions': [], 'context': ''})
+        # Position refers to the *normalised* text; map back to the
+        # original by counting substitutions before j.
+        rec['count'] += 1
+        rec['positions'].append(j)
+        if not rec['context']:
+            lo = max(0, j - 12)
+            hi = min(len(normalised), j + 13)
+            rec['context'] = normalised[lo:hi].replace('\n', ' ')
+        report['missing_count'] += 1
+        report['dropped_chars'] += 1
+        j += 1
+
+    return normalised, report
+
+
+def format_coverage_banner(report: Dict[str, Any]) -> str:
+    """Render a coverage report as a multi-line human-friendly string.
+
+    Returns an empty string when there's nothing worth reporting.
+    """
+    lines: List[str] = []
+    sub = report.get('substituted') or {}
+    miss = report.get('missing') or {}
+    if sub:
+        parts = ", ".join(
+            f"{cp!r}→{rec['replacement']!r} ×{rec['count']}"
+            for cp, rec in sorted(sub.items()))
+        lines.append(f"  substituted: {parts}")
+    if miss:
+        for cp, rec in sorted(miss.items()):
+            lines.append(
+                f"  missing {cp!r} ×{rec['count']}"
+                f"  e.g. \"…{rec['context']}…\"")
+    if not lines:
+        return ""
+    header = "Glyph coverage:"
+    return "\n".join([header] + lines)
+
 class GlyphLibrary:
     def __init__(self, glyphs_dir: str):
         self.glyphs_dir = glyphs_dir
@@ -210,6 +345,7 @@ class Typesetter:
         self._compiled_beziers: List[Optional[List[List[Dict[str, Any]]]]] = []
         self._line_info: List[Dict[str, Any]] = []
         self._word_info: List[Dict[str, Any]] = []
+        self._coverage_report: Dict[str, Any] = {}
 
 
     @staticmethod
@@ -373,7 +509,8 @@ class Typesetter:
                      wrap_mode: str = 'balanced',
                      space_width_override: Optional[float] = None,
                      space_jitter: float = 0.0,
-                     seed: Optional[int] = None) -> List[List[List[Dict[str, float]]]]:
+                     seed: Optional[int] = None,
+                     fallbacks: Optional[Dict[str, str]] = None) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
@@ -399,6 +536,13 @@ class Typesetter:
         effective_line_advance = current_line_height * line_spacing
         base_space_width = space_width_override if space_width_override is not None else self.space_width
         rng = random.Random(seed) if seed is not None else random
+
+        # Coverage & fallback pass — runs first so placement only ever
+        # sees codepoints the font either covers or the user explicitly
+        # accepts losing.
+        normalised_text, self._coverage_report = scan_text_coverage(
+            text, self.library, fallbacks=fallbacks)
+        text = normalised_text
 
         compiled_shapes: List = []
         self._compiled_beziers = []
@@ -560,7 +704,10 @@ class Typesetter:
                     break
 
             if not match_found:
-                logger.warning(f"No glyph found for '{text[i]}', skipping.")
+                # Coverage pass already recorded this missing codepoint
+                # in self._coverage_report; keep the skip behaviour but
+                # don't spam WARNING for every occurrence.
+                logger.debug("No glyph found for %r, skipping.", text[i])
                 cursor_x += base_space_width  # Placeholder advance
                 last_shape_placed = None
                 last_glyph_data = None
@@ -1128,6 +1275,18 @@ if __name__ == "__main__":
     parser.add_argument("--paginate", action="store_true",
                         help="Split content that overflows the page height into multiple "
                              "files (output-01.svg, output-02.svg, ...). Requires --paper-size.")
+    parser.add_argument("--no-fallbacks", action="store_true",
+                        help="Disable Unicode substitutions (em-dash → --, curly quotes → "
+                             "straight, ellipsis → ..., etc). By default substitutions are "
+                             "applied before typesetting.")
+    parser.add_argument("--strict-glyphs", action="store_true",
+                        help="Exit with a non-zero status (2) if the text contains any "
+                             "codepoint the font doesn't cover. Useful in CI.")
+    parser.add_argument("--report", action="store_true",
+                        help="Print a structured layout + coverage report to stdout and "
+                             "skip SVG emission. Use --report-format to pick 'text' or 'json'.")
+    parser.add_argument("--report-format", choices=["text", "json"], default="text",
+                        help="Format used by --report. Default: text.")
     parser.add_argument("--max-width-mm", type=float, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
@@ -1238,6 +1397,8 @@ if __name__ == "__main__":
         if args.line_drift_y > 0:
             logger.warning("--line-drift-y ignored without --paper-size.")
 
+    fallbacks = None if args.no_fallbacks else DEFAULT_UNICODE_FALLBACKS
+
     shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
                                      max_width=max_width,
@@ -1245,7 +1406,97 @@ if __name__ == "__main__":
                                      wrap_mode=args.wrap_mode,
                                      space_width_override=space_width_override,
                                      space_jitter=space_jitter,
-                                     seed=args.seed)
+                                     seed=args.seed,
+                                     fallbacks=fallbacks)
+
+    coverage = typesetter._coverage_report
+    banner = format_coverage_banner(coverage)
+    if banner and not args.report:
+        # stderr so CLI pipelines that capture stdout stay clean.
+        # Suppressed when --report is active — it prints coverage itself.
+        import sys as _sys
+        print(banner, file=_sys.stderr)
+
+    # --report short-circuits SVG emission and dumps a structured layout
+    # summary instead. Exit code mirrors --strict-glyphs.
+    if args.report:
+        effective_line_advance_mm = (line_height_mm * args.line_spacing
+                                     if explicit_scale is not None else None)
+        num_lines = len(typesetter._line_info)
+        content_h_mm = (num_lines * effective_line_advance_mm
+                        if effective_line_advance_mm else None)
+        avail_h_mm = (page_h - start_y_mm - args.margin) if page_h is not None else None
+        lines_per_page = (max(1, int(avail_h_mm // effective_line_advance_mm))
+                          if avail_h_mm and effective_line_advance_mm else None)
+        pages_needed = ((num_lines + lines_per_page - 1) // lines_per_page
+                        if lines_per_page else 1)
+
+        summary = {
+            'page': ({
+                'size': args.paper_size,
+                'orientation': args.orientation,
+                'width_mm': page_w, 'height_mm': page_h,
+                'margin_mm': args.margin,
+            } if page_w is not None else None),
+            'layout': ({
+                'line_height_mm': line_height_mm,
+                'line_spacing': args.line_spacing,
+                'effective_advance_mm': effective_line_advance_mm,
+                'start_x_mm': start_x_mm, 'start_y_mm': start_y_mm,
+                'max_width_mm': (max_width_mm
+                                 if explicit_scale is not None else None),
+            } if explicit_scale is not None else None),
+            'content': {
+                'lines': num_lines,
+                'words': len(typesetter._word_info),
+                'content_h_mm': content_h_mm,
+                'lines_per_page': lines_per_page,
+                'pages_needed': pages_needed,
+            },
+            'coverage': coverage,
+        }
+
+        if args.report_format == 'json':
+            print(json.dumps(summary, indent=2, default=str))
+        else:
+            print("--- Layout report ---")
+            if summary['page']:
+                pg = summary['page']
+                print(f"Page: {pg['size']} {pg['orientation']} "
+                      f"({pg['width_mm']}×{pg['height_mm']} mm), "
+                      f"margin {pg['margin_mm']} mm")
+            if summary['layout']:
+                la = summary['layout']
+                wrap_desc = (f"wrap {la['max_width_mm']:.1f} mm"
+                             if la['max_width_mm'] else "wrap off")
+                print(f"Layout: line {la['line_height_mm']:.2f} mm × "
+                      f"spacing {la['line_spacing']:.2f} → advance "
+                      f"{la['effective_advance_mm']:.2f} mm, "
+                      f"origin ({la['start_x_mm']:.1f},{la['start_y_mm']:.1f}) mm, "
+                      f"{wrap_desc}")
+            co = summary['content']
+            print(f"Content: {co['words']} words, {co['lines']} lines"
+                  + (f", {co['content_h_mm']:.1f} mm tall" if co['content_h_mm'] else ""))
+            if co['lines_per_page']:
+                print(f"Fits: {co['pages_needed']} page(s) "
+                      f"({co['lines_per_page']} lines × "
+                      f"{summary['layout']['effective_advance_mm']:.2f} mm per page)")
+            if banner:
+                print(banner)
+            else:
+                print("Coverage: all characters covered")
+
+        # Exit codes: 2 if missing glyphs and strict, 0 otherwise.
+        if args.strict_glyphs and coverage.get('missing_count', 0) > 0:
+            exit(2)
+        exit(0)
+
+    if args.strict_glyphs and coverage.get('missing_count', 0) > 0:
+        missing = sorted(coverage.get('missing') or {})
+        logger.error(f"--strict-glyphs: {coverage['missing_count']} occurrence(s) "
+                     f"of {len(missing)} uncovered codepoint(s): "
+                     f"{', '.join(repr(c) for c in missing)}")
+        exit(2)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
                         stroke_width=args.stroke_width, seed=args.seed, use_bezier=use_bezier)
