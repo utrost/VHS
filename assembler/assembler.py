@@ -537,6 +537,11 @@ class Typesetter:
         current_line_height = override_line_height if override_line_height is not None else self.line_height
         effective_line_advance = current_line_height * line_spacing
         base_space_width = space_width_override if space_width_override is not None else self.space_width
+        # Seed both the local rng (used by space/glyph jitter) and the
+        # global random (used by _process_glyph for variant selection)
+        # so a given --seed produces byte-identical output.
+        if seed is not None:
+            random.seed(seed)
         rng = random.Random(seed) if seed is not None else random
 
         # Coverage & fallback pass — runs first so placement only ever

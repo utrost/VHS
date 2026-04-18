@@ -15,6 +15,7 @@ import os
 import sys
 import json
 import logging
+from typing import Dict, Tuple
 from flask import Flask, render_template, request, jsonify, Response
 
 # Ensure the assembler module is importable
@@ -30,6 +31,33 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 BASE_GLYPHS_DIR = os.path.normpath(os.path.join(script_dir, "..", "glyphs"))
+
+# Module-level cache of loaded GlyphLibrary instances keyed by glyphs_path.
+# The library is purely data derived from on-disk JSON, so caching across
+# requests is safe and keeps live-preview renders fast. Invalidates when
+# any .json file under the path has a newer mtime than the cached stamp.
+_library_cache: Dict[str, Tuple[float, GlyphLibrary]] = {}
+
+
+def _latest_mtime(path: str) -> float:
+    latest = 0.0
+    try:
+        for entry in os.scandir(path):
+            if entry.is_file() and entry.name.endswith('.json'):
+                latest = max(latest, entry.stat().st_mtime)
+    except FileNotFoundError:
+        return 0.0
+    return latest
+
+
+def _get_library(glyphs_path: str) -> GlyphLibrary:
+    stamp = _latest_mtime(glyphs_path)
+    cached = _library_cache.get(glyphs_path)
+    if cached and cached[0] >= stamp:
+        return cached[1]
+    lib = GlyphLibrary(glyphs_path)
+    _library_cache[glyphs_path] = (stamp, lib)
+    return lib
 
 
 def list_fonts():
@@ -130,8 +158,8 @@ def api_generate():
             pw, ph = ph, pw
         page_w, page_h = float(pw), float(ph)
 
-    # Build pipeline
-    lib = GlyphLibrary(glyphs_path)
+    # Build pipeline — library cached across requests for live preview speed
+    lib = _get_library(glyphs_path)
     typesetter = Typesetter(lib, kerning_config_path=kerning_path)
 
     explicit_scale = None
@@ -254,7 +282,7 @@ def api_coverage():
     if not os.path.isdir(glyphs_path):
         return jsonify({"error": f"Font directory not found: {font_name}"}), 404
 
-    lib = GlyphLibrary(glyphs_path)
+    lib = _get_library(glyphs_path)
     fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
     _, report = scan_text_coverage(text, lib, fallbacks=fallbacks)
     return jsonify(report)

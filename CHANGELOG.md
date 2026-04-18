@@ -5,6 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Live preview in the web GUI**: any control change auto-regenerates the preview 350 ms after the last input (toggle in the sidebar). Superseded requests are cancelled via `AbortController` so stale renders can't overwrite fresh ones. Server caches loaded glyph libraries across requests, yielding ~20× faster steady-state updates.
 - **Per-glyph slant + y-bob**: `--glyph-slant-jitter` (deg) and `--glyph-y-jitter` (mm) apply a seeded per-letter rotation pivoting on the glyph's baseline-midpoint plus a small y offset. Stacks naturally with line drift for organic-looking text. Web GUI has matching inputs.
 - **PNG export**: `--format png` with `--dpi` and `--transparent`. Uses `cairosvg` as an optional dependency; the SVG path is unchanged. Web GUI gets a "Download PNG" button with DPI / transparency controls, backed by a new `/api/png` endpoint.
 - **Unicode fallbacks + coverage feedback**: on-by-default substitution for em-dash, curly quotes, ellipsis, NBSP, and other typographic characters that hand-drawn fonts rarely cover. `--no-fallbacks` disables the pass. Every substitution and every still-missing codepoint is surfaced: CLI prints a `Glyph coverage:` banner on stderr with short context snippets; the web GUI shows a dedicated Coverage panel under the preview; and the response returns an `X-Glyph-Coverage` header / `/api/coverage` endpoint for tooling.
@@ -35,6 +36,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Auto-save in Glyph Collector**: Drawing sessions are automatically saved to localStorage and restored on page reload. No more lost work from accidental browser closes.
 
 ### Changed
+- **Deterministic output with `--seed`**: passing `--seed N` now also resets the global `random` state inside `typeset_text`, so glyph-variant selection is repeatable across runs. Previously only the Renderer's stroke jitter was fully deterministic.
+
 - **Adaptive smoothing**: Catmull-Rom spline interpolation now uses adaptive step counts based on segment length (2–12 steps) instead of a fixed 5. Short segments get fewer steps to avoid over-smoothing; long curves get more for smoother results.
 - **`--stroke-width` is now in millimetres on paper** (default: 2.0; typical handwriting: 0.3–0.6). The renderer divides it by the page scale so the on-paper thickness is exactly what you set, regardless of glyph scale.
 - **Smoothing is now on by default.** The `--smooth` flag has been replaced with `--no-smooth` to disable it. Catmull-Rom spline smoothing produces natural curves from low-resolution glyph captures.

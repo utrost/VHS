@@ -297,6 +297,14 @@ lines/page, line spacing, wrap mode, space width (mm), space jitter (mm),
 stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness,
 line drift (angle + y, mm), and a Unicode-Fallbacks toggle.
 
+**Live preview** is on by default (toggle in the sidebar actions). Any
+change to a control — text, paper size, line height, wrap mode, drift,
+colour, stroke width, … — auto-regenerates the preview 350 ms after the
+last input. In-flight requests are cancelled when a new one starts so
+you won't see stale results. Disable the toggle to go back to click-to-
+generate. The server caches loaded glyph libraries across requests so
+steady-state updates are ~20× faster than a cold render.
+
 A **Coverage panel** below the preview shows every substituted codepoint
 (em-dash → `--`, curly quotes → straight, …) and every still-missing
 codepoint with a short context snippet. The panel appears automatically

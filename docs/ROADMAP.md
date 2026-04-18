@@ -143,7 +143,7 @@ fallback summary from R4.
 
 ---
 
-### U2. Live preview in the web GUI — **Proposed**
+### U2. Live preview in the web GUI — **Done**
 
 Today every knob change requires clicking "Generate". Debounced
 auto-regen (200–400 ms after the last input) would turn the GUI into a

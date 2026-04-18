@@ -547,6 +547,14 @@ Line breaks are preserved."></textarea>
 
             <!-- Action Buttons -->
             <div class="sidebar-actions">
+                <div class="toggle-row" style="margin-bottom: 6px;">
+                    <span class="toggle-label">Live Preview</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="livePreview" checked>
+                        <span class="toggle-track"></span>
+                        <span class="toggle-thumb"></span>
+                    </label>
+                </div>
                 <button class="btn btn-primary" id="generateBtn" onclick="generate()">
                     ✦ Generate
                 </button>
@@ -596,6 +604,9 @@ Line breaks are preserved."></textarea>
         // ── State ──
         let currentSvgBlob = null;
         let currentSvgText = '';
+        let liveDebounceTimer = null;
+        let liveAbortController = null;
+        const LIVE_DEBOUNCE_MS = 350;
 
         // ── Init ──
         async function init() {
@@ -607,6 +618,32 @@ Line breaks are preserved."></textarea>
             // Update kern aggressiveness label on slider change
             document.getElementById('kernAggressiveness').addEventListener('input', (e) => {
                 document.getElementById('kernAggressivenessValue').textContent = e.target.value;
+            });
+
+            // Live-preview: debounce input from every control that affects
+            // the output. Excludes export-only controls (PNG DPI, transparency)
+            // and the livePreview toggle itself.
+            const liveIds = [
+                'textInput', 'fontSelect', 'paperSize', 'orientation', 'margin',
+                'startX', 'startY', 'maxWidthMm',
+                'lineHeightMm', 'linesPerPage', 'lineSpacing',
+                'wrapMode', 'spaceWidthMm', 'spaceJitterMm',
+                'smooth', 'autoKern', 'fallbacks',
+                'kernAggressiveness', 'jitter', 'strokeWidth', 'color',
+                'lineDriftAngle', 'lineDriftY',
+                'glyphSlantJitter', 'glyphYJitter',
+            ];
+            const scheduleLive = () => {
+                if (!document.getElementById('livePreview').checked) return;
+                if (!document.getElementById('textInput').value.trim()) return;
+                clearTimeout(liveDebounceTimer);
+                liveDebounceTimer = setTimeout(() => generate(true), LIVE_DEBOUNCE_MS);
+            };
+            liveIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', scheduleLive);
+                el.addEventListener('change', scheduleLive);
             });
 
             // Keyboard shortcut: Ctrl/Cmd + Enter to generate
@@ -676,17 +713,26 @@ Line breaks are preserved."></textarea>
         }
 
         // ── Generate ──
-        async function generate() {
+        async function generate(live = false) {
             const text = document.getElementById('textInput').value;
             if (!text.trim()) {
-                setStatus('error', 'Please enter some text');
+                if (!live) setStatus('error', 'Please enter some text');
                 return;
             }
 
+            // Cancel any previous in-flight request so we don't race.
+            if (liveAbortController) {
+                liveAbortController.abort();
+            }
+            liveAbortController = new AbortController();
+            const aborter = liveAbortController;
+
             const btn = document.getElementById('generateBtn');
-            btn.disabled = true;
-            btn.textContent = '⟳ Generating…';
-            setStatus('loading', 'Generating SVG…');
+            if (!live) {
+                btn.disabled = true;
+                btn.textContent = '⟳ Generating…';
+            }
+            setStatus('loading', live ? 'Updating…' : 'Generating SVG…');
 
             const valOrNull = (id) => {
                 const v = document.getElementById(id).value;
@@ -725,7 +771,8 @@ Line breaks are preserved."></textarea>
                 const res = await fetch('/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: aborter.signal,
                 });
 
                 if (!res.ok) {
@@ -747,13 +794,24 @@ Line breaks are preserved."></textarea>
                     catch (e) { console.warn('Bad coverage header', e); }
                 }
 
-                setStatus('ready', 'SVG generated successfully');
+                setStatus('ready', live ? 'Updated' : 'SVG generated successfully');
             } catch (err) {
+                if (err.name === 'AbortError') {
+                    // Superseded by a newer request — stay silent.
+                    return;
+                }
                 setStatus('error', err.message);
                 console.error(err);
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '✦ Generate';
+                if (!live) {
+                    btn.disabled = false;
+                    btn.innerHTML = '✦ Generate';
+                }
+                // Clear the aborter only if it's still the current one
+                // (a later request would have replaced it already).
+                if (liveAbortController === aborter) {
+                    liveAbortController = null;
+                }
             }
         }
 
