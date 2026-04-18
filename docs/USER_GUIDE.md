@@ -235,10 +235,12 @@ pip install flask
 
 All mm-based controls from the CLI are exposed in the sidebar: paper size,
 orientation, margin, start-x / start-y, max width (mm), line height (mm) or
-lines/page, line spacing, stroke width (mm), colour, jitter, auto-kern, and
-the kerning aggressiveness slider. Selecting a paper size requires either
-"Line Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls
-back to bounding-box output for quick previews.
+lines/page, line spacing, wrap mode, space width (mm), space jitter (mm),
+stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness, and
+line drift (angle + y, mm). Selecting a paper size requires either "Line
+Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls back
+to bounding-box output for quick previews. Pagination is CLI-only — the
+GUI shows a single preview.
 
 ---
 

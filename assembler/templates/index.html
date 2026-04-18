@@ -443,6 +443,23 @@ Line breaks are preserved."></textarea>
                         <label class="field-label">Line Spacing</label>
                         <input type="number" id="lineSpacing" value="1.0" min="0.5" max="4.0" step="0.1">
                     </div>
+                    <div class="field" style="margin-top: 8px;">
+                        <label class="field-label">Wrap Mode</label>
+                        <select id="wrapMode">
+                            <option value="balanced" selected>Balanced (uniform line lengths)</option>
+                            <option value="greedy">Greedy (first-fit, legacy)</option>
+                        </select>
+                    </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
+                            <label class="field-label">Space Width (mm)</label>
+                            <input type="number" id="spaceWidthMm" placeholder="font default" min="0" max="20" step="0.1">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Space Jitter (mm)</label>
+                            <input type="number" id="spaceJitterMm" value="0" min="0" max="5" step="0.1">
+                        </div>
+                    </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 6px;">
                         With a paper size selected, either line height or lines/page is required.
                         Lines/page overrides line height when set.
@@ -492,6 +509,19 @@ Line breaks are preserved."></textarea>
                             <input type="color" id="color" value="#000000">
                         </div>
                         <div class="field"></div>
+                    </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
+                            <label class="field-label">Line Drift Angle (°)</label>
+                            <input type="number" id="lineDriftAngle" value="0" min="0" max="5" step="0.1">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Line Drift Y (mm)</label>
+                            <input type="number" id="lineDriftY" value="0" min="0" max="5" step="0.1">
+                        </div>
+                    </div>
+                    <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
+                        Simulates a drifting hand. Try 0.2–0.5° and 0.2–0.6 mm. Paper size required.
                     </div>
                 </div>
 
@@ -641,7 +671,12 @@ Line breaks are preserved."></textarea>
                 lines_per_page: valOrNull('linesPerPage'),
                 start_x: valOrNull('startX'),
                 start_y: valOrNull('startY'),
-                max_width_mm: valOrNull('maxWidthMm')
+                max_width_mm: valOrNull('maxWidthMm'),
+                wrap_mode: document.getElementById('wrapMode').value,
+                space_width_mm: valOrNull('spaceWidthMm'),
+                space_jitter_mm: valOrNull('spaceJitterMm'),
+                line_drift_angle: valOrNull('lineDriftAngle'),
+                line_drift_y: valOrNull('lineDriftY')
             };
 
             try {
