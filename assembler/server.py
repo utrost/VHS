@@ -72,9 +72,39 @@ def list_fonts():
     return fonts
 
 
+@app.after_request
+def add_cors_headers(response):
+    """Permissive CORS for the companion GlyphCollector tool, which may
+    be opened from file:// or a different origin during development.
+    The server is local-only (localhost:5001) so opening CORS is fine."""
+    response.headers.setdefault('Access-Control-Allow-Origin', '*')
+    response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.setdefault('Access-Control-Allow-Methods',
+                                'GET, POST, OPTIONS')
+    return response
+
+
+@app.route("/api/<path:_>", methods=["OPTIONS"])
+def cors_preflight(_):
+    return ("", 204)
+
+
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/collector")
+def collector():
+    """Serve the GlyphCollector HTML so the Assembler preview feature
+    (GC8) can call /api/* without cross-origin preflights."""
+    collector_path = os.path.normpath(os.path.join(
+        script_dir, "..", "GlyphCollectorUI", "GlyphCollectorUI.html"))
+    try:
+        with open(collector_path, 'r', encoding='utf-8') as f:
+            return Response(f.read(), mimetype='text/html')
+    except FileNotFoundError:
+        return jsonify({"error": "GlyphCollectorUI.html not found"}), 404
 
 
 @app.route("/api/fonts")

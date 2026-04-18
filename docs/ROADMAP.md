@@ -355,7 +355,7 @@ reads a user-selected folder.
 
 ---
 
-### GC2. Character-set presets — **Proposed**
+### GC2. Character-set presets — **Done**
 
 One-click queues of common target sets so users don't have to
 hand-roll a list.
@@ -374,7 +374,7 @@ hand-roll a list.
 
 ---
 
-### GC3. Frequency-aware capture suggestions — **Proposed**
+### GC3. Frequency-aware capture suggestions — **Done**
 
 "Capture these next" hints based on letter frequency so an in-progress
 font is usable for real text as early as possible.
@@ -412,7 +412,7 @@ input handling.
 
 ---
 
-### GC5. Jump-to-character / edit existing — **Planned**
+### GC5. Jump-to-character / edit existing — **Done**
 
 Typing a label that has an existing JSON should load it for editing
 rather than starting blank.
@@ -435,7 +435,7 @@ manual file-picker fallback.
 
 ---
 
-### GC6. Per-variant reject & re-capture — **Proposed**
+### GC6. Per-variant reject & re-capture — **Done**
 
 A single wobbly variant shouldn't force clearing the whole grid. Let
 users wipe and redraw one box at a time.
@@ -478,7 +478,7 @@ the handle was revoked.
 
 ---
 
-### GC8. Assembler live-preview panel — **Proposed**
+### GC8. Assembler live-preview panel — **Done**
 
 A small embedded preview panel that types a short sample ("The quick
 brown fox …") using the current font's saved glyphs plus the currently
@@ -502,7 +502,7 @@ feel live. Will likely need server-side caching.
 
 ---
 
-### GC9. Zone-coverage warnings — **Proposed**
+### GC9. Zone-coverage warnings — **Done**
 
 Catch the "floating letter" class of bugs at capture time by detecting
 when a glyph's strokes don't cross expected zones.
@@ -524,7 +524,7 @@ for auto-kern.
 
 ---
 
-### GC10. Post-hoc baseline / x-height adjust per variant — **Proposed**
+### GC10. Post-hoc baseline / x-height adjust per variant — **Done**
 
 Sometimes you realise the default baseline was wrong only after
 drawing. Today the fix is to redraw; better to drag the lines.
@@ -542,7 +542,7 @@ drawing. Today the fix is to redraw; better to drag the lines.
 
 ---
 
-### GC11. Mobile / tablet layout — **Proposed**
+### GC11. Mobile / tablet layout — **Done**
 
 The Collector's pressure-sensitive inputs live on tablets (iPad,
 Surface, Wacom), but the current grid layout assumes a ≥ 1280 px

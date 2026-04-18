@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **GlyphCollector: deep capture UX**. A second wave of improvements layers on top of the GC1+GC4+GC7 bundle:
+  - **GC2** Custom target sets with a free-form char list alongside the built-in presets; coverage settings persist per font.
+  - **GC3** "Capture next" row ranks uncaptured chars by English letter frequency and shows how much of typical text they cover.
+  - **GC5** Typing a label that matches an existing JSON in the connected folder surfaces a "Load for editing" shortcut that rehydrates all variants into the grid.
+  - **GC6** Per-variant ✕ button clears a single slot without touching the others.
+  - **GC8** 👁 Live Assembler preview panel — renders a sample sentence using the saved font via a new CORS-enabled `/api/*` surface and a companion `/collector` Flask route. Auto-refreshes after each save.
+  - **GC9** Zone-coverage check at save-time warns (with a confirm dialog) when a variant of g/j/p/q/y lacks a descender or b/d/f/h/k/l/t lacks an ascender.
+  - **GC10** Shift-click / Alt-click any slot to set a per-slot baseline / x-height override; saved as variant `metadata` and rendered as orange guides.
+  - **GC11** Responsive layout below 900 px wide: single-column grid, bottom-docked settings / coverage / preview sheets for tablet capture.
 - **GlyphCollector: batch capture workflow**. Three new features turn the capture UI from a single-glyph tool into a proper font-building tool. **GC7** adds a **📁 Connect** button that binds a `glyphs/<font>/` folder via the File System Access API; Save writes straight into it (Firefox/Safari fall back to downloads). **GC4** adds a **Queue** field — type an entire character set and step through it hands-free: each Save advances to the next char, with a `done / total · next: x` progress indicator and Esc to cancel. **GC1** adds a **📊 Coverage** dashboard with target-set presets (Basic Latin, Numbers, Punctuation, German umlauts, Full ASCII), a live captured/missing grid, and a progress bar; clicking a missing cell loads the character into the input.
 - **PDF export + widow/orphan control**: `--format pdf` combines every paginated page SVG into a single multi-page PDF (`cairosvg` + `pypdf` as optional deps). `--min-orphan-lines` / `--min-widow-lines` (default 2 each) shift pagination break points so paragraphs don't leave single-line stragglers at the top or bottom of a page. Web GUI gets a "Download PDF" button backed by a new `/api/pdf` endpoint.
 - **Config files and presets**: new `--preset NAME` loads a bundled recipe from `configs/presets/<name>.{yaml,json}`; new `--config PATH` loads any YAML/JSON with keys matching CLI flags. Merge order (low→high priority): per-font auto-preset (`glyphs/<font>/preset.yaml`) → `--preset` → `--config` → CLI flags. Ships five starters: `letter-a4`, `letter-a5`, `notebook-page`, `casual-a4`, `architects-a3`. GUI gets a Preset dropdown and a "Save…" button that exports the current sidebar state as YAML. New `/api/presets` and `/api/preset/<name>` endpoints.
