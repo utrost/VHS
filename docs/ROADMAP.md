@@ -204,7 +204,40 @@ and a simple GUI list first, then enhance.
 
 ---
 
-### U5. Multi-page PDF export + widow/orphan control — **Proposed**
+### U5. PNG export — **Proposed**
+
+SVG is ideal for pen plotters and lossless print, but users often want a
+PNG for sharing on messaging apps, embedding in documents, generating
+previews, or archiving.
+
+**What changes**
+
+- `--format png` writes a rasterised bitmap instead of / alongside SVG.
+  SVG remains the default.
+- `--dpi INT` controls raster resolution (default: 300). Image pixel
+  dimensions fall out of page size × DPI, e.g. A4 @ 300 dpi →
+  2480 × 3508 px.
+- `--transparent` toggles a transparent background (default: white).
+- Pagination: `--paginate` plus `--format png` produces
+  `output-01.png`, `output-02.png`, ….
+- Renderer stays SVG-first; PNG output is a thin conversion step
+  (`cairosvg` is the likely dependency — small, pure-python bindings,
+  ships PNG via a single call). Keep it optional: the SVG path has no
+  new dependency, PNG requires the extra install.
+- GUI: a "Download PNG" button alongside "Download SVG", with a DPI
+  input in the export section.
+
+**Effort:** small. One wrapper around `cairosvg.svg2png(...)`, plus the
+CLI/GUI surfaces. No changes to the typesetter or renderer.
+
+**Watch out for:** some SVG features (filters, advanced text) render
+differently across SVG→PNG libraries. Our output is simple paths in
+a `<g>`, so this should be safe, but include a smoke test comparing
+render output to a reference checksum.
+
+---
+
+### U6. Multi-page PDF export + widow/orphan control — **Proposed**
 
 `--paginate` currently produces numbered SVG files. For real-world
 letters that's one conversion step away from usable; PDFs would be more
@@ -236,11 +269,12 @@ pagination (easy — `_word_info` already has `line_break_after`).
 | R4 | Missing-glyph fallbacks | High | Small | Low | 1 |
 | U4 | Glyph-coverage feedback | High | Small | Low | 2 |
 | U1 | Dry-run / report | High | Small | Low | 3 |
-| R3 | Per-glyph slant + bob | Medium-high | Small | Low | 4 |
-| U2 | Live preview in GUI | High | Medium | Medium | 5 |
-| U3 | Config files + presets | Medium | Medium | Low | 6 |
-| U5 | PDF + widow/orphan | Medium | Medium | Low | 7 |
-| R2 | Cursive joining | High | Medium | Medium-high | 8 |
+| U5 | PNG export | High | Small | Low | 4 |
+| R3 | Per-glyph slant + bob | Medium-high | Small | Low | 5 |
+| U2 | Live preview in GUI | High | Medium | Medium | 6 |
+| U3 | Config files + presets | Medium | Medium | Low | 7 |
+| U6 | PDF + widow/orphan | Medium | Medium | Low | 8 |
+| R2 | Cursive joining | High | Medium | Medium-high | 9 |
 | R1 | Pressure-aware stroke | — | — | — | Won't do |
 
 R4 + U4 + U1 form a natural first bundle: together they remove the
