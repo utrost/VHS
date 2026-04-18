@@ -388,6 +388,26 @@ Line breaks are preserved."></textarea>
                     </div>
                 </div>
 
+                <!-- Presets -->
+                <div class="section">
+                    <div class="section-label">Preset</div>
+                    <div class="field-row">
+                        <div class="field">
+                            <select id="presetSelect">
+                                <option value="">(none)</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" type="button"
+                                onclick="savePreset()" style="flex: 0 0 auto; padding: 4px 10px;">
+                            Save…
+                        </button>
+                    </div>
+                    <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
+                        Loads bundled settings from <code>configs/presets/</code>. "Save…"
+                        downloads the current sidebar state as a YAML file.
+                    </div>
+                </div>
+
                 <!-- Page Setup -->
                 <div class="section">
                     <div class="section-label">Page Setup</div>
@@ -608,10 +628,116 @@ Line breaks are preserved."></textarea>
         let liveAbortController = null;
         const LIVE_DEBOUNCE_MS = 350;
 
+        // Map of config keys → HTML element id for preset load/save.
+        // Keys match the JSON the server emits from /api/preset and the
+        // CLI flag names (underscore form).
+        const PRESET_KEY_TO_ID = {
+            paper_size: 'paperSize', orientation: 'orientation',
+            margin: 'margin', start_x: 'startX', start_y: 'startY',
+            max_width_mm: 'maxWidthMm',
+            line_height_mm: 'lineHeightMm', lines_per_page: 'linesPerPage',
+            line_spacing: 'lineSpacing', wrap_mode: 'wrapMode',
+            space_width_mm: 'spaceWidthMm', space_jitter_mm: 'spaceJitterMm',
+            stroke_width: 'strokeWidth', color: 'color', jitter: 'jitter',
+            line_drift_angle: 'lineDriftAngle', line_drift_y: 'lineDriftY',
+            glyph_slant_jitter: 'glyphSlantJitter', glyph_y_jitter: 'glyphYJitter',
+            auto_kern: 'autoKern', kern_aggressiveness: 'kernAggressiveness',
+            smooth: 'smooth', fallbacks: 'fallbacks',
+        };
+
+        function applyPreset(obj) {
+            for (const [k, v] of Object.entries(obj || {})) {
+                const id = PRESET_KEY_TO_ID[k.replace(/-/g, '_')];
+                if (!id) continue;
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (el.type === 'checkbox') el.checked = !!v;
+                else el.value = (v === null || v === undefined) ? '' : v;
+            }
+            // Kern slider's value label has its own DOM node
+            document.getElementById('kernAggressivenessValue').textContent =
+                document.getElementById('kernAggressiveness').value;
+        }
+
+        function currentSettings() {
+            const out = {};
+            for (const [k, id] of Object.entries(PRESET_KEY_TO_ID)) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (el.type === 'checkbox') { out[k] = el.checked; continue; }
+                const v = el.value;
+                if (v === '' || v == null) continue;
+                const asNum = parseFloat(v);
+                out[k] = (!isNaN(asNum) && String(asNum) === String(v).trim()) ? asNum : v;
+            }
+            return out;
+        }
+
+        // Minimal YAML dumper — covers the key: value lines we need.
+        function toYaml(obj) {
+            const lines = ['# VHS Assembler preset — generated from the web GUI'];
+            for (const [k, v] of Object.entries(obj)) {
+                let out;
+                if (typeof v === 'boolean') out = v ? 'true' : 'false';
+                else if (typeof v === 'number') out = String(v);
+                else out = JSON.stringify(String(v));
+                lines.push(`${k}: ${out}`);
+            }
+            return lines.join('\n') + '\n';
+        }
+
+        function savePreset() {
+            const name = prompt('Preset filename (without extension):', 'my-preset');
+            if (!name) return;
+            const yaml = toYaml(currentSettings());
+            const blob = new Blob([yaml], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}.yaml`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setStatus('ready', `Preset saved as ${name}.yaml`);
+        }
+
+        async function loadPresets() {
+            try {
+                const res = await fetch('/api/presets');
+                const names = await res.json();
+                const sel = document.getElementById('presetSelect');
+                names.forEach(n => {
+                    const o = document.createElement('option');
+                    o.value = n; o.textContent = n;
+                    sel.appendChild(o);
+                });
+                sel.addEventListener('change', async (e) => {
+                    const name = e.target.value;
+                    if (!name) return;
+                    try {
+                        const r = await fetch(`/api/preset/${encodeURIComponent(name)}`);
+                        if (!r.ok) throw new Error((await r.json()).error || 'load failed');
+                        applyPreset(await r.json());
+                        setStatus('ready', `Loaded preset: ${name}`);
+                        if (document.getElementById('livePreview').checked
+                            && document.getElementById('textInput').value.trim()) {
+                            generate(true);
+                        }
+                    } catch (err) {
+                        setStatus('error', `Preset load failed: ${err.message}`);
+                    }
+                });
+            } catch (err) {
+                console.warn('Preset list load failed', err);
+            }
+        }
+
         // ── Init ──
         async function init() {
             await loadFonts();
             await loadPaperSizes();
+            await loadPresets();
 
             document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
 

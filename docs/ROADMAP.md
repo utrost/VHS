@@ -208,7 +208,7 @@ to auto-regen (large text + heavy effects could be slow).
 
 ---
 
-### U3. Config files and presets — **Proposed**
+### U3. Config files and presets — **Done**
 
 A good recipe today is a ~12-flag shell line. Users forget. Presets and
 config files solve both reuse and sharing.

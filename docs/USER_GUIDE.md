@@ -108,6 +108,48 @@ is `--line-drift-angle 0.3 --line-drift-y 0.3 --glyph-slant-jitter 0.8
 |------|---------|---------|
 | `--paginate` | off | Split content across numbered files (`output-01.svg`, `output-02.svg`, …) when it overflows the page height. Requires `--paper-size`. |
 
+### Presets and config files
+
+A hand-tuned recipe is usually 8–12 flags long. Presets and config
+files let you save and share them.
+
+| Flag | Purpose |
+|------|---------|
+| `--preset NAME` | Load a bundled preset from `configs/presets/<name>.{yaml,json}`. Values apply as defaults; CLI flags override them. |
+| `--config PATH` | Load any YAML or JSON file. Keys match the CLI flag names (dashes or underscores); `--config` wins over `--preset` and loses to explicit CLI flags. |
+
+Merge order (lowest to highest priority):
+
+1. Per-font preset, auto-loaded from `glyphs/<font>/preset.yaml` when
+   `--font <font>` is set.
+2. `--preset NAME`.
+3. `--config PATH`.
+4. CLI flags.
+
+**Bundled starters** under `configs/presets/`:
+
+| Preset | What it is |
+|--------|------------|
+| `letter-a4` | Formal A4 letter, 10 mm lines, subtle organic jitter. |
+| `letter-a5` | Note-sized A5, 8 mm lines. |
+| `notebook-page` | Compact ruled-paper feel, 6 mm lines, minimal drift. |
+| `casual-a4` | Looser handwriting, bigger drift + per-glyph jitter. |
+| `architects-a3` | Landscape A3 drafting-style capitals, 15 mm lines. |
+
+Example: start from `letter-a4` but swap paper to A5:
+
+```bash
+python3 assembler/assembler.py \
+    --preset letter-a4 --paper-size A5 \
+    -f letter.txt output/letter-a5-from-preset.svg
+```
+
+GUI: a **Preset** dropdown at the top of the sidebar applies any
+bundled preset to the form fields (live preview re-renders
+automatically). A **Save…** button writes the current sidebar state
+out as a YAML file you can drop into `configs/presets/` (or pass to
+`--config`).
+
 ### Output format (PNG)
 
 SVG is the default output — vector, plotter-ready, lossless. PNG is

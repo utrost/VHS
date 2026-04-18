@@ -49,6 +49,58 @@ DEFAULT_UNICODE_FALLBACKS: Dict[str, str] = {
 }
 
 
+def _load_config_file(path: str) -> Dict[str, Any]:
+    """Load a config / preset file. Picks YAML or JSON based on extension
+    (``.yaml``, ``.yml`` → YAML; ``.json`` → JSON; unknown → try YAML
+    first, JSON as fallback). Raises RuntimeError with a clear message
+    when PyYAML is required but missing.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    with open(path, 'r', encoding='utf-8') as f:
+        raw = f.read()
+    if ext == '.json':
+        return json.loads(raw) or {}
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Loading {path!r} needs PyYAML. Install with:  pip install pyyaml  "
+            "(or supply the config as .json instead)."
+        ) from exc
+    return yaml.safe_load(raw) or {}
+
+
+def _preset_path(name: str) -> Optional[str]:
+    """Resolve a preset name to a bundled file in ``configs/presets/``.
+
+    Looks up ``<project_root>/configs/presets/<name>.{yaml,yml,json}``
+    and returns the first hit, or ``None`` if nothing matches.
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    presets_dir = os.path.join(project_root, 'configs', 'presets')
+    for ext in ('.yaml', '.yml', '.json'):
+        candidate = os.path.join(presets_dir, name + ext)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _list_presets() -> List[str]:
+    """Return sorted preset names found in ``configs/presets/``."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    presets_dir = os.path.join(project_root, 'configs', 'presets')
+    if not os.path.isdir(presets_dir):
+        return []
+    seen = set()
+    out = []
+    for entry in sorted(os.listdir(presets_dir)):
+        stem, ext = os.path.splitext(entry)
+        if ext.lower() in ('.yaml', '.yml', '.json') and stem not in seen:
+            seen.add(stem)
+            out.append(stem)
+    return out
+
+
 def scan_text_coverage(text: str, library: "GlyphLibrary",
                        fallbacks: Optional[Dict[str, str]] = None) -> Tuple[str, Dict[str, Any]]:
     """Scan ``text`` against ``library`` and report coverage.
@@ -1362,9 +1414,82 @@ if __name__ == "__main__":
     parser.add_argument("--transparent", action="store_true",
                         help="Use a transparent background for PNG output "
                              "(default: white).")
+    parser.add_argument("--preset", default=None,
+                        help="Named preset from configs/presets/<name>.{yaml,json}. "
+                             "Values apply as defaults; CLI flags override them.")
+    parser.add_argument("--config", default=None,
+                        help="Path to a YAML or JSON config file. Keys match CLI "
+                             "flag names (dashes or underscores). CLI flags override "
+                             "config; config overrides preset.")
     parser.add_argument("--max-width-mm", type=float, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
+
+    # Two-pass arg parsing so config files / presets apply as defaults
+    # that CLI flags can still override.
+    #
+    #   per-font preset (auto)  <  explicit --preset  <  --config  <  CLI
+    #
+    # A small pre-parser consumes only --preset / --config / --font so we
+    # know which files to load before the real parse.
+    _pre_parser = argparse.ArgumentParser(add_help=False)
+    _pre_parser.add_argument("--preset", default=None)
+    _pre_parser.add_argument("--config", default=None)
+    _pre_parser.add_argument("--font", default=None)
+    _pre_parser.add_argument("--no-preset", action="store_true",
+                              help=argparse.SUPPRESS)
+    _pre_known, _ = _pre_parser.parse_known_args()
+
+    merged_defaults: Dict[str, Any] = {}
+
+    # 1. Per-font auto-preset at glyphs/<font>/preset.{yaml,yml,json}
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _glyphs_root = os.path.join(_script_dir, "..", "glyphs")
+    if _pre_known.font and not _pre_known.no_preset:
+        for ext in ('.yaml', '.yml', '.json'):
+            cand = os.path.normpath(
+                os.path.join(_glyphs_root, _pre_known.font, 'preset' + ext))
+            if os.path.exists(cand):
+                try:
+                    merged_defaults.update(_load_config_file(cand))
+                    logger.info(f"Applied per-font preset {cand}")
+                except Exception as e:
+                    logger.error(f"Failed to read {cand}: {e}")
+                    exit(1)
+                break
+
+    # 2. Explicit --preset
+    if _pre_known.preset:
+        preset_path = _preset_path(_pre_known.preset)
+        if preset_path is None:
+            available = ", ".join(_list_presets()) or "(none installed)"
+            logger.error(
+                f"Preset {_pre_known.preset!r} not found. "
+                f"Available: {available}")
+            exit(1)
+        try:
+            merged_defaults.update(_load_config_file(preset_path))
+            logger.info(f"Applied preset {_pre_known.preset} ({preset_path})")
+        except Exception as e:
+            logger.error(f"Failed to read preset {_pre_known.preset}: {e}")
+            exit(1)
+
+    # 3. --config file
+    if _pre_known.config:
+        try:
+            merged_defaults.update(_load_config_file(_pre_known.config))
+            logger.info(f"Applied config {_pre_known.config}")
+        except Exception as e:
+            logger.error(f"Failed to read config {_pre_known.config}: {e}")
+            exit(1)
+
+    # Normalise dash keys to underscore keys so they map cleanly to
+    # argparse dest names.
+    if merged_defaults:
+        normalised = {}
+        for k, v in merged_defaults.items():
+            normalised[k.replace('-', '_')] = v
+        parser.set_defaults(**normalised)
 
     args = parser.parse_args()
 

@@ -570,6 +570,38 @@ class TestAssembler(unittest.TestCase):
         self.assertGreater(diffs, 0.0,
                            "glyph_slant_jitter / glyph_y_jitter must transform points")
 
+    def test_list_presets_finds_bundled(self):
+        """_list_presets() enumerates configs/presets/*.yaml|yml|json."""
+        from assembler import _list_presets
+        names = _list_presets()
+        # At least the five starters we ship should be present.
+        for expected in ('letter-a4', 'letter-a5', 'notebook-page',
+                         'casual-a4', 'architects-a3'):
+            self.assertIn(expected, names, f"expected preset {expected!r}")
+
+    def test_load_config_file_yaml_and_json(self):
+        """_load_config_file picks a parser from extension and reads both."""
+        from assembler import _load_config_file
+        import tempfile, os as _os
+        yaml_body = "paper_size: A5\nline_height_mm: 9.0\nauto_kern: true\n"
+        json_body = '{"paper_size": "A5", "line_height_mm": 9.0, "auto_kern": true}'
+        for ext, body in (('.yaml', yaml_body), ('.json', json_body)):
+            with tempfile.NamedTemporaryFile('w', suffix=ext, delete=False) as fh:
+                fh.write(body)
+                path = fh.name
+            try:
+                d = _load_config_file(path)
+                self.assertEqual(d['paper_size'], 'A5')
+                self.assertAlmostEqual(d['line_height_mm'], 9.0)
+                self.assertIs(d['auto_kern'], True)
+            finally:
+                _os.unlink(path)
+
+    def test_preset_path_returns_none_for_missing(self):
+        """_preset_path returns None when the name doesn't resolve."""
+        from assembler import _preset_path
+        self.assertIsNone(_preset_path('__definitely_not_a_preset__'))
+
     def test_glyph_slant_jitter_deterministic_with_seed(self):
         """Same seed + same jitter → byte-identical coordinates."""
         t1 = Typesetter(self.lib)

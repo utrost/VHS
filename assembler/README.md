@@ -39,6 +39,8 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--format {svg,png}`: Output format (default `svg`). `png` requires the optional `cairosvg` dependency (`pip install cairosvg`).
 - `--dpi [INT]`: Raster resolution for PNG output (default `300`).
 - `--transparent`: Transparent background for PNG output (default: white).
+- `--preset [NAME]`: Apply a bundled preset from `configs/presets/<name>.{yaml,json}`. Values are defaults; CLI flags override.
+- `--config [PATH]`: Load YAML/JSON config whose keys match CLI flags. Overrides `--preset`; loses to explicit CLI flags.
 - `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 - `--color`: SVG colour name or `#rrggbb` (default: `black`).
 - `--jitter [FLOAT]`: Gaussian noise on stroke points to simulate hand tremor. Default `0.0`. Try `0.5`–`1.5`.

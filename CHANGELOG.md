@@ -5,6 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Config files and presets**: new `--preset NAME` loads a bundled recipe from `configs/presets/<name>.{yaml,json}`; new `--config PATH` loads any YAML/JSON with keys matching CLI flags. Merge order (low→high priority): per-font auto-preset (`glyphs/<font>/preset.yaml`) → `--preset` → `--config` → CLI flags. Ships five starters: `letter-a4`, `letter-a5`, `notebook-page`, `casual-a4`, `architects-a3`. GUI gets a Preset dropdown and a "Save…" button that exports the current sidebar state as YAML. New `/api/presets` and `/api/preset/<name>` endpoints.
 - **Live preview in the web GUI**: any control change auto-regenerates the preview 350 ms after the last input (toggle in the sidebar). Superseded requests are cancelled via `AbortController` so stale renders can't overwrite fresh ones. Server caches loaded glyph libraries across requests, yielding ~20× faster steady-state updates.
 - **Per-glyph slant + y-bob**: `--glyph-slant-jitter` (deg) and `--glyph-y-jitter` (mm) apply a seeded per-letter rotation pivoting on the glyph's baseline-midpoint plus a small y offset. Stacks naturally with line drift for organic-looking text. Web GUI has matching inputs.
 - **PNG export**: `--format png` with `--dpi` and `--transparent`. Uses `cairosvg` as an optional dependency; the SVG path is unchanged. Web GUI gets a "Download PNG" button with DPI / transparency controls, backed by a new `/api/png` endpoint.

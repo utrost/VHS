@@ -23,7 +23,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
 
 from assembler import (GlyphLibrary, Typesetter, Renderer, PAPER_SIZES,
-                       DEFAULT_UNICODE_FALLBACKS, format_coverage_banner)
+                       DEFAULT_UNICODE_FALLBACKS, format_coverage_banner,
+                       _list_presets, _preset_path, _load_config_file)
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -85,6 +86,25 @@ def api_fonts():
 def api_paper_sizes():
     sizes = {k: {"width": v[0], "height": v[1]} for k, v in PAPER_SIZES.items()}
     return jsonify(sizes)
+
+
+@app.route("/api/presets")
+def api_presets():
+    """List bundled preset names found under configs/presets/."""
+    return jsonify(_list_presets())
+
+
+@app.route("/api/preset/<name>")
+def api_preset(name):
+    """Return the contents of a named preset as JSON so the GUI can
+    apply the values to its form fields."""
+    path = _preset_path(name)
+    if path is None:
+        return jsonify({"error": f"Preset {name!r} not found"}), 404
+    try:
+        return jsonify(_load_config_file(path))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/generate", methods=["POST"])
