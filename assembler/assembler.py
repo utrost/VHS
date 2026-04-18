@@ -123,6 +123,64 @@ class GlyphLibrary:
     def get_glyph(self, char: str) -> Optional[Dict[str, Any]]:
         return self.library.get(char)
 
+def _minimum_raggedness_breaks(widths: List[float], space_width: float,
+                               max_width: float) -> List[int]:
+    """Return line-start indices that minimise total squared slack.
+
+    `widths` is a list of word widths (glyph units). `space_width` is added
+    between adjacent words on the same line. `max_width` is the hard wrap
+    limit. The last line is not penalised for being short.
+
+    Returns a list `boundaries` of length (n_lines + 1); line k contains
+    widths[boundaries[k]:boundaries[k+1]].
+    """
+    n = len(widths)
+    if n == 0:
+        return [0]
+
+    prefix = [0.0] * (n + 1)
+    for k in range(n):
+        prefix[k + 1] = prefix[k] + widths[k]
+
+    def line_width(i: int, j: int) -> float:
+        return prefix[j] - prefix[i] + max(0, j - i - 1) * space_width
+
+    INF = float('inf')
+    # dp[i] = min cost of wrapping widths[i:]; back[i] = chosen line end.
+    dp = [0.0] * (n + 1)
+    back = [n] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        best = INF
+        best_j = i + 1
+        j = i + 1
+        while j <= n:
+            lw = line_width(i, j)
+            if lw > max_width:
+                # Single oversized word has to be placed alone; otherwise stop.
+                if j == i + 1:
+                    total = dp[j]
+                    if total < best:
+                        best = total
+                        best_j = j
+                break
+            slack = max_width - lw
+            cost = 0.0 if j == n else slack * slack
+            total = cost + dp[j]
+            if total < best:
+                best = total
+                best_j = j
+            j += 1
+        dp[i] = best
+        back[i] = best_j
+
+    boundaries = [0]
+    i = 0
+    while i < n:
+        i = back[i]
+        boundaries.append(i)
+    return boundaries
+
+
 class Typesetter:
     def __init__(self, library: GlyphLibrary, kerning_config_path: Optional[str] = None,
                  use_bezier: bool = True, use_normalized: bool = True):
@@ -150,6 +208,8 @@ class Typesetter:
 
         self.last_variant_indices: Dict[str, int] = {}
         self._compiled_beziers: List[Optional[List[List[Dict[str, Any]]]]] = []
+        self._line_info: List[Dict[str, Any]] = []
+        self._word_info: List[Dict[str, Any]] = []
 
 
     @staticmethod
@@ -309,7 +369,11 @@ class Typesetter:
     def typeset_text(self, text: str, override_line_height: Optional[float] = None,
                      auto_kern: bool = False, line_spacing: float = 1.0,
                      max_width: Optional[float] = None,
-                     kern_aggressiveness: float = 0.5) -> List[List[List[Dict[str, float]]]]:
+                     kern_aggressiveness: float = 0.5,
+                     wrap_mode: str = 'balanced',
+                     space_width_override: Optional[float] = None,
+                     space_jitter: float = 0.0,
+                     seed: Optional[int] = None) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
@@ -318,32 +382,83 @@ class Typesetter:
         line_spacing: multiplier applied to line_height for the vertical
                       distance between baselines (e.g. 1.5 = 150% spacing).
         max_width:    if set, automatically wrap lines that exceed this width.
-        """
+        wrap_mode:    'greedy' (first-fit, legacy) or 'balanced' (minimum
+                      raggedness — lines are chosen globally to minimise
+                      line-to-line length variance).
+        space_width_override: override the kerning config's space width
+                      (glyph units).
+        space_jitter: max ± variation applied to each space width (glyph units).
+                      Deterministic when `seed` is set.
 
+        As a side effect, populates self._line_info (one dict per rendered line:
+        {start_idx, end_idx, baseline_y}) and self._word_info (one dict per
+        word placed in the unwrapped layout: {start_idx, end_idx, start_x,
+        end_x, line_break_after}).
+        """
         current_line_height = override_line_height if override_line_height is not None else self.line_height
         effective_line_advance = current_line_height * line_spacing
+        base_space_width = space_width_override if space_width_override is not None else self.space_width
+        rng = random.Random(seed) if seed is not None else random
 
-        compiled_shapes = []
+        compiled_shapes: List = []
         self._compiled_beziers = []
+        self._line_info = []
+        self._word_info = []
+
+        # Balanced wrap is a two-pass flow: first lay out unwrapped (so we
+        # know every word's true width), then run minimum-raggedness DP,
+        # then shift words into their assigned lines.
+        placement_max_width = max_width if wrap_mode != 'balanced' else None
 
         cursor_x = 0.0
-        cursor_y = 0.0 # Baseline
+        cursor_y = 0.0  # Baseline
+        last_shape_placed = None
+        last_glyph_data = None
 
-        last_shape_placed = None # List of strokes of the previous character (in absolute coords)
-        last_glyph_data = None   # Glyph data dict of the previous character (for zone metadata)
+        # Per-word state (index + x at first glyph of the current word)
+        word_start_x = 0.0
+        word_shape_start_idx = 0
+        word_active = False  # True once we've placed at least one glyph in the current word
 
-        # Word-wrap state: track shapes added since the last space so we can
-        # move the whole word to the next line when it overflows.
-        word_start_x = 0.0          # cursor_x at the start of the current word
-        word_shape_start_idx = 0    # index into compiled_shapes where current word begins
+        # Per-line state (index of first shape on the current line)
+        line_shape_start_idx = 0
+        line_baseline_y = cursor_y
+
+        def finalize_word(end_x: float, break_after: bool):
+            """Close out the currently-open word (if any)."""
+            nonlocal word_active, word_shape_start_idx, word_start_x
+            if not word_active:
+                return
+            self._word_info.append({
+                'start_idx': word_shape_start_idx,
+                'end_idx': len(compiled_shapes),
+                'start_x': word_start_x,
+                'end_x': end_x,
+                'line_break_after': break_after,
+            })
+            word_active = False
+
+        def finalize_line():
+            """Close out the current line's shape range."""
+            nonlocal line_shape_start_idx, line_baseline_y
+            self._line_info.append({
+                'start_idx': line_shape_start_idx,
+                'end_idx': len(compiled_shapes),
+                'baseline_y': line_baseline_y,
+            })
+            line_shape_start_idx = len(compiled_shapes)
+            line_baseline_y = cursor_y
 
         i = 0
         while i < len(text):
             char_at_i = text[i]
 
             if char_at_i == '\n':
-                cursor_x = 0
+                finalize_word(cursor_x, break_after=True)
+                finalize_line()
+                cursor_x = 0.0
                 cursor_y += effective_line_advance
+                line_baseline_y = cursor_y
                 last_shape_placed = None
                 last_glyph_data = None
                 word_start_x = 0.0
@@ -352,10 +467,12 @@ class Typesetter:
                 continue
 
             if char_at_i == ' ':
-                cursor_x += self.space_width
+                finalize_word(cursor_x, break_after=False)
+                # Per-space jitter (deterministic via rng)
+                jitter = rng.uniform(-space_jitter, space_jitter) if space_jitter > 0 else 0.0
+                cursor_x += max(0.0, base_space_width + jitter)
                 last_shape_placed = None
                 last_glyph_data = None
-                # A space commits the previous word — next word starts here
                 word_start_x = cursor_x
                 word_shape_start_idx = len(compiled_shapes)
                 i += 1
@@ -366,27 +483,25 @@ class Typesetter:
             max_lookahead = min(self.library.max_key_length, len(text) - i)
 
             for length in range(max_lookahead, 0, -1):
-                candidate = text[i : i + length]
+                candidate = text[i: i + length]
                 glyph_data = self.library.get_glyph(candidate)
 
                 if glyph_data and glyph_data.get('variants'):
-                    # Match found! Use this glyph
+                    # Starting a new word? (first glyph after a space / newline / start)
+                    if not word_active:
+                        word_active = True
+                        word_start_x = cursor_x
+                        word_shape_start_idx = len(compiled_shapes)
 
-                    # 1. First, calculate where it WOULD go naturally
-                    # This adds the strokes to compiled_shapes
-                    width, placed_strokes = self._process_glyph(glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
+                    width, placed_strokes = self._process_glyph(
+                        glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
 
-                    # 2. Optical Kerning
+                    # Optical Kerning
                     manual_tracking_offset = 0.0
                     if candidate in self.kerning_exceptions:
                         manual_tracking_offset = self.kerning_exceptions[candidate].get('tracking_offset', 0.0)
 
                     if auto_kern and last_shape_placed:
-                        # Extract zone boundaries from both glyphs' metadata
-                        # and transform them to placed coordinates.
-                        # _process_glyph maps: new_y = (y - baseline_y) + cursor_y
-                        # So in placed coords: baseline → cursor_y,
-                        #   x_height → (x_height - baseline_y) + cursor_y
                         bl_a = last_glyph_data.get('metadata', {}).get('baseline_y') if last_glyph_data else None
                         xh_a = last_glyph_data.get('metadata', {}).get('x_height') if last_glyph_data else None
                         bl_b = glyph_data.get('metadata', {}).get('baseline_y')
@@ -395,8 +510,7 @@ class Typesetter:
                         bl = None
                         xh = None
                         if bl_a is not None and bl_b is not None and xh_a is not None and xh_b is not None:
-                            # Transform to placed coordinate system
-                            bl = cursor_y  # baseline maps to cursor_y for both glyphs
+                            bl = cursor_y
                             xh = ((xh_a - bl_a) + (xh_b - bl_b)) / 2.0 + cursor_y
 
                         gap = self.calculate_optical_kerning(
@@ -408,7 +522,6 @@ class Typesetter:
                         for stroke in placed_strokes:
                             for p in stroke:
                                 p['x'] -= shift
-                        # Also shift bezier data if present
                         bezier_entry = self._compiled_beziers[-1]
                         if bezier_entry is not None:
                             for bstroke in bezier_entry:
@@ -416,14 +529,13 @@ class Typesetter:
                                     for key in ('p0', 'p1', 'p2', 'p3'):
                                         seg[key]['x'] -= shift
 
-                    # Update for next loop
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
                     last_shape_placed = placed_strokes
                     last_glyph_data = glyph_data
 
-                    # 3. Word-wrap check: did the cursor exceed max_width?
-                    if max_width is not None and cursor_x > max_width and word_start_x > 0:
-                        # Move the current word to the next line
+                    # Greedy wrap (only active when placement_max_width is set)
+                    if placement_max_width is not None and cursor_x > placement_max_width and word_start_x > 0:
+                        finalize_line()
                         shift_x = word_start_x
                         shift_y = effective_line_advance
                         for si in range(word_shape_start_idx, len(compiled_shapes)):
@@ -431,18 +543,17 @@ class Typesetter:
                                 for p in stroke:
                                     p['x'] -= shift_x
                                     p['y'] += shift_y
-                            # Also shift bezier data
                             if si < len(self._compiled_beziers) and self._compiled_beziers[si] is not None:
                                 for bstroke in self._compiled_beziers[si]:
                                     for seg in bstroke:
                                         for key in ('p0', 'p1', 'p2', 'p3'):
                                             seg[key]['x'] -= shift_x
                                             seg[key]['y'] += shift_y
-                        # Also shift the placed_strokes ref (it's the same objects)
                         cursor_x -= shift_x
                         cursor_y += shift_y
+                        line_baseline_y = cursor_y
+                        # The wrapped word remains the "current" word
                         word_start_x = 0.0
-                        word_shape_start_idx = len(compiled_shapes) - 1  # current glyph
 
                     i += length
                     match_found = True
@@ -450,13 +561,92 @@ class Typesetter:
 
             if not match_found:
                 logger.warning(f"No glyph found for '{text[i]}', skipping.")
-                cursor_x += self.space_width # Placeholder advance
+                cursor_x += base_space_width  # Placeholder advance
                 last_shape_placed = None
                 last_glyph_data = None
                 self._compiled_beziers.append(None)
                 i += 1
 
+        # Flush the trailing word / line
+        finalize_word(cursor_x, break_after=False)
+        finalize_line()
+
+        # Balanced wrap pass
+        if wrap_mode == 'balanced' and max_width is not None and self._word_info:
+            self._apply_balanced_wrap(compiled_shapes, self._compiled_beziers,
+                                      max_width, base_space_width,
+                                      effective_line_advance)
+
         return compiled_shapes
+
+    def _apply_balanced_wrap(self, compiled_shapes, bezier_data, max_width,
+                             space_width, line_advance):
+        """Rewrite line breaks using a minimum-raggedness DP.
+
+        Words are grouped into paragraphs by explicit \\n breaks (the
+        `line_break_after` flag set in _word_info). Each paragraph is
+        wrapped independently. After this pass, self._line_info is rebuilt.
+        """
+        # Split words into paragraphs
+        paragraphs: List[List[int]] = []
+        current: List[int] = []
+        for idx, w in enumerate(self._word_info):
+            current.append(idx)
+            if w['line_break_after']:
+                paragraphs.append(current)
+                current = []
+        if current:
+            paragraphs.append(current)
+
+        new_lines: List[Dict[str, Any]] = []
+        line_y = 0.0
+
+        for para in paragraphs:
+            widths = [self._word_info[i]['end_x'] - self._word_info[i]['start_x']
+                      for i in para]
+            if not widths:
+                # Empty paragraph (consecutive \n) — still advances a line
+                new_lines.append({'start_idx': None, 'end_idx': None,
+                                  'baseline_y': line_y})
+                line_y += line_advance
+                continue
+
+            boundaries = _minimum_raggedness_breaks(widths, space_width, max_width)
+
+            for k in range(len(boundaries) - 1):
+                i0_local = boundaries[k]
+                i1_local = boundaries[k + 1]
+                i0 = para[i0_local]
+                i1_last = para[i1_local - 1]
+
+                first_word_start_x = self._word_info[i0]['start_x']
+                shift_x = -first_word_start_x
+                shift_y = line_y  # absolute y for this line
+
+                shape_start = self._word_info[i0]['start_idx']
+                shape_end = self._word_info[i1_last]['end_idx']
+
+                # Shift all shapes in this line into position.
+                # Original shapes were placed at y = 0 (single line) with
+                # offsets from descenders etc. We translate by shift_y.
+                for si in range(shape_start, shape_end):
+                    for stroke in compiled_shapes[si]:
+                        for p in stroke:
+                            p['x'] += shift_x
+                            p['y'] += shift_y
+                    if si < len(bezier_data) and bezier_data[si] is not None:
+                        for bstroke in bezier_data[si]:
+                            for seg in bstroke:
+                                for key in ('p0', 'p1', 'p2', 'p3'):
+                                    seg[key]['x'] += shift_x
+                                    seg[key]['y'] += shift_y
+
+                new_lines.append({'start_idx': shape_start,
+                                  'end_idx': shape_end,
+                                  'baseline_y': line_y})
+                line_y += line_advance
+
+        self._line_info = new_lines
 
     def _process_glyph(self, glyph_data: Dict[str, Any], char_key: str, cursor_x: float, cursor_y: float, compiled_shapes: List) -> Tuple[float, List[List[Dict[str, float]]]]:
         # Stochastic Selection
@@ -627,7 +817,11 @@ class Renderer:
                      margin_mm: float = 20.0, bezier_data: Optional[List] = None,
                      explicit_scale: Optional[float] = None,
                      start_x_mm: Optional[float] = None,
-                     start_y_mm: Optional[float] = None):
+                     start_y_mm: Optional[float] = None,
+                     line_info: Optional[List[Dict[str, Any]]] = None,
+                     line_drift_angle_deg: float = 0.0,
+                     line_drift_y: float = 0.0,
+                     drift_seed: Optional[int] = None):
         """
         Generate an SVG file from compiled shapes.
 
@@ -756,22 +950,21 @@ class Renderer:
 
         g = ET.SubElement(svg, "g", g_attrs)
 
-        for shape_idx, shape in enumerate(compiled_shapes):
+        def emit_shape(parent, shape_idx: int):
+            shape = compiled_shapes[shape_idx]
             shape_bezier = None
             if self.use_bezier and bezier_data and shape_idx < len(bezier_data):
                 shape_bezier = bezier_data[shape_idx]
 
             for stroke_idx, stroke in enumerate(shape):
-                # Check if we have bezier data for this stroke
                 stroke_bezier = None
                 if shape_bezier is not None and stroke_idx < len(shape_bezier):
                     stroke_bezier = shape_bezier[stroke_idx]
 
                 if stroke_bezier:
-                    # Bezier path — skip Catmull-Rom, already smooth
                     points_str = self._bezier_to_svg_path(stroke_bezier)
                     if points_str:
-                        ET.SubElement(g, "path", {"d": points_str})
+                        ET.SubElement(parent, "path", {"d": points_str})
                     continue
 
                 if len(stroke) < 2:
@@ -784,15 +977,62 @@ class Renderer:
 
                 points_str = ""
                 for i, (px, py) in enumerate(path_coords):
-
                     if self.jitter_amount > 0:
                         px += random.gauss(0, self.jitter_amount)
                         py += random.gauss(0, self.jitter_amount)
-
                     cmd = "M" if i == 0 else "L"
                     points_str += f"{cmd} {px:.2f} {py:.2f} "
 
-                ET.SubElement(g, "path", {"d": points_str.strip()})
+                ET.SubElement(parent, "path", {"d": points_str.strip()})
+
+        drift_enabled = (line_info and
+                         (line_drift_angle_deg > 0.0 or line_drift_y > 0.0))
+
+        if drift_enabled:
+            # Each line gets its own <g> with a rotate(θ 0 baseline) translate(0 dy).
+            # Shapes outside any line (shouldn't happen) go in the parent group.
+            drift_rng = random.Random(drift_seed) if drift_seed is not None else random
+            shape_to_line = [-1] * len(compiled_shapes)
+            for li, info in enumerate(line_info):
+                s, e = info.get('start_idx'), info.get('end_idx')
+                if s is None or e is None:
+                    continue
+                for si in range(s, e):
+                    if 0 <= si < len(shape_to_line):
+                        shape_to_line[si] = li
+
+            # Precompute one transform per line
+            line_transforms: List[str] = []
+            for info in line_info:
+                theta = (drift_rng.uniform(-line_drift_angle_deg, line_drift_angle_deg)
+                         if line_drift_angle_deg > 0 else 0.0)
+                dy = (drift_rng.uniform(-line_drift_y, line_drift_y)
+                      if line_drift_y > 0 else 0.0)
+                baseline = float(info.get('baseline_y') or 0.0)
+                parts = []
+                if theta != 0.0:
+                    parts.append(f"rotate({theta:.3f} 0 {baseline:.2f})")
+                if dy != 0.0:
+                    parts.append(f"translate(0 {dy:.3f})")
+                line_transforms.append(" ".join(parts))
+
+            # Emit per-line groups, skipping empty lines
+            for li, info in enumerate(line_info):
+                s, e = info.get('start_idx'), info.get('end_idx')
+                if s is None or e is None or s == e:
+                    continue
+                tf = line_transforms[li]
+                parent = ET.SubElement(g, "g", {"transform": tf}) if tf else g
+                for si in range(s, e):
+                    emit_shape(parent, si)
+
+            # Any unassigned shape (rare) goes directly on the main group
+            for si in range(len(compiled_shapes)):
+                if shape_to_line[si] == -1:
+                    emit_shape(g, si)
+        else:
+            for si in range(len(compiled_shapes)):
+                emit_shape(g, si)
 
         tree = ET.ElementTree(svg)
         try:
@@ -808,7 +1048,9 @@ class Renderer:
 
     def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
                             margin_mm=20.0, bezier_data=None,
-                            explicit_scale=None, start_x_mm=None, start_y_mm=None):
+                            explicit_scale=None, start_x_mm=None, start_y_mm=None,
+                            line_info=None, line_drift_angle_deg=0.0,
+                            line_drift_y=0.0, drift_seed=None):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
@@ -816,7 +1058,11 @@ class Renderer:
                           page_height_mm=page_height_mm, margin_mm=margin_mm,
                           bezier_data=bezier_data,
                           explicit_scale=explicit_scale,
-                          start_x_mm=start_x_mm, start_y_mm=start_y_mm)
+                          start_x_mm=start_x_mm, start_y_mm=start_y_mm,
+                          line_info=line_info,
+                          line_drift_angle_deg=line_drift_angle_deg,
+                          line_drift_y=line_drift_y,
+                          drift_seed=drift_seed)
         buf.seek(0)
         return buf.read().decode("utf-8")
 
@@ -865,6 +1111,23 @@ if __name__ == "__main__":
     parser.add_argument("--start-y", type=float, default=None,
                         help="Y coordinate of the top-left of the text block in mm "
                              "(default: --margin).")
+    parser.add_argument("--wrap-mode", choices=["greedy", "balanced"], default="balanced",
+                        help="Line-break algorithm. 'balanced' (default) runs a minimum-"
+                             "raggedness DP across the whole paragraph for uniform line "
+                             "lengths; 'greedy' is the older first-fit wrap.")
+    parser.add_argument("--space-width-mm", type=float, default=None,
+                        help="Width of a space in mm. Overrides the font's kerning config.")
+    parser.add_argument("--space-jitter-mm", type=float, default=0.0,
+                        help="Max ± random variation applied to each space (mm). "
+                             "Default: 0 (uniform). Deterministic when --seed is set.")
+    parser.add_argument("--line-drift-angle", type=float, default=0.0,
+                        help="Max ± per-line rotation in degrees to simulate a drifting "
+                             "hand. Default: 0 (perfectly straight). Try 0.2–0.5.")
+    parser.add_argument("--line-drift-y", type=float, default=0.0,
+                        help="Max ± per-line baseline wobble in mm. Default: 0. Try 0.2–0.6.")
+    parser.add_argument("--paginate", action="store_true",
+                        help="Split content that overflows the page height into multiple "
+                             "files (output-01.svg, output-02.svg, ...). Requires --paper-size.")
     parser.add_argument("--max-width-mm", type=float, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
@@ -955,14 +1218,88 @@ if __name__ == "__main__":
             f"origin ({start_x_mm:.1f},{start_y_mm:.1f})mm, wrap {wrap_desc}"
         )
 
+    # Convert mm-valued whitespace/drift controls into glyph units.
+    space_width_override = None
+    space_jitter = 0.0
+    line_drift_y_glyph = 0.0
+    if explicit_scale is not None:
+        if args.space_width_mm is not None:
+            space_width_override = args.space_width_mm / explicit_scale
+        if args.space_jitter_mm > 0:
+            space_jitter = args.space_jitter_mm / explicit_scale
+        if args.line_drift_y > 0:
+            line_drift_y_glyph = args.line_drift_y / explicit_scale
+    else:
+        if args.space_width_mm is not None:
+            logger.warning("--space-width-mm ignored without --paper-size "
+                           "(no mm → glyph-unit conversion available).")
+        if args.space_jitter_mm > 0:
+            logger.warning("--space-jitter-mm ignored without --paper-size.")
+        if args.line_drift_y > 0:
+            logger.warning("--line-drift-y ignored without --paper-size.")
+
     shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
                                      max_width=max_width,
-                                     kern_aggressiveness=args.kern_aggressiveness)
+                                     kern_aggressiveness=args.kern_aggressiveness,
+                                     wrap_mode=args.wrap_mode,
+                                     space_width_override=space_width_override,
+                                     space_jitter=space_jitter,
+                                     seed=args.seed)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
                         stroke_width=args.stroke_width, seed=args.seed, use_bezier=use_bezier)
-    renderer.generate_svg(shapes, args.output, page_width_mm=page_w, page_height_mm=page_h,
-                          margin_mm=args.margin, bezier_data=typesetter._compiled_beziers,
-                          explicit_scale=explicit_scale,
-                          start_x_mm=start_x_mm, start_y_mm=start_y_mm)
+
+    # Pagination: split content into pages if --paginate is active.
+    pages: List[Tuple[str, List, List, List]] = []  # (output_path, shapes, bezier, line_info)
+
+    if args.paginate and page_h is not None and explicit_scale is not None:
+        effective_line_advance_mm = line_height_mm * args.line_spacing
+        avail_h = page_h - start_y_mm - args.margin
+        lines_per_page = max(1, int(avail_h // effective_line_advance_mm))
+
+        line_info = typesetter._line_info
+        if not line_info:
+            pages.append((args.output, shapes, typesetter._compiled_beziers, line_info))
+        else:
+            # Build the page filename template.
+            root, ext = os.path.splitext(args.output)
+            total_pages = (len(line_info) + lines_per_page - 1) // lines_per_page or 1
+            for p in range(total_pages):
+                first_line = p * lines_per_page
+                last_line = min(first_line + lines_per_page, len(line_info))
+                page_lines = line_info[first_line:last_line]
+                # Shape index range for this page
+                page_shapes_start = next((li['start_idx'] for li in page_lines
+                                          if li.get('start_idx') is not None), None)
+                page_shapes_end = next((li['end_idx'] for li in reversed(page_lines)
+                                        if li.get('end_idx') is not None), None)
+                if page_shapes_start is None or page_shapes_end is None:
+                    continue  # empty page (only blank lines)
+                page_shape_slice = shapes[page_shapes_start:page_shapes_end]
+                page_bezier_slice = typesetter._compiled_beziers[page_shapes_start:page_shapes_end]
+                # Re-index line_info entries so they point into the slice
+                adjusted = [{
+                    'start_idx': (li['start_idx'] - page_shapes_start) if li.get('start_idx') is not None else None,
+                    'end_idx': (li['end_idx'] - page_shapes_start) if li.get('end_idx') is not None else None,
+                    'baseline_y': li.get('baseline_y'),
+                } for li in page_lines]
+                page_path = f"{root}-{p+1:02d}{ext}"
+                pages.append((page_path, page_shape_slice, page_bezier_slice, adjusted))
+            logger.info(f"Pagination: {len(pages)} page(s) "
+                        f"({lines_per_page} lines × {effective_line_advance_mm:.2f}mm per page)")
+    else:
+        if args.paginate:
+            logger.warning("--paginate requires --paper-size; emitting a single file.")
+        pages.append((args.output, shapes, typesetter._compiled_beziers, typesetter._line_info))
+
+    for page_path, page_shapes, page_bezier, page_lines in pages:
+        renderer.generate_svg(page_shapes, page_path,
+                              page_width_mm=page_w, page_height_mm=page_h,
+                              margin_mm=args.margin, bezier_data=page_bezier,
+                              explicit_scale=explicit_scale,
+                              start_x_mm=start_x_mm, start_y_mm=start_y_mm,
+                              line_info=page_lines,
+                              line_drift_angle_deg=args.line_drift_angle,
+                              line_drift_y=line_drift_y_glyph,
+                              drift_seed=args.seed)
