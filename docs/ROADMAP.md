@@ -333,7 +333,7 @@ fitting, normalisation, template overlay, undo/redo, and auto-save.
 The items below turn it from a single-glyph tool into a proper
 font-building workflow.
 
-### GC1. Font-completeness dashboard — **Proposed**
+### GC1. Font-completeness dashboard — **Done**
 
 A persistent panel showing which characters of the target set have
 saved JSONs, how many variants each has, and which are missing. Turns
@@ -391,7 +391,7 @@ font is usable for real text as early as possible.
 
 ---
 
-### GC4. Batch / queue capture mode — **Planned**
+### GC4. Batch / queue capture mode — **Done**
 
 The biggest single session speed-up: type a target string once, step
 through characters in sequence, auto-advance after each save.
@@ -452,7 +452,7 @@ users wipe and redraw one box at a time.
 
 ---
 
-### GC7. Direct save to `glyphs/<font>/` — **Planned**
+### GC7. Direct save to `glyphs/<font>/` — **Done**
 
 Eliminate the download + manual move shuffle on Chromium-family
 browsers via the File System Access API.
