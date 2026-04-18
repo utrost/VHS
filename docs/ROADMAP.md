@@ -21,6 +21,11 @@ User Guide.
 This applies retroactively: any current asymmetry is a bug and should be
 filed against the item that introduced it.
 
+**GlyphCollector scope.** The Collector is a capture tool — it
+produces glyph JSON, it does not render finished documents. Any output
+/ preview features (GC8 live preview) must go through the Assembler
+backend, not reimplement typesetting inside the Collector.
+
 ---
 
 ## Realism
@@ -279,7 +284,247 @@ pagination (easy — `_word_info` already has `line_break_after`).
 
 ---
 
+## GlyphCollector UI
+
+The browser-based capture tool already covers variant capture, Bezier
+fitting, normalisation, template overlay, undo/redo, and auto-save.
+The items below turn it from a single-glyph tool into a proper
+font-building workflow.
+
+### GC1. Font-completeness dashboard — **Proposed**
+
+A persistent panel showing which characters of the target set have
+saved JSONs, how many variants each has, and which are missing. Turns
+"what next?" into a checklist and makes it obvious when a font is
+ready for real use.
+
+**What changes**
+
+- A target character set drawn from a preset (see GC2) or a custom
+  list.
+- For each char: ✅ captured (with variant count) / ⚠️ few variants / ❌
+  missing. Counts come from scanning `glyphs/<font>/*.json`.
+- Progress bar: "47 / 128 captured (37 %)".
+- Clicking a missing/partial entry loads it into the canvas (see GC5).
+
+**Effort:** small. Requires a way to enumerate the font directory —
+via the File System Access API (GC7) or a manual "rescan" button that
+reads a user-selected folder.
+
+---
+
+### GC2. Character-set presets — **Proposed**
+
+One-click queues of common target sets so users don't have to
+hand-roll a list.
+
+**What changes**
+
+- Built-in presets: *Basic Latin*, *Numbers*, *Basic punctuation*,
+  *German umlauts (äöüÄÖÜß)*, *French accents*, *Scandinavian*,
+  *Smart quotes & dashes*, *Greek*, *Common ligatures (tt, ff, fi, sch)*.
+- Multi-select: tick the presets you want; dashboard targets the
+  union.
+- Custom list box for one-off additions.
+- Persisted to localStorage per font.
+
+**Effort:** small. Pure UI + a static map of presets.
+
+---
+
+### GC3. Frequency-aware capture suggestions — **Proposed**
+
+"Capture these next" hints based on letter frequency so an in-progress
+font is usable for real text as early as possible.
+
+**What changes**
+
+- Static language-specific frequency tables (English, German, French
+  to start).
+- Dashboard surfaces the next *N* missing chars ordered by frequency.
+- Optional ETA: "Capturing these 5 letters would raise coverage from
+  38 % to 71 % of typical English text."
+
+**Effort:** small. Frequency tables are fixed data.
+
+---
+
+### GC4. Batch / queue capture mode — **Planned**
+
+The biggest single session speed-up: type a target string once, step
+through characters in sequence, auto-advance after each save.
+
+**What changes**
+
+- A new "Queue" field accepts a string (e.g. `abcdefghijklmnopqrstuvwxyz`).
+- After Save (or Enter), the grid clears and the next queue character
+  loads into the label input automatically.
+- Progress bar inside the queue (`12 / 26 · next: m`).
+- ESC / explicit Stop exits queue mode.
+- Queue entries can be multi-char for ligatures (`sch, tt, ff`).
+- Integrates with GC1 so finished queue items tick off the dashboard
+  in real time.
+
+**Effort:** small–medium. New state machine for queue progress and
+input handling.
+
+---
+
+### GC5. Jump-to-character / edit existing — **Planned**
+
+Typing a label that has an existing JSON should load it for editing
+rather than starting blank.
+
+**What changes**
+
+- On label input change, look up `glyphs/<font>/<label>.json` (via
+  File System Access API or a pre-scanned manifest).
+- If found, populate the grid with existing variants and flag each
+  box "loaded" so the user knows it isn't fresh.
+- "Keep" / "Replace" / "Append" choice when saving back.
+- Disabled when no font directory is connected.
+
+**Effort:** medium. Needs the reverse of the save path: read + parse
+existing JSON, rebuild the stroke buffer + Bezier data, redraw to
+canvas.
+
+**Depends on:** GC7 (direct folder access) for a smooth flow, or a
+manual file-picker fallback.
+
+---
+
+### GC6. Per-variant reject & re-capture — **Proposed**
+
+A single wobbly variant shouldn't force clearing the whole grid. Let
+users wipe and redraw one box at a time.
+
+**What changes**
+
+- X (or "redo") button on each variant slot; clears only that slot.
+- Single-slot focus mode: click a slot to isolate; grid dims the
+  others until you exit.
+- The rest of the capture state (label, font settings, other variants)
+  is preserved.
+
+**Effort:** small. Mostly per-slot state cleanup.
+
+---
+
+### GC7. Direct save to `glyphs/<font>/` — **Planned**
+
+Eliminate the download + manual move shuffle on Chromium-family
+browsers via the File System Access API.
+
+**What changes**
+
+- "Connect font folder" button at the top of the Settings panel.
+- Once connected, Save writes directly to
+  `<folder>/<label>.json`, creating or overwriting.
+- Connection is persisted (with explicit re-prompt on reload, per the
+  permission model).
+- Firefox/Safari: graceful fallback to the existing download flow,
+  with an explicit notice that direct-save isn't available.
+- Opens the door to GC1's dashboard scan and GC5's existing-glyph
+  load.
+
+**Effort:** medium. File System Access API is well documented;
+permission lifecycle and fallback path are the main work.
+
+**Watch out for:** permission expiry between sessions (browser
+dependent); users should never be surprised by "save did nothing" if
+the handle was revoked.
+
+---
+
+### GC8. Assembler live-preview panel — **Proposed**
+
+A small embedded preview panel that types a short sample ("The quick
+brown fox …") using the current font's saved glyphs plus the currently
+captured grid. Gives immediate visual feedback on whether new variants
+match the existing set.
+
+**What changes**
+
+- Pane underneath (or beside) the capture grid, 150–200 px tall.
+- Re-renders on every save and on demand via a "Preview now" button.
+- Uses the Assembler server endpoint (see U2's server caching note for
+  performance) with a fixed mm layout.
+- Sample text configurable.
+
+**Effort:** medium. Requires the Collector to talk to the Assembler
+backend (currently it's pure static HTML). Either the Collector moves
+under the Flask server, or a small new endpoint is exposed with CORS.
+
+**Depends on:** reliable round-trip performance (≤ 500 ms) for it to
+feel live. Will likely need server-side caching.
+
+---
+
+### GC9. Zone-coverage warnings — **Proposed**
+
+Catch the "floating letter" class of bugs at capture time by detecting
+when a glyph's strokes don't cross expected zones.
+
+**What changes**
+
+- Rule table keyed by character: e.g. `g, p, q, y, j` must have a
+  descender (strokes below baseline); `b, d, f, h, k, l, t` must have
+  an ascender (strokes above x-height); `a, c, e, n, o, s, u, v, w,
+  x, z` should stay within the x-height zone.
+- On Save, any variant that violates the rule for its character
+  triggers a soft warning ("Variant 3 has no descender — continue
+  anyway?").
+- Override with a "save as-is" button; dismiss saves a per-font
+  preference so experimental styles don't nag forever.
+
+**Effort:** small. Static rule table + zone analysis already exists
+for auto-kern.
+
+---
+
+### GC10. Post-hoc baseline / x-height adjust per variant — **Proposed**
+
+Sometimes you realise the default baseline was wrong only after
+drawing. Today the fix is to redraw; better to drag the lines.
+
+**What changes**
+
+- Enter a per-variant edit mode: a draggable baseline and x-height
+  overlay on a single enlarged variant.
+- New values are stored in the variant's `metadata` instead of the
+  font-wide default.
+- Assembler already reads per-variant metadata when present, so no
+  Assembler changes needed.
+
+**Effort:** small–medium. Main work is the drag interaction.
+
+---
+
+### GC11. Mobile / tablet layout — **Proposed**
+
+The Collector's pressure-sensitive inputs live on tablets (iPad,
+Surface, Wacom), but the current grid layout assumes a ≥ 1280 px
+desktop. A responsive one-variant-at-a-time flow would make capture
+on those devices first-class.
+
+**What changes**
+
+- Below ~900 px wide: switch to a single large canvas, with arrow
+  buttons / swipe to move between variants and a compact bottom
+  toolbar.
+- Use touch-event hit targets of ≥ 44 px; keep stylus pressure where
+  supported (Pointer Events already give us this).
+- Settings panel becomes a slide-over sheet.
+- Test on iPad (Apple Pencil), Surface Pen, and Android stylus devices.
+
+**Effort:** medium. Responsive CSS + a mode toggle; no data-model
+changes. Testing spread is the real cost.
+
+---
+
 ## Ordering & rough sizing
+
+### Assembler
 
 | # | Item | Value | Effort | Risk | Order |
 |---|------|-------|--------|------|-------|
@@ -298,3 +543,27 @@ R4 + U4 + U1 form a natural first bundle: together they remove the
 single biggest current defect (silent drops) and give the user both a
 clear signal ("this text has 4 uncovered glyphs") and a clear answer
 ("substituted 3, dropped 1, will fit on one page").
+
+### GlyphCollector UI
+
+| # | Item | Value | Effort | Risk | Order |
+|---|------|-------|--------|------|-------|
+| GC1 | Font-completeness dashboard | High | Small | Low | 1 |
+| GC4 | Batch / queue capture | High | Small–Medium | Low | 2 |
+| GC7 | Direct save to folder | High | Medium | Medium | 3 |
+| GC2 | Character-set presets | Medium | Small | Low | 4 |
+| GC6 | Per-variant reject & re-capture | Medium-high | Small | Low | 5 |
+| GC5 | Jump-to-character / edit existing | High | Medium | Low | 6 |
+| GC9 | Zone-coverage warnings | Medium | Small | Low | 7 |
+| GC3 | Frequency-aware suggestions | Medium | Small | Low | 8 |
+| GC10 | Per-variant baseline/x-height | Medium | Small–Medium | Low | 9 |
+| GC8 | Assembler live-preview panel | High | Medium | Medium | 10 |
+| GC11 | Mobile / tablet layout | Medium-high | Medium | Low | 11 |
+
+**First bundle**: GC1 + GC4 + GC7. Together they turn the Collector
+from a single-glyph tool into a proper font-capture workflow — the
+dashboard tells you what to work on, the queue mode lets you rip
+through a character set without click-to-save breaks, and direct
+folder save removes the download-and-move friction that makes the
+current workflow feel clunky. GC7 is a prerequisite for the smoothest
+version of GC1 and GC5, so land it with or before them.
