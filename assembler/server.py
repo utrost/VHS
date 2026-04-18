@@ -96,6 +96,13 @@ def api_generate():
     start_x_in = _opt_float("start_x")
     start_y_in = _opt_float("start_y")
     max_width_mm_in = _opt_float("max_width_mm")
+    wrap_mode = data.get("wrap_mode", "balanced")
+    if wrap_mode not in ("greedy", "balanced"):
+        wrap_mode = "balanced"
+    space_width_mm_in = _opt_float("space_width_mm")
+    space_jitter_mm = _opt_float("space_jitter_mm") or 0.0
+    line_drift_angle = _opt_float("line_drift_angle") or 0.0
+    line_drift_y_mm = _opt_float("line_drift_y") or 0.0
 
     # Resolve glyphs path
     if font_name:
@@ -148,10 +155,25 @@ def api_generate():
                         else page_w - margin - start_x_mm)
         max_width = (max_width_mm / mm_per_glyph) if max_width_mm and max_width_mm > 0 else None
 
+    space_width_override = None
+    space_jitter = 0.0
+    line_drift_y_glyph = 0.0
+    if explicit_scale is not None:
+        if space_width_mm_in is not None:
+            space_width_override = space_width_mm_in / explicit_scale
+        if space_jitter_mm > 0:
+            space_jitter = space_jitter_mm / explicit_scale
+        if line_drift_y_mm > 0:
+            line_drift_y_glyph = line_drift_y_mm / explicit_scale
+
     shapes = typesetter.typeset_text(text,
                                      auto_kern=auto_kern, line_spacing=line_spacing,
                                      max_width=max_width,
-                                     kern_aggressiveness=kern_aggressiveness)
+                                     kern_aggressiveness=kern_aggressiveness,
+                                     wrap_mode=wrap_mode,
+                                     space_width_override=space_width_override,
+                                     space_jitter=space_jitter,
+                                     seed=seed)
 
     renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
                         stroke_width=stroke_width, seed=seed)
@@ -159,7 +181,11 @@ def api_generate():
     svg_str = renderer.generate_svg_string(shapes, page_width_mm=page_w,
                                            page_height_mm=page_h, margin_mm=margin,
                                            explicit_scale=explicit_scale,
-                                           start_x_mm=start_x_mm, start_y_mm=start_y_mm)
+                                           start_x_mm=start_x_mm, start_y_mm=start_y_mm,
+                                           line_info=typesetter._line_info,
+                                           line_drift_angle_deg=line_drift_angle,
+                                           line_drift_y=line_drift_y_glyph,
+                                           drift_seed=seed)
 
     return Response(svg_str, mimetype="image/svg+xml")
 

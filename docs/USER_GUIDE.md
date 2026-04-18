@@ -80,14 +80,35 @@ control.
 | `--start-y` | mm | `--margin` | Y of the top-left of the text block. |
 | `--max-width-mm` | mm | `page_w − margin − start_x` | Word-wrap threshold. |
 
+### Typesetting behaviour
+
+| Flag | Unit | Default | Purpose |
+|------|------|---------|---------|
+| `--wrap-mode` | — | `balanced` | `balanced` runs a minimum-raggedness DP so line lengths stay uniform across the paragraph; `greedy` is the legacy first-fit wrap. |
+| `--space-width-mm` | mm | (font default) | Width of a space. Handwriting looks more natural at **2–3 mm**; font defaults are often wider. |
+| `--space-jitter-mm` | mm | `0.0` | Max ± random variation applied to every space width. `0.3`–`0.6` mm gives subtle "pen-on-paper" unevenness. Deterministic when `--seed` is set. |
+
+### Realism / organic touch
+
+| Flag | Unit | Default | Purpose |
+|------|------|---------|---------|
+| `--line-drift-angle` | degrees | `0.0` | Max ± per-line rotation. Real handwriting drifts; `0.2`–`0.5`° is plausible. |
+| `--line-drift-y` | mm | `0.0` | Max ± per-line baseline wobble. Try `0.2`–`0.6` mm. |
+
+### Multi-page
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--paginate` | off | Split content across numbered files (`output-01.svg`, `output-02.svg`, …) when it overflows the page height. Requires `--paper-size`. |
+
 ### Ink & style
 
 | Flag | Unit | Default | Purpose |
 |------|------|---------|---------|
 | `--stroke-width` | mm | `2.0` | Pen thickness on paper. Typical handwriting: `0.3`–`0.6`. |
 | `--color` | — | `black` | Any SVG colour name or `#rrggbb`. |
-| `--jitter` | mm-ish | `0.0` | Adds Gaussian noise to simulate hand tremor. Try `0.5`–`1.5`. |
-| `--seed` | int | derived | Fix the RNG for reproducible jitter. |
+| `--jitter` | mm-ish | `0.0` | Gaussian noise per stroke point. Try `0.5`–`1.5`. |
+| `--seed` | int | derived | Fix the RNG for reproducible jitter / space-jitter / line-drift. |
 | `--no-smooth` | flag | off | Disable Catmull-Rom smoothing. |
 
 ### Kerning
@@ -141,6 +162,21 @@ python3 assembler/assembler.py \
     --lines-per-page 18 --line-spacing 1.1 \
     --stroke-width 0.35 \
     -f transcript.txt output/transcript.svg
+```
+
+**Natural, multi-page manuscript:**
+
+```bash
+python3 assembler/assembler.py \
+    --font font1 \
+    --paper-size A4 --margin 20 \
+    --line-height-mm 10 --line-spacing 1.3 \
+    --space-width-mm 2.5 --space-jitter-mm 0.4 \
+    --line-drift-angle 0.3 --line-drift-y 0.4 \
+    --stroke-width 0.4 --jitter 0.4 --auto-kern \
+    --paginate --seed 42 \
+    -f novel.txt output/novel.svg
+# writes output/novel-01.svg, output/novel-02.svg, ...
 ```
 
 ---
@@ -199,10 +235,12 @@ pip install flask
 
 All mm-based controls from the CLI are exposed in the sidebar: paper size,
 orientation, margin, start-x / start-y, max width (mm), line height (mm) or
-lines/page, line spacing, stroke width (mm), colour, jitter, auto-kern, and
-the kerning aggressiveness slider. Selecting a paper size requires either
-"Line Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls
-back to bounding-box output for quick previews.
+lines/page, line spacing, wrap mode, space width (mm), space jitter (mm),
+stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness, and
+line drift (angle + y, mm). Selecting a paper size requires either "Line
+Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls back
+to bounding-box output for quick previews. Pagination is CLI-only — the
+GUI shows a single preview.
 
 ---
 
