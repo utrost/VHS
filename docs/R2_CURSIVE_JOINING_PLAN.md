@@ -692,14 +692,93 @@ migration.
 
 ## 8. User-facing contract
 
-*What users need to know before turning R2 on.*
+This section is written to be pasted (with light edits) into
+`docs/USER_GUIDE.md` when R2 ships.
 
-- 8.1 How to enable (CLI flag, GUI toggle, preset key).
-- 8.2 Experimental status — what that means in practice (notice on
-  first use, may change between releases).
-- 8.3 Expected failure modes and how to recognise them.
-- 8.4 Per-font sensitivity — not every font will look good with it on.
-- 8.5 Graduation path — what has to be true before R2 → `Done`.
+### 8.1 How to enable
+
+Three equivalent paths. Pick whichever fits your workflow:
+
+- **CLI**: `--connect-letters` (with an optional
+  `--connect-aggressiveness 0.0–1.0`).
+- **GUI**: the **Connect Letters** toggle in the Styling section, with
+  the accompanying slider.
+- **Preset / config**: a `connect:` block in any YAML config file or
+  bundled preset (§5.4).
+
+Explicit CLI flags still override presets and configs — the precedence
+chain from U3 is unchanged.
+
+### 8.2 Experimental status — what that means
+
+- **On first use per process**, the CLI prints a one-line stderr
+  notice pointing at this document.
+- **In the GUI**, the toggle wears an `experimental` badge.
+- **Behaviour may change** between minor releases: scoring weights,
+  connector geometry, and the default threshold are all in flux until
+  the feature graduates. Pin a Assembler version if you need
+  byte-stable output across a release.
+- **R2 will never become default-on** — even after graduating to
+  `Done`, users (or fonts, via a preset) must opt in explicitly.
+
+### 8.3 Expected failure modes
+
+- **Everything looks disconnected.** The threshold is too strict for
+  your font. Raise `--connect-aggressiveness` toward `1.0` (or slide
+  the GUI knob right).
+- **Connectors cross through letterforms.** Two glyphs whose exit and
+  entry sit in incompatible zones are connecting anyway. Either
+  lower aggressiveness, set a per-glyph `no_connect_*` on the
+  offending letter, or refine its exit / entry metadata in the
+  Collector.
+- **A connector loops or overshoots.** The `0.35` control-point
+  length (§4.3) is too long for a very short gap. This is a scorer
+  tuning issue tracked in §12; for now, either add a per-pair
+  `no_connect` kerning exception or tighten the exit / entry
+  tangents in the Collector.
+- **The first letter of every word is on its own.** Correct — R2 only
+  connects *within* a word. Spaces are hard boundaries.
+- **Connectors disappear at a page break.** Correct — a connector
+  between the last word of one page and the first of the next would
+  be cut in half, so §9.2 drops them.
+
+### 8.4 Per-font sensitivity
+
+R2 is only as good as the font's exit / entry metadata. Rules of
+thumb:
+
+| Font style | R2 verdict |
+|------------|------------|
+| Connected cursive hand, captured with care | Excellent — this is the design target. |
+| Print-style hand with exits near the baseline | Good, tune aggressiveness to taste. |
+| Block print with square letter ends | Poor — no amount of scoring will make unfriendly terminals look connected. |
+| Scribbled / high-jitter hand | Unpredictable — exits and entries wander across captures. |
+
+Before enabling R2 on a font in production, run the Pair Visualiser
+(§7.4) and glance at the heatmap. A font that's mostly green across
+the main diagonal will look great; a font that's mostly red won't.
+
+### 8.5 Graduation path (Experimental → Done)
+
+R2 stays `Experimental` until *all* of these are true:
+
+1. **Reference font fixture exists**: `glyphs/reference/` ships with
+   curated exit / entry metadata and passes every pair in the
+   visualiser heatmap at score ≥ 0.6.
+2. **Visual regression suite is green**: `docs/img/r2-visual-
+   regression/` contains before/after PNGs for the reference font
+   across five sample sentences; all byte-identical across two
+   consecutive minor releases.
+3. **User-reported issues** (GitHub label `R2`) close at the same
+   rate as any other Assembler feature over a 2-release window. No
+   open high-severity bugs.
+4. **Scorer weights are frozen.** No parameter in §4.2 has moved
+   since the start of the 2-release stability window.
+
+When all four are met, the status flips to `Done` in
+`docs/ROADMAP.md`, the stderr notice stops firing, the GUI badge is
+removed, and this planning document is linked from the User Guide
+as historical context.
 
 ---
 
