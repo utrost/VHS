@@ -884,22 +884,126 @@ prose sample.
 
 ## 10. Testing & validation
 
-- 10.1 Unit tests — scorer, geometry, veto precedence.
-- 10.2 CLI smoke tests.
-- 10.3 Reference-font fixture — a small curated font with hand-tuned
-  exit/entry metadata used as the graduation gate.
-- 10.4 Visual regression — before/after PNGs committed to `docs/img/`.
+Testing R2 is unusually subjective because the output is visual. The
+plan is to pin down the mechanical parts with unit tests and the
+subjective parts with a reference fixture + committed PNGs.
+
+### 10.1 Unit tests (assembler/test_assembler.py)
+
+Pure-function tests that don't need a font:
+
+| Test | Asserts |
+|------|---------|
+| `test_connector_scorer_perfect` | Identical exit/entry → score = 1.0 exactly. |
+| `test_connector_scorer_subscore_edges` | Each of the four sub-scores hits 0 at its worst case (huge gap / reversed tangent / cross-zone / pressure Δ=1). |
+| `test_connector_threshold_monotonic` | At a fixed score, the connect / no-connect decision flips exactly once as aggressiveness sweeps 0 → 1. |
+| `test_connector_geometry` | Control-point distance = `0.35 × gap`, tangent-aligned. |
+| `test_connector_veto_wins` | Per-variant `no_connect_*` short-circuits even at score 1.0. |
+| `test_connect_no_effect_without_flag` | R2 metadata present + `connect_letters=False` → output byte-identical to today. |
+
+### 10.2 CLI tests (assembler/test_cli.py)
+
+| Test | Asserts |
+|------|---------|
+| `test_cli_connect_letters_flag` | `--connect-letters` produces SVG that contains at least one connector path (has `is_connector` data attribute or bezier with known pattern). |
+| `test_cli_connect_aggressiveness_range` | `--connect-aggressiveness 2.0` rejected with clear error. |
+| `test_cli_no_connect_letters_wins` | `--preset <with-connect-on> --no-connect-letters` → no connectors. |
+| `test_cli_experimental_notice_fires_once` | Running two renders in the same process prints the stderr notice only once. |
+
+### 10.3 Reference-font fixture
+
+Shipped as `glyphs/reference/` (small, maybe 30 glyphs: lowercase + a
+handful of caps and punctuation), with hand-authored exit / entry
+metadata. Committed to the repo and carved out of `.gitignore` the
+same way `font1` is.
+
+The reference font is both a CI dependency (visual regression uses
+it) and an example for font authors — "here's what the metadata
+should look like for a font that joins well".
+
+### 10.4 Visual regression suite
+
+Directory: `docs/img/r2-visual-regression/`.
+
+A new capture script, `docs/tools/capture_r2_regressions.py`, renders
+five sample sentences with the reference font both on and off:
+
+- `quick-brown-fox.png` / `.off.png`
+- `call-me-ishmael.png` / `.off.png`
+- `alphabet.png` / `.off.png` (full alphabet twice)
+- `digits-punct.png` / `.off.png` (`0123 4567 89.,;:!?`)
+- `drift-stack.png` / `.off.png` (R3 drift on top of R2, to catch
+  coupling bugs)
+
+The committed PNGs are the reference. CI runs the same script and
+asserts the PNGs byte-match (or match within a tolerance, via
+`pixelmatch`). Any pixel-level change requires a deliberate re-commit
+of the reference PNGs — that's the graduation gate (§8.5, item 2).
+
+### 10.5 Manual checklist (release readiness)
+
+Before cutting a minor release with R2 changes:
+
+- [ ] All unit tests green, both runs and CI matrix.
+- [ ] Visual regression suite green.
+- [ ] Pair Visualiser heatmap for the reference font has no
+  regression cells (new red where there was green).
+- [ ] Experimental notice fires as expected on a fresh CLI run.
+- [ ] GUI badge renders.
+- [ ] `--no-connect-letters` still overrides presets.
 
 ---
 
 ## 11. Rollout
 
-- 11.1 Phase 1 — ship behind `--connect-letters`, default off.
-- 11.2 Phase 2 — bake a reference font and ship it under `glyphs/`.
-- 11.3 Phase 3 — graduate status to `Done`, keep flag on for opt-in
-  (not default).
-- 11.4 Kill-switch plan if the feature causes regressions in later
-  refactors.
+R2 lands in three phases spread across at least three minor releases.
+
+### 11.1 Phase 1 — Engine + opt-in CLI / GUI
+
+- `assembler/assembler.py` gains the scorer, geometry, flags, tests.
+- `server.py` + `index.html` gain the toggle + slider.
+- Data model accepts `exit` / `entry` but *no one captures it yet*.
+- Users who want to experiment can hand-author metadata or run the
+  migration helper (§7.5) for an approximate starting point.
+- Status: **Experimental**.
+- Visible regressions this phase: zero (the feature is strictly
+  additive and default-off).
+
+### 11.2 Phase 2 — Collector + reference font
+
+- Pins mode in the Collector (§7.1) so authoring metadata is
+  first-class.
+- Pair Visualiser (§7.4) and migration helper (§7.5) shipped.
+- `glyphs/reference/` baked and carved out of `.gitignore`.
+- Visual regression suite wired into CI.
+- Status: still **Experimental**.
+
+### 11.3 Phase 3 — Graduation
+
+- Two minor releases of stable visual regressions with no scorer
+  changes.
+- All four §8.5 criteria met.
+- Status flips to **Done** in `docs/ROADMAP.md`.
+- Stderr notice + GUI badge removed.
+- This planning document becomes historical reference, still linked
+  from the User Guide.
+
+### 11.4 Kill-switch
+
+Because R2 is strictly additive and gated behind `--connect-letters`,
+disabling it is always a flag flip away. Three kill-switch levels:
+
+1. **Per render**: `--no-connect-letters` (CLI) / toggle off (GUI).
+2. **Per font**: set `connect.enabled: false` in the font's preset,
+   or delete the per-font preset.
+3. **Global**: remove the feature flag's default from the shipping
+   Assembler — no code paths unique to R2 run when the flag is off.
+
+If a serious regression surfaces post-ship, step 3 can be delivered
+as a patch release (`connect_letters` default forced to `False` in
+`argparse`; preset / config values ignored with a one-line log
+warning). No data migration needed — the `exit` / `entry` metadata
+stays dormant in the JSON until the feature is re-enabled.
 
 ---
 
