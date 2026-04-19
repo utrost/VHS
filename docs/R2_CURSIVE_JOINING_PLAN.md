@@ -353,14 +353,106 @@ does not connect.
 
 ## 5. Data model changes
 
-*Exactly which fields appear in glyph JSON, what types they carry, and
-the migration story for fonts captured before R2.*
+R2 adds two optional keys to the existing glyph JSON schema. Nothing
+is *renamed* and nothing is *required* — a font with no R2 metadata
+at all renders identically to today, just never emits a connector.
 
-- 5.1 Per-variant `exit` and `entry` metadata.
-- 5.2 Per-glyph `no_connect_left` / `no_connect_right` vetoes.
-- 5.3 Backward compatibility: what happens when `exit` / `entry` are
-  missing (answer: that pair never connects).
-- 5.4 Font-level defaults in `glyphs/<font>/preset.yaml`.
+### 5.1 Per-variant `exit` and `entry`
+
+Each variant object gains two optional sub-objects. All four numeric
+fields are in the variant's own coordinate system (same system as
+`strokes[*]`). Angles are in radians.
+
+```json
+{
+  "id": 3,
+  "strokes": [ ... ],
+  "bezier_curves": [ ... ],
+  "normalized_strokes": [ ... ],
+  "exit": {
+    "x": 47.2,
+    "y": 62.1,
+    "tangent_theta": 0.52,
+    "pressure": 0.6
+  },
+  "entry": {
+    "x": 12.8,
+    "y": 60.4,
+    "tangent_theta": -0.31,
+    "pressure": 0.5
+  }
+}
+```
+
+Validation rules (enforced by the GlyphLibrary loader, warn-only):
+
+- If `exit` is present, all four fields are required.
+- `x` and `y` must fall inside the variant's canvas (0 ≤ x ≤ width,
+  0 ≤ y ≤ height). Out-of-bounds ⇒ log a warning, treat the variant
+  as having no exit.
+- `tangent_theta` is wrapped into `(-π, π]` on load.
+- `pressure` is clamped to `[0, 1]`.
+
+### 5.2 Per-glyph (top-level) vetoes
+
+The top-level glyph object may carry a `connect` block:
+
+```json
+{
+  "char": "o",
+  "metadata": { ... },
+  "connect": {
+    "no_connect_left":  false,
+    "no_connect_right": true
+  },
+  "variants": [ ... ]
+}
+```
+
+Both flags default to `false`. If either is `true`, R2 skips every
+pair involving this character on that side, regardless of score. Use
+for letters whose natural terminals simply don't want to be
+connected (e.g. `o` often ends at a closed loop).
+
+Kerning exceptions in `kerning.json` can also set `no_connect: true`
+for specific digrams — see §4.4.
+
+### 5.3 Backward compatibility
+
+| Font state | R2 behaviour |
+|------------|--------------|
+| No `exit` / `entry` anywhere | Never connects. Output identical to today. |
+| `exit` on A but no `entry` on B | Skip that specific pair. |
+| Everything present, `--connect-letters` off | Never connects. |
+| Everything present, `--connect-letters` on | Scorer runs (§4.2). |
+
+Upshot: no font file ever needs to change for an R2 ship to be safe.
+The feature is strictly additive.
+
+### 5.4 Font-level defaults
+
+`glyphs/<font>/preset.yaml` (the per-font auto-preset introduced in
+U3) may set a `connect` block:
+
+```yaml
+# glyphs/myscript/preset.yaml
+line_height_mm: 10
+stroke_width: 0.4
+connect:
+  enabled: true               # same as --connect-letters
+  aggressiveness: 0.6         # same as --connect-aggressiveness
+```
+
+Precedence is unchanged from U3:
+
+```
+per-font preset  <  --preset  <  --config  <  CLI flags
+```
+
+A font author who has curated their `exit` / `entry` metadata can
+ship the preset with `connect.enabled: true`; users who pull the font
+get the cursive look by default when they select that font, and can
+still switch it off via `--no-connect-letters` or the GUI toggle.
 
 ---
 
