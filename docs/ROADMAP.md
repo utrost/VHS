@@ -61,6 +61,11 @@ output, or a plotter/device with dynamic line weight is supported.
 
 ### R2. Cursive joining — **Proposed → Experimental when shipped**
 
+> **See [`docs/R2_CURSIVE_JOINING_PLAN.md`](R2_CURSIVE_JOINING_PLAN.md)** for
+> the full implementation plan: algorithm, data model, Assembler and
+> GlyphCollector changes, user contract, architectural implications,
+> testing strategy, and phased rollout.
+
 Glyph JSON carries `exit_x/y` and `entry_x/y` metadata. When the previous
 glyph's exit is geometrically compatible with the next glyph's entry
 (close x-gap, similar y-zone), emit a short cubic bezier that bridges
