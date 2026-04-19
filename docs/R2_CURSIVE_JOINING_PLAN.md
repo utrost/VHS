@@ -1009,17 +1009,125 @@ stays dormant in the JSON until the feature is re-enabled.
 
 ## 12. Open questions
 
-*Things we haven't decided yet. Will shrink as sections above firm up.*
+Things that are *deliberately* unresolved in this plan. Each will be
+answered as we build and measure. Tracked here so decisions are
+visible, not buried.
+
+### Scorer shape
+
+- **Q1. Weight tuning.** Are `(0.45, 0.25, 0.20, 0.10)` the right
+  weights for (gap, direction, zone, pressure)? We'll know after the
+  reference font is curated and the heatmap looks reasonable.
+  Expected to land before Phase 2.
+- **Q2. Is pressure continuity pulling its weight?** A `0.10`
+  contribution may be noise. If the pressure sub-score correlates
+  strongly with the others in practice, drop it and redistribute.
+- **Q3. Should the threshold be linear in aggressiveness?** Current
+  formula is `0.8 - 0.6 × a`. A sigmoid-ish mapping might feel more
+  natural at the extremes. Needs user testing with the slider.
+
+### Geometry
+
+- **Q4. Control-point length factor.** The `0.35` factor works on
+  paper; short gaps at high tangent divergence may produce
+  unsightly loops. An adaptive factor (e.g. scale by
+  `cos(Δθ / 2)`) may be better.
+- **Q5. Pressure sampling density.** 8 samples along the connector is
+  a guess. If pen-plotter users report visible quantisation, raise
+  to 16.
+
+### Interaction
+
+- **Q6. Should connectors participate in per-glyph slant jitter at a
+  fraction of the glyph's angle?** Currently they inherit it in full.
+  Half might look more natural.
+- **Q7. Between-word connectors?** Some styles ligate across word
+  boundaries (e.g. French handwriting with "e le" connecting). Out of
+  scope for v1; revisit after graduation.
+- **Q8. Visualiser shipping unit.** The Pair Visualiser (§7.4) is
+  proposed inside the Collector. Should it also ship as a standalone
+  tool (e.g. `docs/tools/pair_visualiser.html`) for authors who don't
+  want to open the full Collector?
+
+### Cross-feature
+
+- **Q9. Migration helper defaults.** Should `guess_connect_metadata`
+  default to `--dry-run` or to in-place write? Trading safety against
+  ergonomics. Leaning dry-run.
+- **Q10. Kerning-exception sharing.** Per-pair `no_connect` lives in
+  `kerning.json`. Should it be per-font (shared with kerning
+  overrides) or in a separate file so it can travel independently?
+  Current plan: co-located with kerning; revisit if `kerning.json`
+  grows too large.
 
 ---
 
 ## Appendix A — Reference citations
 
-*Papers / prior art on automatic handwriting joining, if useful.*
+Not a literature review — just the prior art the scorer and geometry
+draw from.
+
+- **Schneider, P. J. (1990)** — *An Algorithm for Automatically
+  Fitting Digitized Curves.* The bezier-fit pipeline already
+  shipped in the Collector's Bezier mode uses this; R2's `is_connector`
+  path re-uses the same cubic output format.
+- **Catmull-Rom splines** — the existing renderer smoothing. Section
+  §9.5 explains why R2 bypasses it.
+- **Knuth, D. E. & Plass, M. F. (1981)** — *Breaking Paragraphs into
+  Lines.* The minimum-raggedness DP from the balanced wrap work
+  (item U1) is not directly used by R2, but its "decide across the
+  whole paragraph before committing" pattern informed §4's "score
+  every placed pair before committing connectors" approach.
+- **Prior art in typography tools**: Glyphs, FontForge, and Adobe's
+  "contextual alternates" (OpenType's `calt`) all solve a related
+  problem for TTF/OTF fonts. R2 targets a different output (single-
+  stroke plotter-ready SVG) so the implementations aren't directly
+  portable, but the UX affordances around opt-in + per-pair
+  exceptions borrow from that tradition.
 
 ---
 
 ## Appendix B — How to re-run the visual regressions
 
-*Analogous to the "how to refresh the screenshots" appendix in the
-illustrated user guides.*
+Analogous to the "how to refresh the screenshots" appendix in each
+illustrated user guide.
+
+### Prerequisites
+
+```bash
+pip install pyyaml cairosvg pypdf playwright pixelmatch
+```
+
+### Regenerate all regression images
+
+Run from the repo root:
+
+```bash
+python3 docs/tools/capture_r2_regressions.py
+```
+
+The script boots the Assembler server (or assumes one running at
+`http://localhost:5001`), renders every sample listed in §10.4 twice
+(with `--connect-letters` and `--no-connect-letters`), and writes
+PNGs into `docs/img/r2-visual-regression/`.
+
+### Accept a deliberate change
+
+If a real change to the pipeline (scorer weights, geometry, etc.) is
+supposed to alter the reference images, the flow is:
+
+1. Run the script.
+2. Inspect the diff against the committed PNGs.
+3. If the diff looks right, `git add docs/img/r2-visual-regression/`
+   and commit with a message explaining *why* the images changed.
+4. Note the change in `docs/ROADMAP.md` under R2's "Phase" bullet so
+   the graduation-stability clock resets if scorer weights moved
+   (§8.5, item 4).
+
+### Why seeded and reproducible
+
+All R2 renders use the `--seed 42` convention from the rest of the
+capture tooling. Together with the deterministic-seed guarantee from
+U2, identical inputs produce identical outputs across runs and
+machines. If the regression suite is flaky, the bug is in the
+pipeline, not the test.
