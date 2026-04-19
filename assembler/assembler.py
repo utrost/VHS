@@ -22,6 +22,273 @@ PAPER_SIZES = {
     "Legal": (216, 356),
 }
 
+# Default fallback substitutions for characters rarely captured in a
+# hand-drawn font. Keys are single Unicode codepoints, values are the
+# ASCII-ish replacement the typesetter will render instead. Users can
+# extend / override via the `fallbacks` argument to `typeset_text`.
+DEFAULT_UNICODE_FALLBACKS: Dict[str, str] = {
+    "\u2014": "--",   # em dash
+    "\u2013": "-",    # en dash
+    "\u2212": "-",    # minus sign
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote
+    "\u201A": ",",    # single low-9 quote
+    "\u201C": '"',    # left double quote
+    "\u201D": '"',    # right double quote
+    "\u201E": ',,',   # double low-9 quote
+    "\u00AB": '<<',   # left-pointing double angle quote
+    "\u00BB": '>>',   # right-pointing double angle quote
+    "\u2026": "...",  # ellipsis
+    "\u00A0": " ",    # non-breaking space
+    "\u202F": " ",    # narrow no-break space
+    "\u2009": " ",    # thin space
+    "\u00B7": ".",    # middle dot
+    "\u2022": "*",    # bullet
+    "\u2032": "'",    # prime
+    "\u2033": '"',    # double prime
+}
+
+
+def _adjust_page_breaks(page_starts: List[int], line_paragraphs: List[int],
+                         n_lines: int, min_orphan: int = 2,
+                         min_widow: int = 2) -> List[int]:
+    """Shift naive page boundaries to avoid single-line widows and orphans.
+
+    ``page_starts`` is a list of line indices where each page starts
+    (first entry is always 0). ``line_paragraphs[i]`` is the paragraph
+    index of line i. Returns a new ``page_starts`` list of the same
+    length. Typographic conventions:
+
+    * **Orphan** — first line of a paragraph stranded at the bottom of
+      a page. If fewer than ``min_orphan`` lines of the paragraph fit
+      on the previous page, push the break earlier by one line (move
+      the orphan forward to join the rest of its paragraph).
+    * **Widow** — last line of a paragraph stranded at the top of a
+      page. If fewer than ``min_widow`` lines of the paragraph remain
+      on the next page, push the break earlier by one line (move the
+      last-but-one line of the paragraph forward so the widow isn't
+      alone).
+
+    The algorithm only shifts a break by ±1 line per pass to avoid
+    unbounded cascades. Any break at 0 or n_lines is untouched.
+    """
+    if len(page_starts) <= 1 or not line_paragraphs:
+        return list(page_starts)
+
+    new_starts = list(page_starts)
+    for k in range(1, len(new_starts)):
+        brk = new_starts[k]
+        if brk <= new_starts[k - 1] + 1 or brk >= n_lines:
+            continue  # single-line page or beyond end
+
+        prev_line = brk - 1          # last line on page k-1
+        next_line = brk              # first line on page k
+
+        # Orphan: last line on prev page is the START of its paragraph
+        # AND the paragraph continues onto this page (so that line is
+        # alone at the bottom).
+        prev_para = line_paragraphs[prev_line]
+        prev_prev_para = (line_paragraphs[prev_line - 1]
+                          if prev_line > 0 else None)
+        next_para = line_paragraphs[next_line]
+        starts_new_para = prev_prev_para is None or prev_para != prev_prev_para
+        if starts_new_para and prev_para == next_para:
+            # Count how many lines of this paragraph fit on prev page.
+            lines_on_prev = 0
+            j = prev_line
+            while j >= new_starts[k - 1] and line_paragraphs[j] == prev_para:
+                lines_on_prev += 1
+                j -= 1
+            if lines_on_prev < min_orphan:
+                new_starts[k] = brk - 1
+                continue
+
+        # Widow: first line on the new page is the END of its paragraph
+        # AND the paragraph also had lines on the previous page.
+        next_next_para = (line_paragraphs[next_line + 1]
+                          if next_line + 1 < n_lines else None)
+        ends_paragraph = next_next_para is None or next_para != next_next_para
+        if ends_paragraph and next_para == prev_para:
+            # Count remaining lines of the paragraph on this page.
+            lines_on_next = 0
+            j = next_line
+            while j < n_lines and line_paragraphs[j] == next_para:
+                lines_on_next += 1
+                j += 1
+            if lines_on_next < min_widow:
+                # Pull an extra line forward from prev page so the widow
+                # has company. Only safe if prev page still has ≥1 line.
+                if prev_line - 1 >= new_starts[k - 1]:
+                    new_starts[k] = brk - 1
+
+    # After shifting, page_starts may become non-strictly-increasing
+    # in pathological cases; clamp to preserve order and bounds.
+    for k in range(1, len(new_starts)):
+        new_starts[k] = max(new_starts[k], new_starts[k - 1] + 1)
+        new_starts[k] = min(new_starts[k], n_lines)
+    return new_starts
+
+
+def _load_config_file(path: str) -> Dict[str, Any]:
+    """Load a config / preset file. Picks YAML or JSON based on extension
+    (``.yaml``, ``.yml`` → YAML; ``.json`` → JSON; unknown → try YAML
+    first, JSON as fallback). Raises RuntimeError with a clear message
+    when PyYAML is required but missing.
+    """
+    ext = os.path.splitext(path)[1].lower()
+    with open(path, 'r', encoding='utf-8') as f:
+        raw = f.read()
+    if ext == '.json':
+        return json.loads(raw) or {}
+    try:
+        import yaml  # type: ignore
+    except ImportError as exc:
+        raise RuntimeError(
+            f"Loading {path!r} needs PyYAML. Install with:  pip install pyyaml  "
+            "(or supply the config as .json instead)."
+        ) from exc
+    return yaml.safe_load(raw) or {}
+
+
+def _preset_path(name: str) -> Optional[str]:
+    """Resolve a preset name to a bundled file in ``configs/presets/``.
+
+    Looks up ``<project_root>/configs/presets/<name>.{yaml,yml,json}``
+    and returns the first hit, or ``None`` if nothing matches.
+    """
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    presets_dir = os.path.join(project_root, 'configs', 'presets')
+    for ext in ('.yaml', '.yml', '.json'):
+        candidate = os.path.join(presets_dir, name + ext)
+        if os.path.exists(candidate):
+            return candidate
+    return None
+
+
+def _list_presets() -> List[str]:
+    """Return sorted preset names found in ``configs/presets/``."""
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    presets_dir = os.path.join(project_root, 'configs', 'presets')
+    if not os.path.isdir(presets_dir):
+        return []
+    seen = set()
+    out = []
+    for entry in sorted(os.listdir(presets_dir)):
+        stem, ext = os.path.splitext(entry)
+        if ext.lower() in ('.yaml', '.yml', '.json') and stem not in seen:
+            seen.add(stem)
+            out.append(stem)
+    return out
+
+
+def scan_text_coverage(text: str, library: "GlyphLibrary",
+                       fallbacks: Optional[Dict[str, str]] = None) -> Tuple[str, Dict[str, Any]]:
+    """Scan ``text`` against ``library`` and report coverage.
+
+    Returns a tuple ``(normalised_text, report)``. The normalised text
+    has any codepoint present in ``fallbacks`` replaced with its
+    substitution. If ``fallbacks`` is ``None`` no substitutions happen.
+
+    The report dict is structured for both human display (CLI banner,
+    GUI panel) and machine consumption (``--report`` JSON):
+
+    ``{
+        'total_chars': int,
+        'substituted': {cp: {'replacement': str, 'count': int,
+                             'positions': [int]}},
+        'missing':     {cp: {'count': int, 'positions': [int],
+                             'context': str}},
+        'missing_count': int,    # total dropped codepoint occurrences
+        'dropped_chars': int,    # dropped chars (excludes \\n and space)
+    }``
+
+    ``positions`` refer to indices in the *original* text (before
+    substitution) so tools can highlight them in a textarea.
+    """
+    fallbacks = fallbacks or {}
+    report: Dict[str, Any] = {
+        'total_chars': len(text),
+        'substituted': {},
+        'missing': {},
+        'missing_count': 0,
+        'dropped_chars': 0,
+    }
+    out_chars: List[str] = []
+    for i, ch in enumerate(text):
+        # Substitution pass
+        if ch in fallbacks:
+            replacement = fallbacks[ch]
+            rec = report['substituted'].setdefault(
+                ch, {'replacement': replacement, 'count': 0, 'positions': []})
+            rec['count'] += 1
+            rec['positions'].append(i)
+            out_chars.append(replacement)
+            continue
+        out_chars.append(ch)
+
+    normalised = ''.join(out_chars)
+
+    # Coverage pass against the normalised text. Control chars and
+    # whitespace are always "covered" (typesetter handles them).
+    j = 0
+    while j < len(normalised):
+        ch = normalised[j]
+        if ch in (' ', '\n', '\t', '\r'):
+            j += 1
+            continue
+        # Try the greedy-match lookahead the typesetter uses.
+        matched = False
+        max_look = min(library.max_key_length, len(normalised) - j)
+        for length in range(max_look, 0, -1):
+            cand = normalised[j: j + length]
+            g = library.get_glyph(cand)
+            if g and g.get('variants'):
+                matched = True
+                j += length
+                break
+        if matched:
+            continue
+        # Single char unmatched — treat as missing.
+        rec = report['missing'].setdefault(
+            ch, {'count': 0, 'positions': [], 'context': ''})
+        # Position refers to the *normalised* text; map back to the
+        # original by counting substitutions before j.
+        rec['count'] += 1
+        rec['positions'].append(j)
+        if not rec['context']:
+            lo = max(0, j - 12)
+            hi = min(len(normalised), j + 13)
+            rec['context'] = normalised[lo:hi].replace('\n', ' ')
+        report['missing_count'] += 1
+        report['dropped_chars'] += 1
+        j += 1
+
+    return normalised, report
+
+
+def format_coverage_banner(report: Dict[str, Any]) -> str:
+    """Render a coverage report as a multi-line human-friendly string.
+
+    Returns an empty string when there's nothing worth reporting.
+    """
+    lines: List[str] = []
+    sub = report.get('substituted') or {}
+    miss = report.get('missing') or {}
+    if sub:
+        parts = ", ".join(
+            f"{cp!r}→{rec['replacement']!r} ×{rec['count']}"
+            for cp, rec in sorted(sub.items()))
+        lines.append(f"  substituted: {parts}")
+    if miss:
+        for cp, rec in sorted(miss.items()):
+            lines.append(
+                f"  missing {cp!r} ×{rec['count']}"
+                f"  e.g. \"…{rec['context']}…\"")
+    if not lines:
+        return ""
+    header = "Glyph coverage:"
+    return "\n".join([header] + lines)
+
 class GlyphLibrary:
     def __init__(self, glyphs_dir: str):
         self.glyphs_dir = glyphs_dir
@@ -210,6 +477,7 @@ class Typesetter:
         self._compiled_beziers: List[Optional[List[List[Dict[str, Any]]]]] = []
         self._line_info: List[Dict[str, Any]] = []
         self._word_info: List[Dict[str, Any]] = []
+        self._coverage_report: Dict[str, Any] = {}
 
 
     @staticmethod
@@ -373,7 +641,10 @@ class Typesetter:
                      wrap_mode: str = 'balanced',
                      space_width_override: Optional[float] = None,
                      space_jitter: float = 0.0,
-                     seed: Optional[int] = None) -> List[List[List[Dict[str, float]]]]:
+                     seed: Optional[int] = None,
+                     fallbacks: Optional[Dict[str, str]] = None,
+                     glyph_slant_jitter: float = 0.0,
+                     glyph_y_jitter: float = 0.0) -> List[List[List[Dict[str, float]]]]:
         """
         Returns a list of 'shapes'.
         Each shape is a list of 'strokes'.
@@ -398,7 +669,19 @@ class Typesetter:
         current_line_height = override_line_height if override_line_height is not None else self.line_height
         effective_line_advance = current_line_height * line_spacing
         base_space_width = space_width_override if space_width_override is not None else self.space_width
+        # Seed both the local rng (used by space/glyph jitter) and the
+        # global random (used by _process_glyph for variant selection)
+        # so a given --seed produces byte-identical output.
+        if seed is not None:
+            random.seed(seed)
         rng = random.Random(seed) if seed is not None else random
+
+        # Coverage & fallback pass — runs first so placement only ever
+        # sees codepoints the font either covers or the user explicitly
+        # accepts losing.
+        normalised_text, self._coverage_report = scan_text_coverage(
+            text, self.library, fallbacks=fallbacks)
+        text = normalised_text
 
         compiled_shapes: List = []
         self._compiled_beziers = []
@@ -529,6 +812,39 @@ class Typesetter:
                                     for key in ('p0', 'p1', 'p2', 'p3'):
                                         seg[key]['x'] -= shift
 
+                    # Per-glyph slant + y-bob (R3). Pivots around the
+                    # glyph's baseline-midpoint so each letter tilts in
+                    # place without visually sliding.
+                    if glyph_slant_jitter > 0.0 or glyph_y_jitter > 0.0:
+                        theta_deg = (rng.uniform(-glyph_slant_jitter, glyph_slant_jitter)
+                                     if glyph_slant_jitter > 0 else 0.0)
+                        dy = (rng.uniform(-glyph_y_jitter, glyph_y_jitter)
+                              if glyph_y_jitter > 0 else 0.0)
+                        if theta_deg != 0.0 or dy != 0.0:
+                            # Pivot = (mid-x of the glyph, baseline y)
+                            xs_flat = [p['x'] for s in placed_strokes for p in s]
+                            pivot_x = (min(xs_flat) + max(xs_flat)) / 2.0 if xs_flat else cursor_x
+                            pivot_y = cursor_y
+                            rad = math.radians(theta_deg)
+                            cos_t, sin_t = math.cos(rad), math.sin(rad)
+
+                            def _apply(p):
+                                dx_ = p['x'] - pivot_x
+                                dy_ = p['y'] - pivot_y
+                                p['x'] = pivot_x + dx_ * cos_t - dy_ * sin_t
+                                p['y'] = pivot_y + dx_ * sin_t + dy_ * cos_t + dy
+
+                            for stroke in placed_strokes:
+                                for p in stroke:
+                                    _apply(p)
+                            bz_entry = (self._compiled_beziers[-1]
+                                        if self._compiled_beziers else None)
+                            if bz_entry is not None:
+                                for bstroke in bz_entry:
+                                    for seg in bstroke:
+                                        for key in ('p0', 'p1', 'p2', 'p3'):
+                                            _apply(seg[key])
+
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
                     last_shape_placed = placed_strokes
                     last_glyph_data = glyph_data
@@ -560,7 +876,10 @@ class Typesetter:
                     break
 
             if not match_found:
-                logger.warning(f"No glyph found for '{text[i]}', skipping.")
+                # Coverage pass already recorded this missing codepoint
+                # in self._coverage_report; keep the skip behaviour but
+                # don't spam WARNING for every occurrence.
+                logger.debug("No glyph found for %r, skipping.", text[i])
                 cursor_x += base_space_width  # Placeholder advance
                 last_shape_placed = None
                 last_glyph_data = None
@@ -577,7 +896,44 @@ class Typesetter:
                                       max_width, base_space_width,
                                       effective_line_advance)
 
+        # Tag each line with its paragraph index (derived from the
+        # line_break_after flag on each word). Used downstream by the
+        # widow / orphan adjustment in pagination.
+        self._tag_paragraphs()
+
         return compiled_shapes
+
+    def _tag_paragraphs(self):
+        """Annotate self._line_info with paragraph_idx in place.
+
+        A paragraph break happens on a word whose line_break_after is
+        True. Any line whose glyph range contains — or comes after — a
+        paragraph-closing word inherits the next paragraph index from
+        the next line onward.
+        """
+        if not self._line_info:
+            return
+        # Build a set of shape indices where a paragraph ends.
+        end_shape_indices = set()
+        for w in self._word_info:
+            if w.get('line_break_after'):
+                end_shape_indices.add(w['end_idx'])  # exclusive; same value
+
+        paragraph_idx = 0
+        for info in self._line_info:
+            info['paragraph_idx'] = paragraph_idx
+            # If the line's shape range ends on or after a paragraph
+            # boundary, bump the counter for subsequent lines.
+            s = info.get('start_idx')
+            e = info.get('end_idx')
+            if s is None or e is None:
+                # Blank line from consecutive newlines — still a break.
+                paragraph_idx += 1
+                continue
+            for boundary in end_shape_indices:
+                if s < boundary <= e:
+                    paragraph_idx += 1
+                    break
 
     def _apply_balanced_wrap(self, compiled_shapes, bezier_data, max_width,
                              space_width, line_advance):
@@ -1046,6 +1402,51 @@ class Renderer:
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
 
+    def generate_pdf(self, svg_paths: List[str], pdf_path: str):
+        """Combine one or more on-disk SVGs into a single multi-page PDF.
+
+        Each SVG becomes one page in the output, in list order.
+        Requires the optional ``cairosvg`` and ``pypdf`` dependencies.
+        """
+        try:
+            import cairosvg  # type: ignore
+            from pypdf import PdfWriter, PdfReader  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "PDF output requires cairosvg and pypdf. Install with:  "
+                "pip install cairosvg pypdf"
+            ) from exc
+        import io
+        writer = PdfWriter()
+        for svg_path in svg_paths:
+            page_bytes = cairosvg.svg2pdf(url=svg_path)
+            reader = PdfReader(io.BytesIO(page_bytes))
+            for p in reader.pages:
+                writer.add_page(p)
+        with open(pdf_path, 'wb') as f:
+            writer.write(f)
+        logger.info(f"PDF saved to {pdf_path} ({len(svg_paths)} page(s))")
+
+    def generate_png(self, svg_path: str, png_path: str, dpi: int = 300,
+                     transparent: bool = False):
+        """Convert an on-disk SVG to PNG at the given DPI.
+
+        Requires the optional `cairosvg` dependency. Raises a clear
+        RuntimeError if it isn't available.
+        """
+        try:
+            import cairosvg  # type: ignore
+        except ImportError as exc:
+            raise RuntimeError(
+                "PNG output requires cairosvg. Install with:  "
+                "pip install cairosvg"
+            ) from exc
+        kwargs = {"url": svg_path, "write_to": png_path, "dpi": dpi}
+        if not transparent:
+            kwargs["background_color"] = "white"
+        cairosvg.svg2png(**kwargs)
+        logger.info(f"PNG saved to {png_path} ({dpi} dpi)")
+
     def generate_svg_string(self, compiled_shapes, page_width_mm=None, page_height_mm=None,
                             margin_mm=20.0, bezier_data=None,
                             explicit_scale=None, start_x_mm=None, start_y_mm=None,
@@ -1125,12 +1526,118 @@ if __name__ == "__main__":
                              "hand. Default: 0 (perfectly straight). Try 0.2–0.5.")
     parser.add_argument("--line-drift-y", type=float, default=0.0,
                         help="Max ± per-line baseline wobble in mm. Default: 0. Try 0.2–0.6.")
+    parser.add_argument("--glyph-slant-jitter", type=float, default=0.0,
+                        help="Max ± per-glyph rotation in degrees. Default: 0. Try 0.5–1.5 "
+                             "for a subtly uneven hand feel.")
+    parser.add_argument("--glyph-y-jitter", type=float, default=0.0,
+                        help="Max ± per-glyph baseline offset in mm. Default: 0. Try "
+                             "0.1–0.3 mm.")
     parser.add_argument("--paginate", action="store_true",
                         help="Split content that overflows the page height into multiple "
                              "files (output-01.svg, output-02.svg, ...). Requires --paper-size.")
+    parser.add_argument("--no-fallbacks", action="store_true",
+                        help="Disable Unicode substitutions (em-dash → --, curly quotes → "
+                             "straight, ellipsis → ..., etc). By default substitutions are "
+                             "applied before typesetting.")
+    parser.add_argument("--strict-glyphs", action="store_true",
+                        help="Exit with a non-zero status (2) if the text contains any "
+                             "codepoint the font doesn't cover. Useful in CI.")
+    parser.add_argument("--report", action="store_true",
+                        help="Print a structured layout + coverage report to stdout and "
+                             "skip SVG emission. Use --report-format to pick 'text' or 'json'.")
+    parser.add_argument("--report-format", choices=["text", "json"], default="text",
+                        help="Format used by --report. Default: text.")
+    parser.add_argument("--format", choices=["svg", "png", "pdf"], default="svg",
+                        help="Output format. 'png' requires cairosvg; 'pdf' requires "
+                             "cairosvg + pypdf (pip install cairosvg pypdf).")
+    parser.add_argument("--min-orphan-lines", type=int, default=2,
+                        help="During pagination, don't strand fewer than this many "
+                             "lines of a paragraph at the bottom of a page (default: 2).")
+    parser.add_argument("--min-widow-lines", type=int, default=2,
+                        help="During pagination, don't strand fewer than this many "
+                             "lines of a paragraph at the top of a page (default: 2).")
+    parser.add_argument("--dpi", type=int, default=300,
+                        help="Raster resolution for PNG output in dots per inch "
+                             "(default: 300).")
+    parser.add_argument("--transparent", action="store_true",
+                        help="Use a transparent background for PNG output "
+                             "(default: white).")
+    parser.add_argument("--preset", default=None,
+                        help="Named preset from configs/presets/<name>.{yaml,json}. "
+                             "Values apply as defaults; CLI flags override them.")
+    parser.add_argument("--config", default=None,
+                        help="Path to a YAML or JSON config file. Keys match CLI "
+                             "flag names (dashes or underscores). CLI flags override "
+                             "config; config overrides preset.")
     parser.add_argument("--max-width-mm", type=float, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
+
+    # Two-pass arg parsing so config files / presets apply as defaults
+    # that CLI flags can still override.
+    #
+    #   per-font preset (auto)  <  explicit --preset  <  --config  <  CLI
+    #
+    # A small pre-parser consumes only --preset / --config / --font so we
+    # know which files to load before the real parse.
+    _pre_parser = argparse.ArgumentParser(add_help=False)
+    _pre_parser.add_argument("--preset", default=None)
+    _pre_parser.add_argument("--config", default=None)
+    _pre_parser.add_argument("--font", default=None)
+    _pre_parser.add_argument("--no-preset", action="store_true",
+                              help=argparse.SUPPRESS)
+    _pre_known, _ = _pre_parser.parse_known_args()
+
+    merged_defaults: Dict[str, Any] = {}
+
+    # 1. Per-font auto-preset at glyphs/<font>/preset.{yaml,yml,json}
+    _script_dir = os.path.dirname(os.path.abspath(__file__))
+    _glyphs_root = os.path.join(_script_dir, "..", "glyphs")
+    if _pre_known.font and not _pre_known.no_preset:
+        for ext in ('.yaml', '.yml', '.json'):
+            cand = os.path.normpath(
+                os.path.join(_glyphs_root, _pre_known.font, 'preset' + ext))
+            if os.path.exists(cand):
+                try:
+                    merged_defaults.update(_load_config_file(cand))
+                    logger.info(f"Applied per-font preset {cand}")
+                except Exception as e:
+                    logger.error(f"Failed to read {cand}: {e}")
+                    exit(1)
+                break
+
+    # 2. Explicit --preset
+    if _pre_known.preset:
+        preset_path = _preset_path(_pre_known.preset)
+        if preset_path is None:
+            available = ", ".join(_list_presets()) or "(none installed)"
+            logger.error(
+                f"Preset {_pre_known.preset!r} not found. "
+                f"Available: {available}")
+            exit(1)
+        try:
+            merged_defaults.update(_load_config_file(preset_path))
+            logger.info(f"Applied preset {_pre_known.preset} ({preset_path})")
+        except Exception as e:
+            logger.error(f"Failed to read preset {_pre_known.preset}: {e}")
+            exit(1)
+
+    # 3. --config file
+    if _pre_known.config:
+        try:
+            merged_defaults.update(_load_config_file(_pre_known.config))
+            logger.info(f"Applied config {_pre_known.config}")
+        except Exception as e:
+            logger.error(f"Failed to read config {_pre_known.config}: {e}")
+            exit(1)
+
+    # Normalise dash keys to underscore keys so they map cleanly to
+    # argparse dest names.
+    if merged_defaults:
+        normalised = {}
+        for k, v in merged_defaults.items():
+            normalised[k.replace('-', '_')] = v
+        parser.set_defaults(**normalised)
 
     args = parser.parse_args()
 
@@ -1222,6 +1729,7 @@ if __name__ == "__main__":
     space_width_override = None
     space_jitter = 0.0
     line_drift_y_glyph = 0.0
+    glyph_y_jitter_glyph = 0.0
     if explicit_scale is not None:
         if args.space_width_mm is not None:
             space_width_override = args.space_width_mm / explicit_scale
@@ -1229,6 +1737,8 @@ if __name__ == "__main__":
             space_jitter = args.space_jitter_mm / explicit_scale
         if args.line_drift_y > 0:
             line_drift_y_glyph = args.line_drift_y / explicit_scale
+        if args.glyph_y_jitter > 0:
+            glyph_y_jitter_glyph = args.glyph_y_jitter / explicit_scale
     else:
         if args.space_width_mm is not None:
             logger.warning("--space-width-mm ignored without --paper-size "
@@ -1237,6 +1747,10 @@ if __name__ == "__main__":
             logger.warning("--space-jitter-mm ignored without --paper-size.")
         if args.line_drift_y > 0:
             logger.warning("--line-drift-y ignored without --paper-size.")
+        if args.glyph_y_jitter > 0:
+            logger.warning("--glyph-y-jitter ignored without --paper-size.")
+
+    fallbacks = None if args.no_fallbacks else DEFAULT_UNICODE_FALLBACKS
 
     shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,
@@ -1245,7 +1759,99 @@ if __name__ == "__main__":
                                      wrap_mode=args.wrap_mode,
                                      space_width_override=space_width_override,
                                      space_jitter=space_jitter,
-                                     seed=args.seed)
+                                     seed=args.seed,
+                                     fallbacks=fallbacks,
+                                     glyph_slant_jitter=args.glyph_slant_jitter,
+                                     glyph_y_jitter=glyph_y_jitter_glyph)
+
+    coverage = typesetter._coverage_report
+    banner = format_coverage_banner(coverage)
+    if banner and not args.report:
+        # stderr so CLI pipelines that capture stdout stay clean.
+        # Suppressed when --report is active — it prints coverage itself.
+        import sys as _sys
+        print(banner, file=_sys.stderr)
+
+    # --report short-circuits SVG emission and dumps a structured layout
+    # summary instead. Exit code mirrors --strict-glyphs.
+    if args.report:
+        effective_line_advance_mm = (line_height_mm * args.line_spacing
+                                     if explicit_scale is not None else None)
+        num_lines = len(typesetter._line_info)
+        content_h_mm = (num_lines * effective_line_advance_mm
+                        if effective_line_advance_mm else None)
+        avail_h_mm = (page_h - start_y_mm - args.margin) if page_h is not None else None
+        lines_per_page = (max(1, int(avail_h_mm // effective_line_advance_mm))
+                          if avail_h_mm and effective_line_advance_mm else None)
+        pages_needed = ((num_lines + lines_per_page - 1) // lines_per_page
+                        if lines_per_page else 1)
+
+        summary = {
+            'page': ({
+                'size': args.paper_size,
+                'orientation': args.orientation,
+                'width_mm': page_w, 'height_mm': page_h,
+                'margin_mm': args.margin,
+            } if page_w is not None else None),
+            'layout': ({
+                'line_height_mm': line_height_mm,
+                'line_spacing': args.line_spacing,
+                'effective_advance_mm': effective_line_advance_mm,
+                'start_x_mm': start_x_mm, 'start_y_mm': start_y_mm,
+                'max_width_mm': (max_width_mm
+                                 if explicit_scale is not None else None),
+            } if explicit_scale is not None else None),
+            'content': {
+                'lines': num_lines,
+                'words': len(typesetter._word_info),
+                'content_h_mm': content_h_mm,
+                'lines_per_page': lines_per_page,
+                'pages_needed': pages_needed,
+            },
+            'coverage': coverage,
+        }
+
+        if args.report_format == 'json':
+            print(json.dumps(summary, indent=2, default=str))
+        else:
+            print("--- Layout report ---")
+            if summary['page']:
+                pg = summary['page']
+                print(f"Page: {pg['size']} {pg['orientation']} "
+                      f"({pg['width_mm']}×{pg['height_mm']} mm), "
+                      f"margin {pg['margin_mm']} mm")
+            if summary['layout']:
+                la = summary['layout']
+                wrap_desc = (f"wrap {la['max_width_mm']:.1f} mm"
+                             if la['max_width_mm'] else "wrap off")
+                print(f"Layout: line {la['line_height_mm']:.2f} mm × "
+                      f"spacing {la['line_spacing']:.2f} → advance "
+                      f"{la['effective_advance_mm']:.2f} mm, "
+                      f"origin ({la['start_x_mm']:.1f},{la['start_y_mm']:.1f}) mm, "
+                      f"{wrap_desc}")
+            co = summary['content']
+            print(f"Content: {co['words']} words, {co['lines']} lines"
+                  + (f", {co['content_h_mm']:.1f} mm tall" if co['content_h_mm'] else ""))
+            if co['lines_per_page']:
+                print(f"Fits: {co['pages_needed']} page(s) "
+                      f"({co['lines_per_page']} lines × "
+                      f"{summary['layout']['effective_advance_mm']:.2f} mm per page)")
+            if banner:
+                print(banner)
+            else:
+                print("Coverage: all characters covered")
+
+        # Exit codes: 2 if missing glyphs and strict, 0 otherwise.
+        if args.strict_glyphs and coverage.get('missing_count', 0) > 0:
+            exit(2)
+        exit(0)
+
+    if args.strict_glyphs and coverage.get('missing_count', 0) > 0:
+        missing = sorted(coverage.get('missing') or {})
+        logger.error(f"--strict-glyphs: {coverage['missing_count']} occurrence(s) "
+                     f"of {len(missing)} uncovered codepoint(s): "
+                     f"{', '.join(repr(c) for c in missing)}")
+        exit(2)
 
     renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth, color=args.color,
                         stroke_width=args.stroke_width, seed=args.seed, use_bezier=use_bezier)
@@ -1262,12 +1868,22 @@ if __name__ == "__main__":
         if not line_info:
             pages.append((args.output, shapes, typesetter._compiled_beziers, line_info))
         else:
+            # Build the naive page starts, then adjust for widows/orphans.
+            n_lines = len(line_info)
+            naive_starts = list(range(0, n_lines, lines_per_page))
+            line_paragraphs = [info.get('paragraph_idx', 0) for info in line_info]
+            page_starts = _adjust_page_breaks(
+                naive_starts, line_paragraphs, n_lines,
+                min_orphan=args.min_orphan_lines,
+                min_widow=args.min_widow_lines)
+            # Boundaries: [start0, start1, ..., n_lines]
+            bounds = page_starts + [n_lines]
+
             # Build the page filename template.
             root, ext = os.path.splitext(args.output)
-            total_pages = (len(line_info) + lines_per_page - 1) // lines_per_page or 1
-            for p in range(total_pages):
-                first_line = p * lines_per_page
-                last_line = min(first_line + lines_per_page, len(line_info))
+            for p in range(len(page_starts)):
+                first_line = bounds[p]
+                last_line = bounds[p + 1]
                 page_lines = line_info[first_line:last_line]
                 # Shape index range for this page
                 page_shapes_start = next((li['start_idx'] for li in page_lines
@@ -1286,15 +1902,27 @@ if __name__ == "__main__":
                 } for li in page_lines]
                 page_path = f"{root}-{p+1:02d}{ext}"
                 pages.append((page_path, page_shape_slice, page_bezier_slice, adjusted))
+            shift_note = (" (adjusted for widows/orphans)"
+                          if page_starts != naive_starts else "")
             logger.info(f"Pagination: {len(pages)} page(s) "
-                        f"({lines_per_page} lines × {effective_line_advance_mm:.2f}mm per page)")
+                        f"({lines_per_page} lines × {effective_line_advance_mm:.2f}mm per page)"
+                        f"{shift_note}")
     else:
         if args.paginate:
             logger.warning("--paginate requires --paper-size; emitting a single file.")
         pages.append((args.output, shapes, typesetter._compiled_beziers, typesetter._line_info))
 
+    # For --format png / pdf we always write the SVG first (so the
+    # raster can be regenerated later without re-typesetting) and then
+    # convert. For PDF we collect every page's SVG and combine into a
+    # single multi-page PDF at the end.
+    pdf_intermediate_svgs: List[str] = []
     for page_path, page_shapes, page_bezier, page_lines in pages:
-        renderer.generate_svg(page_shapes, page_path,
+        svg_path = page_path
+        if args.format in ("png", "pdf"):
+            root, _ = os.path.splitext(page_path)
+            svg_path = root + ".svg"
+        renderer.generate_svg(page_shapes, svg_path,
                               page_width_mm=page_w, page_height_mm=page_h,
                               margin_mm=args.margin, bezier_data=page_bezier,
                               explicit_scale=explicit_scale,
@@ -1303,3 +1931,31 @@ if __name__ == "__main__":
                               line_drift_angle_deg=args.line_drift_angle,
                               line_drift_y=line_drift_y_glyph,
                               drift_seed=args.seed)
+        if args.format == "png":
+            png_path = os.path.splitext(page_path)[0] + ".png"
+            try:
+                renderer.generate_png(svg_path, png_path,
+                                      dpi=args.dpi,
+                                      transparent=args.transparent)
+            except RuntimeError as exc:
+                logger.error(str(exc))
+                exit(1)
+        elif args.format == "pdf":
+            pdf_intermediate_svgs.append(svg_path)
+
+    if args.format == "pdf":
+        # Strip the -NN suffix for paginated output; single-page PDFs
+        # get the user's exact filename with a .pdf extension.
+        if args.paginate and pdf_intermediate_svgs:
+            root, _ = os.path.splitext(args.output)
+            # Remove any page-number suffix we added (e.g. "-01") if present
+            if root.endswith(tuple(f"-{i:02d}" for i in range(1, len(pdf_intermediate_svgs) + 1))):
+                root = root.rsplit("-", 1)[0]
+            pdf_path = root + ".pdf"
+        else:
+            pdf_path = os.path.splitext(args.output)[0] + ".pdf"
+        try:
+            renderer.generate_pdf(pdf_intermediate_svgs, pdf_path)
+        except RuntimeError as exc:
+            logger.error(str(exc))
+            exit(1)

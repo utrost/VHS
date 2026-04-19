@@ -1,0 +1,16 @@
+# letter-a5 — note-sized letter on A5 with generous margins.
+paper_size: A5
+orientation: portrait
+margin: 15
+line_height_mm: 8
+line_spacing: 1.25
+wrap_mode: balanced
+stroke_width: 0.35
+space_width_mm: 2.2
+space_jitter_mm: 0.25
+line_drift_angle: 0.25
+line_drift_y: 0.2
+glyph_slant_jitter: 0.6
+glyph_y_jitter: 0.12
+auto_kern: true
+kern_aggressiveness: 0.5

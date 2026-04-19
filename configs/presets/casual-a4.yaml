@@ -1,0 +1,18 @@
+# casual-a4 — looser, more organic handwriting on A4.
+# Bigger drift and per-glyph jitter than the formal letter preset.
+paper_size: A4
+orientation: portrait
+margin: 20
+line_height_mm: 11
+line_spacing: 1.35
+wrap_mode: balanced
+stroke_width: 0.45
+space_width_mm: 2.6
+space_jitter_mm: 0.5
+line_drift_angle: 0.45
+line_drift_y: 0.4
+glyph_slant_jitter: 1.0
+glyph_y_jitter: 0.2
+jitter: 0.4
+auto_kern: true
+kern_aggressiveness: 0.6

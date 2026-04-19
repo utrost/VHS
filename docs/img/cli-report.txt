@@ -1,0 +1,6 @@
+--- Layout report ---
+Page: A4 portrait (210.0×297.0 mm), margin 25 mm
+Layout: line 10.00 mm × spacing 1.30 → advance 13.00 mm, origin (25.0,25.0) mm, wrap 160.0 mm
+Content: 43 words, 5 lines, 65.0 mm tall
+Fits: 1 page(s) (19 lines × 13.00 mm per page)
+Coverage: all characters covered

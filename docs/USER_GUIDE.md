@@ -94,12 +94,127 @@ control.
 |------|------|---------|---------|
 | `--line-drift-angle` | degrees | `0.0` | Max ± per-line rotation. Real handwriting drifts; `0.2`–`0.5`° is plausible. |
 | `--line-drift-y` | mm | `0.0` | Max ± per-line baseline wobble. Try `0.2`–`0.6` mm. |
+| `--glyph-slant-jitter` | degrees | `0.0` | Max ± rotation applied to every letter individually. Adds a convincing "uneven hand" feel on top of line drift. Try `0.5`–`1.5`°. |
+| `--glyph-y-jitter` | mm | `0.0` | Max ± baseline offset per letter. Try `0.1`–`0.3` mm. |
+
+Line drift tilts whole lines; glyph jitter makes each letter tilt and
+bob in place. They stack naturally — a common good-looking combination
+is `--line-drift-angle 0.3 --line-drift-y 0.3 --glyph-slant-jitter 0.8
+--glyph-y-jitter 0.15`.
 
 ### Multi-page
 
 | Flag | Default | Purpose |
 |------|---------|---------|
 | `--paginate` | off | Split content across numbered files (`output-01.svg`, `output-02.svg`, …) when it overflows the page height. Requires `--paper-size`. |
+
+### Presets and config files
+
+A hand-tuned recipe is usually 8–12 flags long. Presets and config
+files let you save and share them.
+
+| Flag | Purpose |
+|------|---------|
+| `--preset NAME` | Load a bundled preset from `configs/presets/<name>.{yaml,json}`. Values apply as defaults; CLI flags override them. |
+| `--config PATH` | Load any YAML or JSON file. Keys match the CLI flag names (dashes or underscores); `--config` wins over `--preset` and loses to explicit CLI flags. |
+
+Merge order (lowest to highest priority):
+
+1. Per-font preset, auto-loaded from `glyphs/<font>/preset.yaml` when
+   `--font <font>` is set.
+2. `--preset NAME`.
+3. `--config PATH`.
+4. CLI flags.
+
+**Bundled starters** under `configs/presets/`:
+
+| Preset | What it is |
+|--------|------------|
+| `letter-a4` | Formal A4 letter, 10 mm lines, subtle organic jitter. |
+| `letter-a5` | Note-sized A5, 8 mm lines. |
+| `notebook-page` | Compact ruled-paper feel, 6 mm lines, minimal drift. |
+| `casual-a4` | Looser handwriting, bigger drift + per-glyph jitter. |
+| `architects-a3` | Landscape A3 drafting-style capitals, 15 mm lines. |
+
+Example: start from `letter-a4` but swap paper to A5:
+
+```bash
+python3 assembler/assembler.py \
+    --preset letter-a4 --paper-size A5 \
+    -f letter.txt output/letter-a5-from-preset.svg
+```
+
+GUI: a **Preset** dropdown at the top of the sidebar applies any
+bundled preset to the form fields (live preview re-renders
+automatically). A **Save…** button writes the current sidebar state
+out as a YAML file you can drop into `configs/presets/` (or pass to
+`--config`).
+
+### Output formats (PNG, PDF)
+
+SVG is the default output — vector, plotter-ready, lossless. PNG is a
+raster format for sharing and embedding; PDF combines every
+paginated page into a single multi-page file ready to print.
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--format` | `svg` | Output format. `png` needs `cairosvg`; `pdf` needs `cairosvg` + `pypdf`. |
+| `--dpi` | `300` | Raster resolution for PNG. A4 @ 300 dpi ≈ 2480×3508 px. |
+| `--transparent` | off | Transparent background for PNG (default: white). |
+
+With `--format png`, the Assembler writes both the intermediate
+`output.svg` and the final `output.png`. With `--paginate` you get
+`output-01.svg` + `output-01.png`, `output-02.svg` + …. The web GUI
+has a "Download PNG" button with the same DPI and transparency
+controls.
+
+With `--format pdf`, each page SVG is rendered to a single PDF page
+and the pages are merged into one multi-page PDF at `output.pdf`.
+Combined with `--paginate` on a long text:
+
+```bash
+python3 assembler/assembler.py \
+    --preset letter-a4 --paginate --format pdf \
+    -f novel.txt output/novel.pdf
+# writes output/novel-01.svg, output/novel-02.svg, ... and a single
+# output/novel.pdf containing all of them.
+```
+
+The GUI "Download PDF" button exports whatever is currently previewed
+as a one-page PDF.
+
+### Pagination: widow and orphan control
+
+Naive pagination can strand a single line of a paragraph at the top
+or bottom of a page. Two defaults-on flags prevent that:
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--min-orphan-lines` | `2` | Minimum lines of a paragraph allowed at the bottom of a page. If a break would leave fewer, the line is pushed to the next page to join its paragraph body. |
+| `--min-widow-lines` | `2` | Minimum lines of a paragraph allowed at the top of a page. If a break would leave the last line alone, the break is shifted back so the widow joins its paragraph body. |
+
+Setting either to `1` disables its rule. The adjustment shifts a
+break by ±1 line per pass — no unbounded cascades. The CLI logs
+`(adjusted for widows/orphans)` when it applied any shift.
+
+### Coverage and fallbacks
+
+By default the Assembler substitutes common "typographic" characters that
+hand-drawn fonts rarely cover (em-dash → `--`, curly quotes → straight,
+ellipsis → `...`, non-breaking space → space, etc) and logs a coverage
+banner on stderr listing every substitution and every still-missing
+codepoint (with a short context snippet for each).
+
+| Flag | Default | Purpose |
+|------|---------|---------|
+| `--no-fallbacks` | off | Disable the Unicode substitution pass — only glyphs the font actually covers are drawn. |
+| `--strict-glyphs` | off | Exit with status `2` if any codepoint remains uncovered after fallbacks. CI-friendly. |
+| `--report` | off | Typeset but skip SVG emission; print a structured layout + coverage summary and exit. |
+| `--report-format` | `text` | Format for `--report`: `text` (human) or `json` (machine-readable). |
+
+`--report` is the fastest way to answer "how will this render?" before
+committing to a full output, especially when tuning `--line-height-mm`
+or `--lines-per-page` on a long file.
 
 ### Ink & style
 
@@ -251,11 +366,27 @@ pip install flask
 All mm-based controls from the CLI are exposed in the sidebar: paper size,
 orientation, margin, start-x / start-y, max width (mm), line height (mm) or
 lines/page, line spacing, wrap mode, space width (mm), space jitter (mm),
-stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness, and
-line drift (angle + y, mm). Selecting a paper size requires either "Line
-Height (mm)" or "Lines / Page"; leaving paper size on "Auto-fit" falls back
-to bounding-box output for quick previews. Pagination is CLI-only — the
-GUI shows a single preview.
+stroke width (mm), colour, jitter, auto-kern, kerning aggressiveness,
+line drift (angle + y, mm), and a Unicode-Fallbacks toggle.
+
+**Live preview** is on by default (toggle in the sidebar actions). Any
+change to a control — text, paper size, line height, wrap mode, drift,
+colour, stroke width, … — auto-regenerates the preview 350 ms after the
+last input. In-flight requests are cancelled when a new one starts so
+you won't see stale results. Disable the toggle to go back to click-to-
+generate. The server caches loaded glyph libraries across requests so
+steady-state updates are ~20× faster than a cold render.
+
+A **Coverage panel** below the preview shows every substituted codepoint
+(em-dash → `--`, curly quotes → straight, …) and every still-missing
+codepoint with a short context snippet. The panel appears automatically
+whenever the rendered text contained either kind of event; it stays
+hidden for fully-covered text.
+
+Selecting a paper size requires either "Line Height (mm)" or
+"Lines / Page"; leaving paper size on "Auto-fit" falls back to
+bounding-box output for quick previews. Pagination and `--report` are
+CLI-only — the GUI shows a single live preview.
 
 ---
 

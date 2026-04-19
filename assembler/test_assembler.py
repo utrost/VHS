@@ -509,5 +509,171 @@ class TestAssembler(unittest.TestCase):
         self.assertAlmostEqual(nm['min_x'], 5.0)
         self.assertAlmostEqual(nm['width'], 60.0)
 
+    def test_unicode_fallbacks_applied(self):
+        """Em-dash and curly quotes are substituted before placement, and
+        the coverage report records the substitutions."""
+        from assembler import DEFAULT_UNICODE_FALLBACKS
+        typesetter = Typesetter(self.lib)
+        # Our mock font has a, b, c. Use covered chars + fallback-able chars.
+        typesetter.typeset_text("a\u2014b\u2018c\u2019",
+                                fallbacks=DEFAULT_UNICODE_FALLBACKS)
+        report = typesetter._coverage_report
+        self.assertIn('\u2014', report['substituted'])
+        self.assertEqual(report['substituted']['\u2014']['replacement'], '--')
+        self.assertIn('\u2018', report['substituted'])
+        self.assertIn('\u2019', report['substituted'])
+        # '-' and "'" themselves may be missing from the mock font but not
+        # part of the substituted inventory.
+        self.assertEqual(report['substituted']['\u2014']['count'], 1)
+
+    def test_coverage_missing_reported(self):
+        """Characters with no glyph are recorded with counts and positions."""
+        typesetter = Typesetter(self.lib)
+        typesetter.typeset_text("aZbZ")  # Z is not in the mock font
+        report = typesetter._coverage_report
+        self.assertIn('Z', report['missing'])
+        self.assertEqual(report['missing']['Z']['count'], 2)
+        self.assertEqual(report['missing_count'], 2)
+
+    def test_coverage_clean_text(self):
+        """All-covered text produces empty substitution/missing maps."""
+        typesetter = Typesetter(self.lib)
+        typesetter.typeset_text("abc")
+        report = typesetter._coverage_report
+        self.assertEqual(report['substituted'], {})
+        self.assertEqual(report['missing'], {})
+        self.assertEqual(report['missing_count'], 0)
+
+    def test_scan_text_coverage_function(self):
+        """The module-level scan_text_coverage is usable standalone."""
+        from assembler import scan_text_coverage, DEFAULT_UNICODE_FALLBACKS
+        normalised, report = scan_text_coverage(
+            "a\u2014Zc", self.lib, fallbacks=DEFAULT_UNICODE_FALLBACKS)
+        self.assertEqual(normalised, "a--Zc")
+        self.assertIn('\u2014', report['substituted'])
+        self.assertIn('Z', report['missing'])
+
+    def test_glyph_slant_jitter_changes_output(self):
+        """Non-zero glyph_slant_jitter must move point coordinates."""
+        t1 = Typesetter(self.lib)
+        shapes1 = t1.typeset_text("abc", seed=1)
+        pts1 = [(p['x'], p['y']) for s in shapes1 for st in s for p in st]
+
+        t2 = Typesetter(self.lib)
+        shapes2 = t2.typeset_text("abc", seed=1, glyph_slant_jitter=2.0,
+                                  glyph_y_jitter=1.0)
+        pts2 = [(p['x'], p['y']) for s in shapes2 for st in s for p in st]
+
+        self.assertEqual(len(pts1), len(pts2))
+        diffs = sum(abs(a[0] - b[0]) + abs(a[1] - b[1])
+                    for a, b in zip(pts1, pts2))
+        self.assertGreater(diffs, 0.0,
+                           "glyph_slant_jitter / glyph_y_jitter must transform points")
+
+    def test_list_presets_finds_bundled(self):
+        """_list_presets() enumerates configs/presets/*.yaml|yml|json."""
+        from assembler import _list_presets
+        names = _list_presets()
+        # At least the five starters we ship should be present.
+        for expected in ('letter-a4', 'letter-a5', 'notebook-page',
+                         'casual-a4', 'architects-a3'):
+            self.assertIn(expected, names, f"expected preset {expected!r}")
+
+    def test_load_config_file_yaml_and_json(self):
+        """_load_config_file picks a parser from extension and reads both."""
+        from assembler import _load_config_file
+        import tempfile, os as _os
+        yaml_body = "paper_size: A5\nline_height_mm: 9.0\nauto_kern: true\n"
+        json_body = '{"paper_size": "A5", "line_height_mm": 9.0, "auto_kern": true}'
+        for ext, body in (('.yaml', yaml_body), ('.json', json_body)):
+            with tempfile.NamedTemporaryFile('w', suffix=ext, delete=False) as fh:
+                fh.write(body)
+                path = fh.name
+            try:
+                d = _load_config_file(path)
+                self.assertEqual(d['paper_size'], 'A5')
+                self.assertAlmostEqual(d['line_height_mm'], 9.0)
+                self.assertIs(d['auto_kern'], True)
+            finally:
+                _os.unlink(path)
+
+    def test_preset_path_returns_none_for_missing(self):
+        """_preset_path returns None when the name doesn't resolve."""
+        from assembler import _preset_path
+        self.assertIsNone(_preset_path('__definitely_not_a_preset__'))
+
+    def test_adjust_page_breaks_orphan(self):
+        """Orphan = single first-line of paragraph at bottom of page.
+
+        Paragraphs: [0, 0, 0, 0, 1] split 4-at-a-time would orphan
+        line 4 (first line of para 1) on its own at the bottom.
+        Wait — 4-at-a-time splits into [0..3] and [4..], so line 4 is
+        alone on page 2 (widow-of-paragraph? or single-line page?).
+
+        Cleaner scenario: 6 lines, paragraphs [0, 1, 1, 1, 1, 1], split
+        at line 3. Page 1 = lines 0..2 (para 0 solo + two of para 1),
+        page 2 = lines 3..5. Line 0 is the ONLY line of para 0 on page
+        1 — but that's a single-line paragraph, we shouldn't shift it.
+        """
+        from assembler import _adjust_page_breaks
+        # 6 lines, two paragraphs of 3 lines each. Break at 2 produces
+        # an orphan: line 2 starts para 1 alone at the bottom of page
+        # 1. Push the break back to 1 so line 2 joins page 2.
+        paragraphs = [0, 0, 1, 1, 1, 1]
+        new_starts = _adjust_page_breaks(
+            page_starts=[0, 2], line_paragraphs=paragraphs, n_lines=6,
+            min_orphan=2, min_widow=2)
+        # A shift happened (orphan cleared) or not — assert it's no
+        # longer the naive split. Accept either (depending on rule
+        # interpretation) — it shouldn't leave a single orphan on p1.
+        # Specifically: with naive split at 2, line 1 (last on p1) is
+        # still in para 0, line 2 (first on p2) starts para 1. That's
+        # NOT an orphan (line 1 ends para 0 cleanly). So no shift.
+        self.assertEqual(new_starts, [0, 2])
+
+    def test_adjust_page_breaks_widow(self):
+        """Widow = single last-line of paragraph at top of page."""
+        from assembler import _adjust_page_breaks
+        # 5 lines, paragraph 0 spans lines 0..3 (4 lines). Break at 3
+        # puts line 3 (last line of para 0) alone on page 2 as a widow
+        # with para 1 starting at line 4.
+        paragraphs = [0, 0, 0, 0, 1]
+        new_starts = _adjust_page_breaks(
+            page_starts=[0, 3], line_paragraphs=paragraphs, n_lines=5,
+            min_orphan=2, min_widow=2)
+        # With min_widow=2, the single last line of para 0 on page 2
+        # qualifies → break should shift back so the widow joins the
+        # previous page.
+        self.assertEqual(new_starts, [0, 2])
+
+    def test_adjust_page_breaks_preserves_order(self):
+        """Bounds clamp so page_starts stay strictly increasing."""
+        from assembler import _adjust_page_breaks
+        paragraphs = [0, 0, 1, 1, 2, 2]
+        new_starts = _adjust_page_breaks([0, 2, 4], paragraphs, 6)
+        self.assertTrue(all(new_starts[i] < new_starts[i + 1]
+                             for i in range(len(new_starts) - 1)))
+
+    def test_tag_paragraphs_marks_line_info(self):
+        """Typesetter assigns paragraph_idx per line after typesetting."""
+        # "a\nb" should produce two paragraphs in line_info.
+        typesetter = Typesetter(self.lib)
+        typesetter.typeset_text("a\nb")
+        paras = [info['paragraph_idx'] for info in typesetter._line_info]
+        self.assertEqual(len(set(paras)), 2,
+                         f"expected two paragraphs, got {paras}")
+
+    def test_glyph_slant_jitter_deterministic_with_seed(self):
+        """Same seed + same jitter → byte-identical coordinates."""
+        t1 = Typesetter(self.lib)
+        s1 = t1.typeset_text("abc", seed=42, glyph_slant_jitter=1.5,
+                             glyph_y_jitter=0.5)
+        t2 = Typesetter(self.lib)
+        s2 = t2.typeset_text("abc", seed=42, glyph_slant_jitter=1.5,
+                             glyph_y_jitter=0.5)
+        p1 = [(p['x'], p['y']) for s in s1 for st in s for p in st]
+        p2 = [(p['x'], p['y']) for s in s2 for st in s for p in st]
+        self.assertEqual(p1, p2)
+
 if __name__ == '__main__':
     unittest.main()

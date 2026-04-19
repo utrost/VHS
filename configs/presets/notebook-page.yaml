@@ -1,0 +1,16 @@
+# notebook-page — compact ruled-paper feel.
+# Tight 6 mm lines, minimal organic drift (as if writing against a ruler).
+paper_size: A5
+orientation: portrait
+margin: 10
+line_height_mm: 6
+line_spacing: 1.1
+wrap_mode: balanced
+stroke_width: 0.3
+space_width_mm: 1.8
+space_jitter_mm: 0.15
+line_drift_angle: 0.1
+line_drift_y: 0.1
+glyph_slant_jitter: 0.3
+glyph_y_jitter: 0.08
+auto_kern: true

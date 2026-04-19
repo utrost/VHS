@@ -16,6 +16,11 @@ build/
 # Output
 *.svg
 !assembler/hello_world.svg
+output/
+*.png
+!docs/example-hello-world.png
+!docs/glyph-collector.jpg
+!docs/img/*.png
 
 # OS
 .DS_Store

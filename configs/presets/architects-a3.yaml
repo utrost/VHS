@@ -1,0 +1,17 @@
+# architects-a3 — large drafting-style capitals on A3 landscape.
+# Big lines, minimal drift, drawn-letter weight.
+paper_size: A3
+orientation: landscape
+margin: 25
+line_height_mm: 15
+line_spacing: 1.2
+wrap_mode: balanced
+stroke_width: 0.6
+space_width_mm: 4.0
+space_jitter_mm: 0.2
+line_drift_angle: 0.1
+line_drift_y: 0.1
+glyph_slant_jitter: 0.2
+glyph_y_jitter: 0.05
+auto_kern: true
+kern_aggressiveness: 0.4

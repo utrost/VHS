@@ -10,6 +10,15 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
 -   **Smooth Preview**: Live Catmull-Rom spline smoothing applied to the canvas display. Toggle with the **Smooth** button in the header. This is visual-only — raw capture data is preserved in the exported JSON.
 -   **Auto-Save**: Drawing sessions are automatically saved to localStorage after every stroke. If the browser is closed accidentally, work is restored on the next page load.
 -   **JSON Export**: Exports drawings as JSON files compatible with the VHS Assembler.
+-   **Direct folder save** (📁 Connect): on Chromium-family browsers (Chrome / Edge / Opera), the **Connect** button binds a `glyphs/<font>/` folder via the File System Access API and Save writes JSON files straight into it — no more download-and-move. Firefox and Safari automatically fall back to per-file downloads.
+-   **Batch queue capture**: type an entire character set into the **Queue** field (e.g. `abcdefghijklmnopqrstuvwxyz` or `sch, tt, ff`), hit **Start Queue**, and the next character loads automatically after each Save. Progress indicator shows `12 / 26 · next: m`; **Esc** cancels.
+-   **Font coverage dashboard** (📊): pick a target set (Basic Latin, Numbers, Punctuation, German umlauts, Full ASCII) plus a free-form *Custom* field, and see a live grid of captured / missing characters with a progress bar. Auto-scans the connected folder; click any missing character to load it into the input. A **Capture next** row suggests the highest-frequency uncaptured letters so a work-in-progress font is usable for real text as soon as possible. Settings persist per font.
+-   **Load existing for editing**: typing a label that matches a file in the connected folder offers a *Load for editing* shortcut so you can revisit a glyph without starting blank.
+-   **Per-variant clear** (×): every slot has a small ✕ button on hover that wipes only that variant; nothing else in the grid changes.
+-   **Zone check on save**: captures of characters that must have descenders (g, j, p, q, y) or ascenders (b, d, f, h, k, l, t, …) are sanity-checked against the guides on save. A confirm dialog lists any variants that don't cross the required zone.
+-   **Per-variant baseline / x-height**: `Shift+click` on any slot sets that slot's baseline to the click y; `Alt+click` sets the x-height. Overridden slots draw their guides in orange and the override is stored as `metadata` on that variant in the JSON.
+-   **Assembler live preview** (👁): a side panel types a sample sentence using the saved glyphs (via the Assembler server). Auto-refreshes after each save so you see the impact of a new variant immediately. Either open this Collector at `http://localhost:5001/collector` (recommended) or keep it standalone — CORS is open on the local server.
+-   **Mobile / tablet layout**: the grid reflows to a single column below 900 px wide; settings and coverage panels dock to the bottom of the viewport as sheets.
 -   **Configurable Grid**:
     -   Adjust the number of variants.
     -   Customize box width and height.
@@ -45,3 +54,17 @@ Click the **Settings (⚙️)** button in the header to open the configuration p
 -   **Enter**: Save JSON and reset
 -   **Ctrl+Z** / **Cmd+Z**: Undo last stroke (on the last-drawn variant)
 -   **Ctrl+Shift+Z** / **Cmd+Shift+Z**: Redo last undone stroke
+-   **Esc**: Cancel an active capture queue
+
+## Workflow: capture a font in one sitting
+
+1. Click **📁 Connect** in the header and point the picker at
+    `glyphs/<YourFont>/`. The button turns green and shows the folder name.
+2. Click **📊** to open the coverage dashboard. Pick a target set
+    (e.g. *Basic Latin*).
+3. Type your sequence into the **Queue** field (e.g.
+    `abcdefghijklmnopqrstuvwxyz`) and click **Start Queue**.
+4. Draw the first letter. Hit **Enter** — it saves directly into the
+    folder, the dashboard cell turns green, and the next letter loads
+    into the input automatically.
+5. Repeat until the queue is empty. Press **Esc** at any time to stop.

@@ -30,7 +30,18 @@ python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 - `--space-jitter-mm [FLOAT]`: Max ± random variation per space in mm. Default: `0` (uniform).
 - `--line-drift-angle [FLOAT]`: Max ± per-line rotation in degrees (simulates drifting hand). Default: `0`.
 - `--line-drift-y [FLOAT]`: Max ± per-line baseline wobble in mm. Default: `0`.
+- `--glyph-slant-jitter [FLOAT]`: Max ± per-glyph rotation in degrees (every letter tilts in place). Default: `0`. Try `0.5`–`1.5`.
+- `--glyph-y-jitter [FLOAT]`: Max ± per-glyph baseline offset in mm. Default: `0`. Try `0.1`–`0.3`.
 - `--paginate`: Split overflowing content into numbered files (`output-01.svg`, …). Requires `--paper-size`.
+- `--no-fallbacks`: Disable default Unicode substitutions (em-dash → `--`, curly quotes → straight, ellipsis → `...`, etc).
+- `--strict-glyphs`: Exit with status 2 if the text contains any codepoint the font doesn't cover (useful in CI).
+- `--report`: Print a layout + coverage report and skip SVG emission. `--report-format {text,json}` picks the format (default `text`).
+- `--format {svg,png,pdf}`: Output format (default `svg`). `png` needs `cairosvg`; `pdf` needs `cairosvg` + `pypdf`.
+- `--dpi [INT]`: Raster resolution for PNG output (default `300`).
+- `--transparent`: Transparent background for PNG output (default: white).
+- `--min-orphan-lines [INT]`, `--min-widow-lines [INT]`: During `--paginate`, don't strand fewer than this many lines of a paragraph at the bottom (orphan) / top (widow) of a page. Default: `2` each. Set `1` to disable.
+- `--preset [NAME]`: Apply a bundled preset from `configs/presets/<name>.{yaml,json}`. Values are defaults; CLI flags override.
+- `--config [PATH]`: Load YAML/JSON config whose keys match CLI flags. Overrides `--preset`; loses to explicit CLI flags.
 - `--stroke-width [FLOAT]`: Pen thickness in mm on paper (default: `2.0`; typical handwriting: `0.3`–`0.6`).
 - `--color`: SVG colour name or `#rrggbb` (default: `black`).
 - `--jitter [FLOAT]`: Gaussian noise on stroke points to simulate hand tremor. Default `0.0`. Try `0.5`–`1.5`.

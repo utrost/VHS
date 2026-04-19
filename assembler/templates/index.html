@@ -388,6 +388,26 @@ Line breaks are preserved."></textarea>
                     </div>
                 </div>
 
+                <!-- Presets -->
+                <div class="section">
+                    <div class="section-label">Preset</div>
+                    <div class="field-row">
+                        <div class="field">
+                            <select id="presetSelect">
+                                <option value="">(none)</option>
+                            </select>
+                        </div>
+                        <button class="btn btn-secondary" type="button"
+                                onclick="savePreset()" style="flex: 0 0 auto; padding: 4px 10px;">
+                            Save…
+                        </button>
+                    </div>
+                    <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
+                        Loads bundled settings from <code>configs/presets/</code>. "Save…"
+                        downloads the current sidebar state as a YAML file.
+                    </div>
+                </div>
+
                 <!-- Page Setup -->
                 <div class="section">
                     <div class="section-label">Page Setup</div>
@@ -485,6 +505,14 @@ Line breaks are preserved."></textarea>
                             <span class="toggle-thumb"></span>
                         </label>
                     </div>
+                    <div class="toggle-row">
+                        <span class="toggle-label">Unicode Fallbacks</span>
+                        <label class="toggle">
+                            <input type="checkbox" id="fallbacks" checked>
+                            <span class="toggle-track"></span>
+                            <span class="toggle-thumb"></span>
+                        </label>
+                    </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
                             <label class="field-label">Kern Aggressiveness</label>
@@ -520,8 +548,18 @@ Line breaks are preserved."></textarea>
                             <input type="number" id="lineDriftY" value="0" min="0" max="5" step="0.1">
                         </div>
                     </div>
+                    <div class="field-row" style="margin-top: 8px;">
+                        <div class="field">
+                            <label class="field-label">Glyph Slant (°)</label>
+                            <input type="number" id="glyphSlantJitter" value="0" min="0" max="5" step="0.1">
+                        </div>
+                        <div class="field">
+                            <label class="field-label">Glyph Y (mm)</label>
+                            <input type="number" id="glyphYJitter" value="0" min="0" max="2" step="0.05">
+                        </div>
+                    </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
-                        Simulates a drifting hand. Try 0.2–0.5° and 0.2–0.6 mm. Paper size required.
+                        Line drift: whole lines tilt/wobble. Glyph: each letter tilts/bobs in place. Try 0.3° and 0.2 mm for line, 0.8° and 0.15 mm for glyph.
                     </div>
                 </div>
 
@@ -529,12 +567,39 @@ Line breaks are preserved."></textarea>
 
             <!-- Action Buttons -->
             <div class="sidebar-actions">
+                <div class="toggle-row" style="margin-bottom: 6px;">
+                    <span class="toggle-label">Live Preview</span>
+                    <label class="toggle">
+                        <input type="checkbox" id="livePreview" checked>
+                        <span class="toggle-track"></span>
+                        <span class="toggle-thumb"></span>
+                    </label>
+                </div>
                 <button class="btn btn-primary" id="generateBtn" onclick="generate()">
                     ✦ Generate
                 </button>
-                <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
-                    ↓ Download
-                </button>
+                <div class="field-row" style="margin-top: 4px;">
+                    <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
+                        ↓ SVG
+                    </button>
+                    <button class="btn btn-secondary" id="downloadPngBtn" onclick="downloadPng()" disabled>
+                        ↓ PNG
+                    </button>
+                    <button class="btn btn-secondary" id="downloadPdfBtn" onclick="downloadPdf()" disabled>
+                        ↓ PDF
+                    </button>
+                </div>
+                <div class="field-row" style="margin-top: 4px;">
+                    <div class="field">
+                        <label class="field-label">PNG DPI</label>
+                        <input type="number" id="pngDpi" value="300" min="72" max="1200" step="6">
+                    </div>
+                    <div class="field" style="display: flex; align-items: end;">
+                        <label style="font-size: 12px; color: #aaa;">
+                            <input type="checkbox" id="pngTransparent"> transparent
+                        </label>
+                    </div>
+                </div>
             </div>
         </aside>
 
@@ -551,23 +616,163 @@ Line breaks are preserved."></textarea>
                     <div class="empty-state-hint">Your handwriting SVG will appear here</div>
                 </div>
             </div>
+            <div id="coveragePanel" style="display: none; padding: 10px 14px; border-top: 1px solid #2a2a2a; background: #111; font-size: 12px; color: #ccc;">
+                <div style="font-weight: 600; color: #fff; margin-bottom: 6px;">Glyph coverage</div>
+                <div id="coverageBody"></div>
+            </div>
         </main>
     </div>
 
     <script>
         // ── State ──
         let currentSvgBlob = null;
+        let currentSvgText = '';
+        let liveDebounceTimer = null;
+        let liveAbortController = null;
+        const LIVE_DEBOUNCE_MS = 350;
+
+        // Map of config keys → HTML element id for preset load/save.
+        // Keys match the JSON the server emits from /api/preset and the
+        // CLI flag names (underscore form).
+        const PRESET_KEY_TO_ID = {
+            paper_size: 'paperSize', orientation: 'orientation',
+            margin: 'margin', start_x: 'startX', start_y: 'startY',
+            max_width_mm: 'maxWidthMm',
+            line_height_mm: 'lineHeightMm', lines_per_page: 'linesPerPage',
+            line_spacing: 'lineSpacing', wrap_mode: 'wrapMode',
+            space_width_mm: 'spaceWidthMm', space_jitter_mm: 'spaceJitterMm',
+            stroke_width: 'strokeWidth', color: 'color', jitter: 'jitter',
+            line_drift_angle: 'lineDriftAngle', line_drift_y: 'lineDriftY',
+            glyph_slant_jitter: 'glyphSlantJitter', glyph_y_jitter: 'glyphYJitter',
+            auto_kern: 'autoKern', kern_aggressiveness: 'kernAggressiveness',
+            smooth: 'smooth', fallbacks: 'fallbacks',
+        };
+
+        function applyPreset(obj) {
+            for (const [k, v] of Object.entries(obj || {})) {
+                const id = PRESET_KEY_TO_ID[k.replace(/-/g, '_')];
+                if (!id) continue;
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (el.type === 'checkbox') el.checked = !!v;
+                else el.value = (v === null || v === undefined) ? '' : v;
+            }
+            // Kern slider's value label has its own DOM node
+            document.getElementById('kernAggressivenessValue').textContent =
+                document.getElementById('kernAggressiveness').value;
+        }
+
+        function currentSettings() {
+            const out = {};
+            for (const [k, id] of Object.entries(PRESET_KEY_TO_ID)) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                if (el.type === 'checkbox') { out[k] = el.checked; continue; }
+                const v = el.value;
+                if (v === '' || v == null) continue;
+                const asNum = parseFloat(v);
+                out[k] = (!isNaN(asNum) && String(asNum) === String(v).trim()) ? asNum : v;
+            }
+            return out;
+        }
+
+        // Minimal YAML dumper — covers the key: value lines we need.
+        function toYaml(obj) {
+            const lines = ['# VHS Assembler preset — generated from the web GUI'];
+            for (const [k, v] of Object.entries(obj)) {
+                let out;
+                if (typeof v === 'boolean') out = v ? 'true' : 'false';
+                else if (typeof v === 'number') out = String(v);
+                else out = JSON.stringify(String(v));
+                lines.push(`${k}: ${out}`);
+            }
+            return lines.join('\n') + '\n';
+        }
+
+        function savePreset() {
+            const name = prompt('Preset filename (without extension):', 'my-preset');
+            if (!name) return;
+            const yaml = toYaml(currentSettings());
+            const blob = new Blob([yaml], { type: 'text/yaml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${name}.yaml`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            setStatus('ready', `Preset saved as ${name}.yaml`);
+        }
+
+        async function loadPresets() {
+            try {
+                const res = await fetch('/api/presets');
+                const names = await res.json();
+                const sel = document.getElementById('presetSelect');
+                names.forEach(n => {
+                    const o = document.createElement('option');
+                    o.value = n; o.textContent = n;
+                    sel.appendChild(o);
+                });
+                sel.addEventListener('change', async (e) => {
+                    const name = e.target.value;
+                    if (!name) return;
+                    try {
+                        const r = await fetch(`/api/preset/${encodeURIComponent(name)}`);
+                        if (!r.ok) throw new Error((await r.json()).error || 'load failed');
+                        applyPreset(await r.json());
+                        setStatus('ready', `Loaded preset: ${name}`);
+                        if (document.getElementById('livePreview').checked
+                            && document.getElementById('textInput').value.trim()) {
+                            generate(true);
+                        }
+                    } catch (err) {
+                        setStatus('error', `Preset load failed: ${err.message}`);
+                    }
+                });
+            } catch (err) {
+                console.warn('Preset list load failed', err);
+            }
+        }
 
         // ── Init ──
         async function init() {
             await loadFonts();
             await loadPaperSizes();
+            await loadPresets();
 
             document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
 
             // Update kern aggressiveness label on slider change
             document.getElementById('kernAggressiveness').addEventListener('input', (e) => {
                 document.getElementById('kernAggressivenessValue').textContent = e.target.value;
+            });
+
+            // Live-preview: debounce input from every control that affects
+            // the output. Excludes export-only controls (PNG DPI, transparency)
+            // and the livePreview toggle itself.
+            const liveIds = [
+                'textInput', 'fontSelect', 'paperSize', 'orientation', 'margin',
+                'startX', 'startY', 'maxWidthMm',
+                'lineHeightMm', 'linesPerPage', 'lineSpacing',
+                'wrapMode', 'spaceWidthMm', 'spaceJitterMm',
+                'smooth', 'autoKern', 'fallbacks',
+                'kernAggressiveness', 'jitter', 'strokeWidth', 'color',
+                'lineDriftAngle', 'lineDriftY',
+                'glyphSlantJitter', 'glyphYJitter',
+            ];
+            const scheduleLive = () => {
+                if (!document.getElementById('livePreview').checked) return;
+                if (!document.getElementById('textInput').value.trim()) return;
+                clearTimeout(liveDebounceTimer);
+                liveDebounceTimer = setTimeout(() => generate(true), LIVE_DEBOUNCE_MS);
+            };
+            liveIds.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.addEventListener('input', scheduleLive);
+                el.addEventListener('change', scheduleLive);
             });
 
             // Keyboard shortcut: Ctrl/Cmd + Enter to generate
@@ -637,17 +842,26 @@ Line breaks are preserved."></textarea>
         }
 
         // ── Generate ──
-        async function generate() {
+        async function generate(live = false) {
             const text = document.getElementById('textInput').value;
             if (!text.trim()) {
-                setStatus('error', 'Please enter some text');
+                if (!live) setStatus('error', 'Please enter some text');
                 return;
             }
 
+            // Cancel any previous in-flight request so we don't race.
+            if (liveAbortController) {
+                liveAbortController.abort();
+            }
+            liveAbortController = new AbortController();
+            const aborter = liveAbortController;
+
             const btn = document.getElementById('generateBtn');
-            btn.disabled = true;
-            btn.textContent = '⟳ Generating…';
-            setStatus('loading', 'Generating SVG…');
+            if (!live) {
+                btn.disabled = true;
+                btn.textContent = '⟳ Generating…';
+            }
+            setStatus('loading', live ? 'Updating…' : 'Generating SVG…');
 
             const valOrNull = (id) => {
                 const v = document.getElementById(id).value;
@@ -676,14 +890,18 @@ Line breaks are preserved."></textarea>
                 space_width_mm: valOrNull('spaceWidthMm'),
                 space_jitter_mm: valOrNull('spaceJitterMm'),
                 line_drift_angle: valOrNull('lineDriftAngle'),
-                line_drift_y: valOrNull('lineDriftY')
+                line_drift_y: valOrNull('lineDriftY'),
+                glyph_slant_jitter: valOrNull('glyphSlantJitter'),
+                glyph_y_jitter: valOrNull('glyphYJitter'),
+                fallbacks: document.getElementById('fallbacks').checked
             };
 
             try {
                 const res = await fetch('/api/generate', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
+                    body: JSON.stringify(payload),
+                    signal: aborter.signal,
                 });
 
                 if (!res.ok) {
@@ -694,14 +912,36 @@ Line breaks are preserved."></textarea>
                 const svgText = await res.text();
                 showPreview(svgText, payload);
                 currentSvgBlob = new Blob([svgText], { type: 'image/svg+xml' });
+                currentSvgText = svgText;
                 document.getElementById('downloadBtn').disabled = false;
-                setStatus('ready', 'SVG generated successfully');
+                document.getElementById('downloadPngBtn').disabled = false;
+                document.getElementById('downloadPdfBtn').disabled = false;
+
+                // Coverage panel from the X-Glyph-Coverage response header
+                const covHdr = res.headers.get('X-Glyph-Coverage');
+                if (covHdr) {
+                    try { updateCoveragePanel(JSON.parse(covHdr)); }
+                    catch (e) { console.warn('Bad coverage header', e); }
+                }
+
+                setStatus('ready', live ? 'Updated' : 'SVG generated successfully');
             } catch (err) {
+                if (err.name === 'AbortError') {
+                    // Superseded by a newer request — stay silent.
+                    return;
+                }
                 setStatus('error', err.message);
                 console.error(err);
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '✦ Generate';
+                if (!live) {
+                    btn.disabled = false;
+                    btn.innerHTML = '✦ Generate';
+                }
+                // Clear the aborter only if it's still the current one
+                // (a later request would have replaced it already).
+                if (liveAbortController === aborter) {
+                    liveAbortController = null;
+                }
             }
         }
 
@@ -732,6 +972,45 @@ Line breaks are preserved."></textarea>
             document.getElementById('previewInfo').textContent = `${ps}${orient} · ${payload.font || 'default'}`;
         }
 
+        // ── Coverage panel ──
+        function updateCoveragePanel(report) {
+            const panel = document.getElementById('coveragePanel');
+            const body = document.getElementById('coverageBody');
+            const sub = report.substituted || {};
+            const miss = report.missing || {};
+            const nSub = Object.keys(sub).length;
+            const nMiss = Object.keys(miss).length;
+            if (nSub === 0 && nMiss === 0) {
+                panel.style.display = 'none';
+                body.innerHTML = '';
+                return;
+            }
+            const rows = [];
+            if (nSub > 0) {
+                const items = Object.entries(sub)
+                    .map(([cp, r]) => `<code>${escapeHtml(cp)}</code>→<code>${escapeHtml(r.replacement)}</code> ×${r.count}`)
+                    .join(', ');
+                rows.push(`<div><strong style="color:#8fc">Substituted:</strong> ${items}</div>`);
+            }
+            if (nMiss > 0) {
+                const items = Object.entries(miss)
+                    .map(([cp, r]) => {
+                        const ctx = r.context ? ` <span style="color:#888">e.g. …${escapeHtml(r.context)}…</span>` : '';
+                        return `<div><code>${escapeHtml(cp)}</code> ×${r.count}${ctx}</div>`;
+                    })
+                    .join('');
+                rows.push(`<div style="margin-top:4px"><strong style="color:#f88">Missing:</strong>${items}</div>`);
+            }
+            body.innerHTML = rows.join('');
+            panel.style.display = 'block';
+        }
+
+        function escapeHtml(s) {
+            return (s == null ? '' : String(s))
+                .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        }
+
         // ── Download ──
         function downloadSvg() {
             if (!currentSvgBlob) return;
@@ -743,6 +1022,74 @@ Line breaks are preserved."></textarea>
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
+        }
+
+        async function downloadPdf() {
+            if (!currentSvgText) return;
+            const btn = document.getElementById('downloadPdfBtn');
+            const orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⟳ Rendering…';
+            try {
+                const res = await fetch('/api/pdf', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ svg: currentSvgText }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'PDF export failed');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'handwriting.pdf';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                setStatus('error', err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
+        }
+
+        async function downloadPng() {
+            if (!currentSvgText) return;
+            const btn = document.getElementById('downloadPngBtn');
+            const orig = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = '⟳ Rendering…';
+            try {
+                const dpi = parseInt(document.getElementById('pngDpi').value, 10) || 300;
+                const transparent = document.getElementById('pngTransparent').checked;
+                const res = await fetch('/api/png', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ svg: currentSvgText, dpi, transparent }),
+                });
+                if (!res.ok) {
+                    const err = await res.json();
+                    throw new Error(err.error || 'PNG export failed');
+                }
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `handwriting-${dpi}dpi.png`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            } catch (err) {
+                setStatus('error', err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = orig;
+            }
         }
 
         // ── Status ──

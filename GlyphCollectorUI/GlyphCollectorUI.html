@@ -36,6 +36,35 @@
             -ms-overflow-style: none;
             scrollbar-width: none;
         }
+
+        /* GC11: mobile / tablet layout. Below 900 px wide, switch to a
+           single-column, one-variant-at-a-time flow. The toolbar wraps
+           aggressively and the settings / coverage panels become
+           full-width sheets pinned to the bottom of the viewport. */
+        @media (max-width: 900px) {
+            header { padding: 0.75rem !important; gap: 0.5rem !important; }
+            header h1 { font-size: 1rem !important; }
+            header button { height: 2.5rem !important; padding: 0.25rem 0.5rem !important; }
+            #canvasContainer {
+                display: flex !important;
+                flex-direction: column !important;
+                align-items: center !important;
+                gap: 0.75rem !important;
+                padding: 0.5rem !important;
+            }
+            #canvasContainer > * { width: auto !important; }
+            #settingsPanel, #coveragePanel {
+                position: fixed !important;
+                top: auto !important;
+                bottom: 0 !important;
+                right: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                max-height: 70vh !important;
+                border-radius: 1rem 1rem 0 0 !important;
+            }
+            #queueInput { font-size: 0.85rem !important; }
+        }
     </style>
 </head>
 
@@ -106,8 +135,126 @@
                 class="h-12 px-4 bg-slate-200 hover:bg-slate-300 text-slate-700 font-medium rounded-lg transition">
                 Reset
             </button>
+
+            <!-- GC7: Direct-save folder connection -->
+            <button id="folderBtn" onclick="connectFolder()"
+                class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
+                title="Connect a font folder to save JSON files directly">
+                📁 <span id="folderLabel">Connect</span>
+            </button>
+
+            <!-- GC1: Coverage dashboard toggle -->
+            <button onclick="toggleCoverage()"
+                class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
+                title="Font coverage dashboard">
+                📊
+            </button>
+
+            <!-- GC8: Assembler preview toggle -->
+            <button onclick="togglePreview()"
+                class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
+                title="Live Assembler preview (requires Assembler server)">
+                👁
+            </button>
+        </div>
+
+        <!-- GC4: Queue capture bar -->
+        <div class="w-full flex gap-3 items-end mt-2 pt-2 border-t border-slate-100">
+            <div class="flex-1">
+                <label class="block text-xs font-bold uppercase text-slate-400 mb-1">
+                    Queue (characters to capture in order)
+                </label>
+                <input type="text" id="queueInput"
+                    placeholder="e.g. abcdefghijklmnopqrstuvwxyz  —  blank = queue off"
+                    class="w-full p-2 border-2 border-slate-200 rounded-lg text-sm font-mono focus:border-blue-500 focus:ring-0 outline-none transition">
+            </div>
+            <div id="queueStatus" class="hidden min-w-[14rem] text-sm text-slate-600 pb-2">
+                <span id="queueProgress" class="font-semibold text-slate-700">0 / 0</span>
+                <span class="text-slate-400"> · next: </span>
+                <span id="queueNext" class="font-mono text-slate-700"></span>
+                <button onclick="stopQueue()"
+                    class="ml-2 px-2 py-0.5 text-xs bg-slate-200 hover:bg-slate-300 rounded transition"
+                    title="Esc">Stop</button>
+            </div>
+            <button onclick="startQueue()" id="queueStartBtn"
+                class="h-10 px-3 bg-indigo-100 hover:bg-indigo-200 text-indigo-700 font-medium rounded-lg transition text-sm">
+                Start Queue
+            </button>
         </div>
     </header>
+
+    <!-- GC1: Coverage dashboard panel (hidden by default) -->
+    <div id="coveragePanel"
+        class="hidden absolute top-36 right-4 bg-white p-5 rounded-xl shadow-2xl border border-slate-200 z-50 w-96 max-h-[70vh] overflow-y-auto">
+        <div class="flex items-center justify-between mb-3 border-b pb-2">
+            <h3 class="font-bold text-base text-slate-800">Font coverage</h3>
+            <button onclick="toggleCoverage()"
+                class="text-slate-400 hover:text-slate-700 text-lg leading-none">×</button>
+        </div>
+        <div class="flex items-center gap-2 mb-2 text-xs">
+            <label class="text-slate-500 font-semibold uppercase">Target set</label>
+            <select id="coveragePreset"
+                class="flex-1 p-1 border border-slate-300 rounded text-sm">
+                <option value="basic-latin">Basic Latin (a–z, A–Z)</option>
+                <option value="numbers">Numbers (0–9)</option>
+                <option value="basic-punctuation">Basic punctuation</option>
+                <option value="german-umlauts">German umlauts</option>
+                <option value="full-ascii">Full ASCII printable</option>
+            </select>
+        </div>
+        <div class="flex items-center gap-2 mb-3 text-xs">
+            <label class="text-slate-500 font-semibold uppercase shrink-0">+ Custom</label>
+            <input type="text" id="coverageCustom" placeholder="extra chars e.g. äöü 1/4 sch"
+                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono">
+        </div>
+        <div class="flex items-center gap-3 mb-3">
+            <div class="flex-1 h-2 bg-slate-200 rounded overflow-hidden">
+                <div id="coverageBar" class="h-full bg-emerald-500 transition-all" style="width: 0%"></div>
+            </div>
+            <span id="coverageText" class="text-xs text-slate-600 font-semibold whitespace-nowrap">0 / 0</span>
+            <button onclick="refreshCoverage()"
+                class="px-2 py-1 text-xs bg-slate-100 hover:bg-slate-200 rounded transition"
+                title="Rescan folder">⟳</button>
+        </div>
+        <div id="coverageList" class="grid grid-cols-6 gap-1 text-center text-sm font-mono"></div>
+        <div id="coverageFreqHints" class="hidden mt-3 p-2 bg-slate-50 rounded border border-slate-100"></div>
+        <p id="coverageHint" class="text-[11px] text-slate-400 mt-3">
+            Connect a folder (📁) to enable automatic scanning. Click any missing
+            character to load it into the input field.
+        </p>
+    </div>
+
+    <!-- GC8: Assembler live-preview panel (hidden by default) -->
+    <div id="previewPanel"
+        class="hidden absolute top-36 left-4 bg-white p-5 rounded-xl shadow-2xl border border-slate-200 z-50 w-[28rem]">
+        <div class="flex items-center justify-between mb-3 border-b pb-2">
+            <h3 class="font-bold text-base text-slate-800">Assembler preview</h3>
+            <button onclick="togglePreview()"
+                class="text-slate-400 hover:text-slate-700 text-lg leading-none">×</button>
+        </div>
+        <div class="flex items-center gap-2 mb-2 text-xs">
+            <label class="text-slate-500 font-semibold uppercase shrink-0">Server</label>
+            <input type="text" id="previewServer" value="http://localhost:5001"
+                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono">
+        </div>
+        <div class="flex items-center gap-2 mb-2 text-xs">
+            <label class="text-slate-500 font-semibold uppercase shrink-0">Font</label>
+            <select id="previewFont" class="flex-1 p-1 border border-slate-300 rounded text-sm"></select>
+        </div>
+        <div class="mb-2">
+            <label class="block text-[11px] text-slate-500 font-semibold uppercase mb-1">Sample</label>
+            <textarea id="previewSample" rows="2"
+                class="w-full p-2 border border-slate-300 rounded text-sm font-mono">The quick brown fox jumps over the lazy dog.</textarea>
+        </div>
+        <button onclick="renderPreview()"
+            class="w-full px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded transition">
+            Render
+        </button>
+        <div id="previewContent" class="mt-3 bg-slate-50 rounded p-2 min-h-[120px] text-center text-slate-400 text-xs flex items-center justify-center">
+            Click Render to preview.
+        </div>
+        <p id="previewHint" class="text-[11px] text-slate-400 mt-2"></p>
+    </div>
 
     <!-- Settings Panel (Hidden by default) -->
     <div id="settingsPanel"
@@ -325,10 +472,15 @@
             });
 
             // Auto-save when character input changes; also redraw template overlays
+            // GC5: if a file matching the new label exists in the connected
+            // folder, surface a "Load for editing" prompt.
             const charEl = document.getElementById('charInput');
+            let existingCheckTimer = null;
             charEl.addEventListener('input', () => {
                 autoSave();
                 slots.forEach(redraw);
+                clearTimeout(existingCheckTimer);
+                existingCheckTimer = setTimeout(tryLoadExistingGlyph, 250);
             });
         }
 
@@ -385,8 +537,24 @@
                 label.className = 'absolute top-2 left-2 text-xs font-bold text-slate-300 select-none pointer-events-none group-hover:text-slate-400';
                 label.innerText = `#${i + 1}`;
 
+                // GC6: per-variant clear button — only appears on hover,
+                // wipes this slot without touching the others.
+                const clearBtn = document.createElement('button');
+                clearBtn.type = 'button';
+                clearBtn.innerText = '×';
+                clearBtn.className = 'absolute top-1 right-1 w-6 h-6 text-sm text-slate-400 bg-white/70 '
+                    + 'hover:bg-red-100 hover:text-red-600 rounded-full border border-slate-200 '
+                    + 'opacity-0 group-hover:opacity-100 transition';
+                clearBtn.title = 'Clear this variant only';
+                const slotIndex = i;
+                clearBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    clearSlot(slotIndex);
+                });
+
                 wrapper.appendChild(canvas);
                 wrapper.appendChild(label);
+                wrapper.appendChild(clearBtn);
                 container.appendChild(wrapper);
 
                 const ctx = canvas.getContext('2d', { desynchronized: true });
@@ -411,6 +579,23 @@
             const { canvas } = slot;
 
             canvas.addEventListener('pointerdown', (e) => {
+                // GC10: modifier-click sets a per-slot baseline or
+                // x-height override without touching the drawing.
+                //   Shift+click → baseline  ·  Alt/Option+click → x-height
+                if (e.shiftKey || e.altKey) {
+                    const rect = canvas.getBoundingClientRect();
+                    const scaleY = canvas.height / rect.height;
+                    const localY = (e.clientY - rect.top) * scaleY;
+                    if (e.shiftKey) slot.baseline_y_override = Math.round(localY);
+                    if (e.altKey) slot.x_height_override = Math.round(localY);
+                    drawGuides(slot);
+                    document.getElementById('status').innerText =
+                        `Slot #${slot.id + 1}: `
+                        + (e.shiftKey ? `baseline y=${slot.baseline_y_override}`
+                                      : `x-height y=${slot.x_height_override}`);
+                    e.preventDefault();
+                    return;
+                }
                 canvas.setPointerCapture(e.pointerId);
                 slot.currentStroke = [];
                 slot.strokes.push(slot.currentStroke);
@@ -502,22 +687,32 @@
                 }
             }
 
-            // Baseline (Red)
+            // GC10: per-slot override of baseline / x-height if set.
+            const slotBaseline = (slot.baseline_y_override != null)
+                ? slot.baseline_y_override : BASELINE_Y;
+            const slotXHeight = (slot.x_height_override != null)
+                ? slot.x_height_override : X_HEIGHT;
+            const isOverridden = (slot.baseline_y_override != null)
+                || (slot.x_height_override != null);
+
+            // Baseline (Red — darker if overridden)
             ctx.beginPath();
-            ctx.strokeStyle = '#fca5a5';
+            ctx.setLineDash([]);
+            ctx.strokeStyle = isOverridden ? '#f97316' : '#fca5a5';
             ctx.lineWidth = 2;
-            ctx.moveTo(0, BASELINE_Y);
-            ctx.lineTo(canvas.width, BASELINE_Y);
+            ctx.moveTo(0, slotBaseline);
+            ctx.lineTo(canvas.width, slotBaseline);
             ctx.stroke();
 
             // x-Height (Blue Dashed)
             ctx.beginPath();
             ctx.setLineDash([4, 4]);
-            ctx.strokeStyle = '#bfdbfe';
+            ctx.strokeStyle = isOverridden ? '#f97316' : '#bfdbfe';
             ctx.lineWidth = 1;
-            ctx.moveTo(0, X_HEIGHT);
-            ctx.lineTo(canvas.width, X_HEIGHT);
+            ctx.moveTo(0, slotXHeight);
+            ctx.lineTo(canvas.width, slotXHeight);
             ctx.stroke();
+            ctx.setLineDash([]);
             ctx.setLineDash([]);
         }
 
@@ -1098,6 +1293,536 @@
             try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
         }
 
+        // ────────────────────────────────────────────────────────────
+        // GC6: per-variant clear (slot-level X button)
+        // ────────────────────────────────────────────────────────────
+        function clearSlot(slotIndex) {
+            const slot = slots[slotIndex];
+            if (!slot) return;
+            slot.strokes = [];
+            slot.undoStack = [];
+            slot.currentStroke = null;
+            drawGuides(slot);
+            if (lastActiveSlot && lastActiveSlot.id === slotIndex) {
+                lastActiveSlot = null;
+            }
+            updateTotalCount();
+            autoSave();
+            document.getElementById('status').innerText =
+                `Cleared variant #${slotIndex + 1}.`;
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC9: zone-coverage warnings
+        //   Descenders: strokes must cross below baseline_y.
+        //   Ascenders: strokes must rise above x_height_y.
+        //   Mid-zone chars: strokes should stay in the x-height zone.
+        // ────────────────────────────────────────────────────────────
+        const ZONE_EXPECTATIONS = {
+            descender: new Set(['g', 'j', 'p', 'q', 'y']),
+            ascender: new Set(['b', 'd', 'f', 'h', 'k', 'l', 't',
+                               'B', 'D', 'E', 'F', 'H', 'I', 'K', 'L',
+                               'P', 'R', 'T']),
+        };
+
+        function analyseVariantZones(variant) {
+            let minY = Infinity, maxY = -Infinity;
+            for (const stroke of variant.strokes) {
+                for (const p of stroke) {
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                }
+            }
+            return { minY, maxY };
+        }
+
+        function zoneWarnings(char, variants) {
+            // Single-char check only — ligatures / multi-char tokens aren't
+            // subject to simple zone rules.
+            if (char.length !== 1) return [];
+            const warnings = [];
+            const needsDescender = ZONE_EXPECTATIONS.descender.has(char);
+            const needsAscender = ZONE_EXPECTATIONS.ascender.has(char);
+            if (!needsDescender && !needsAscender) return [];
+            variants.forEach((v, idx) => {
+                const { minY, maxY } = analyseVariantZones(v);
+                if (needsDescender && maxY <= BASELINE_Y + 2) {
+                    warnings.push(`Variant #${idx + 1} has no descender (strokes stop at y=${maxY.toFixed(0)}, baseline y=${BASELINE_Y}).`);
+                }
+                if (needsAscender && minY >= X_HEIGHT - 2) {
+                    warnings.push(`Variant #${idx + 1} has no ascender (strokes start at y=${minY.toFixed(0)}, x-height y=${X_HEIGHT}).`);
+                }
+            });
+            return warnings;
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC5: load existing glyph when the input matches a saved file
+        // ────────────────────────────────────────────────────────────
+        let existingLoadedChar = null;
+
+        async function tryLoadExistingGlyph() {
+            if (!fontDirHandle) return; // only works with a connected folder
+            const raw = document.getElementById('charInput').value;
+            if (!raw) return;
+            const filename = getSafeFilename(raw) + '.json';
+            let fileHandle;
+            try {
+                fileHandle = await fontDirHandle.getFileHandle(filename);
+            } catch (_) {
+                existingLoadedChar = null;
+                updateExistingIndicator(null);
+                return;
+            }
+            try {
+                const file = await fileHandle.getFile();
+                const data = JSON.parse(await file.text());
+                updateExistingIndicator(data);
+            } catch (e) {
+                console.warn('Could not read existing glyph', e);
+            }
+        }
+
+        function updateExistingIndicator(data) {
+            let indicator = document.getElementById('existingIndicator');
+            if (!indicator) {
+                indicator = document.createElement('div');
+                indicator.id = 'existingIndicator';
+                indicator.className = 'w-full text-xs pt-2 text-slate-500';
+                document.querySelector('header').appendChild(indicator);
+            }
+            if (!data) {
+                indicator.classList.add('hidden');
+                indicator.innerHTML = '';
+                return;
+            }
+            const n = Array.isArray(data.variants) ? data.variants.length : 0;
+            indicator.classList.remove('hidden');
+            indicator.innerHTML =
+                `<span class="font-semibold text-amber-700">Existing glyph found:</span> `
+                + `${n} variant(s) for "${data.char}". `
+                + `<button onclick="loadExistingGlyph()" class="ml-1 px-2 py-0.5 text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 rounded transition">Load for editing</button>`;
+            existingLoadedChar = data;
+        }
+
+        function loadExistingGlyph() {
+            if (!existingLoadedChar) return;
+            // Preserve canvas config but reset the current grid.
+            clearAll();
+            const variants = existingLoadedChar.variants || [];
+            variants.forEach((v, idx) => {
+                if (idx >= slots.length) return;
+                // Use `strokes` (raw) if present, otherwise `normalized_strokes`.
+                const src = Array.isArray(v.strokes) ? v.strokes
+                            : Array.isArray(v.normalized_strokes) ? v.normalized_strokes : [];
+                slots[idx].strokes = src.map(stroke => stroke.map(p => ({ ...p })));
+                redraw(slots[idx]);
+            });
+            updateTotalCount();
+            document.getElementById('status').innerText =
+                `Loaded ${variants.length} existing variant(s). Save to overwrite.`;
+            updateExistingIndicator(null);
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC2: custom target set + persistence
+        // GC3: frequency-aware "capture next" suggestions
+        // ────────────────────────────────────────────────────────────
+        // Letter frequency (English + German, rough). Used to rank the
+        // uncovered chars from the current target set.
+        const LETTER_FREQUENCY = {
+            e: 12.7, t: 9.1, a: 8.2, o: 7.5, i: 7.0, n: 6.7, s: 6.3, h: 6.1,
+            r: 6.0, d: 4.3, l: 4.0, c: 2.8, u: 2.8, m: 2.4, w: 2.4, f: 2.2,
+            g: 2.0, y: 2.0, p: 1.9, b: 1.5, v: 1.0, k: 0.8, j: 0.2, x: 0.2,
+            q: 0.1, z: 0.1,
+        };
+        // Capital letters use the same ranking as their lowercase form.
+        const COVERAGE_LS_PREFIX = 'vhs_collector_coverage_';
+
+        function persistCoverageSettings() {
+            try {
+                const key = COVERAGE_LS_PREFIX + (FONT_FAMILY || 'default');
+                const preset = document.getElementById('coveragePreset').value;
+                const extra = document.getElementById('coverageCustom').value;
+                localStorage.setItem(key, JSON.stringify({ preset, extra }));
+            } catch (_) {}
+        }
+
+        function restoreCoverageSettings() {
+            try {
+                const key = COVERAGE_LS_PREFIX + (FONT_FAMILY || 'default');
+                const raw = localStorage.getItem(key);
+                if (!raw) return;
+                const { preset, extra } = JSON.parse(raw);
+                const sel = document.getElementById('coveragePreset');
+                if (sel && preset) sel.value = preset;
+                const customEl = document.getElementById('coverageCustom');
+                if (customEl && extra) customEl.value = extra;
+            } catch (_) {}
+        }
+
+        function currentTargetChars() {
+            const presetKey = document.getElementById('coveragePreset').value;
+            const baseChars = COVERAGE_PRESETS[presetKey] || [];
+            const customRaw = (document.getElementById('coverageCustom').value || '').trim();
+            const extraChars = customRaw.split(/\s+/).flatMap(t => t.split(''));
+            return [...new Set([...baseChars, ...extraChars])];
+        }
+
+        function rankByFrequency(chars) {
+            return chars.slice().sort((a, b) => {
+                const fa = LETTER_FREQUENCY[a.toLowerCase()] || 0;
+                const fb = LETTER_FREQUENCY[b.toLowerCase()] || 0;
+                return fb - fa;
+            });
+        }
+
+        function updateFrequencyHints(missingChars) {
+            let hintsEl = document.getElementById('coverageFreqHints');
+            if (!hintsEl) return;
+            const ranked = rankByFrequency(
+                missingChars.filter(c => LETTER_FREQUENCY[c.toLowerCase()] !== undefined)
+            );
+            if (ranked.length === 0) {
+                hintsEl.classList.add('hidden');
+                hintsEl.innerHTML = '';
+                return;
+            }
+            const topN = ranked.slice(0, 6);
+            const covered = sum => sum.reduce(
+                (acc, c) => acc + (LETTER_FREQUENCY[c.toLowerCase()] || 0), 0);
+            const gain = covered(topN);
+            hintsEl.classList.remove('hidden');
+            hintsEl.innerHTML =
+                `<div class="text-[11px] text-slate-500 mb-1">Capture next (highest frequency): `
+                + topN.map(c =>
+                    `<button class="mx-0.5 px-1.5 py-0.5 text-xs border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 rounded font-mono" onclick="loadCharIntoInput('${c.replace(/'/g, "\\'")}')">${c}</button>`
+                  ).join('')
+                + `</div>`
+                + `<div class="text-[10px] text-slate-400">These ${topN.length} letters cover ~${gain.toFixed(1)}% of typical English text.</div>`;
+        }
+
+        function loadCharIntoInput(ch) {
+            document.getElementById('charInput').value = ch;
+            document.getElementById('charInput').focus();
+            tryLoadExistingGlyph();
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC8: Assembler live-preview panel
+        // ────────────────────────────────────────────────────────────
+        function previewServerUrl() {
+            return (document.getElementById('previewServer').value || '')
+                .replace(/\/$/, '');
+        }
+
+        async function populatePreviewFonts() {
+            const sel = document.getElementById('previewFont');
+            if (!sel) return;
+            const url = previewServerUrl();
+            if (!url) return;
+            try {
+                const res = await fetch(url + '/api/fonts');
+                if (!res.ok) throw new Error(res.statusText);
+                const fonts = await res.json();
+                const prev = sel.value;
+                sel.innerHTML = '';
+                fonts.forEach(f => {
+                    const o = document.createElement('option');
+                    o.value = f; o.textContent = f;
+                    sel.appendChild(o);
+                });
+                if (prev && fonts.includes(prev)) sel.value = prev;
+                else if (fontDirHandle && fonts.includes(fontDirHandle.name)) {
+                    sel.value = fontDirHandle.name;
+                }
+                document.getElementById('previewHint').textContent =
+                    `${fonts.length} font(s) available.`;
+            } catch (e) {
+                document.getElementById('previewHint').textContent =
+                    `Can't reach Assembler at ${url}. Start it with ./vhs-gui.sh, `
+                    + `then press Render.`;
+            }
+        }
+
+        function togglePreview() {
+            const panel = document.getElementById('previewPanel');
+            const wasHidden = panel.classList.contains('hidden');
+            panel.classList.toggle('hidden');
+            if (wasHidden) populatePreviewFonts();
+        }
+
+        async function renderPreview() {
+            const url = previewServerUrl();
+            if (!url) return;
+            const font = document.getElementById('previewFont').value;
+            const text = document.getElementById('previewSample').value;
+            const hint = document.getElementById('previewHint');
+            const content = document.getElementById('previewContent');
+            content.innerHTML = '<span class="text-slate-400">Rendering…</span>';
+            try {
+                const res = await fetch(url + '/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        text, font,
+                        paper_size: 'A5', orientation: 'portrait',
+                        margin: 10, line_height_mm: 10,
+                        stroke_width: 0.4,
+                    }),
+                });
+                if (!res.ok) {
+                    const err = await res.json().catch(() => ({}));
+                    throw new Error(err.error || res.statusText);
+                }
+                const svg = await res.text();
+                content.innerHTML = svg;
+                // Make the inner SVG scale responsively
+                const inner = content.querySelector('svg');
+                if (inner) {
+                    inner.removeAttribute('width');
+                    inner.removeAttribute('height');
+                    inner.style.width = '100%';
+                    inner.style.maxHeight = '360px';
+                }
+                hint.textContent = `Rendered "${text.slice(0, 30)}${text.length > 30 ? '…' : ''}" with font "${font}".`;
+            } catch (e) {
+                content.innerHTML =
+                    `<span class="text-red-500">Error: ${e.message}</span>`;
+                hint.textContent = 'Make sure the Assembler server is running '
+                    + '(./vhs-gui.sh) and the URL is correct.';
+            }
+        }
+
+        // Auto-refresh preview after a save if the panel is open.
+        function refreshPreviewIfOpen() {
+            const p = document.getElementById('previewPanel');
+            if (p && !p.classList.contains('hidden')) renderPreview();
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC7: Direct folder save via File System Access API
+        // ────────────────────────────────────────────────────────────
+        let fontDirHandle = null;  // FileSystemDirectoryHandle when connected
+
+        async function connectFolder() {
+            if (!window.showDirectoryPicker) {
+                alert('Direct folder save needs a Chromium-family browser (Chrome, '
+                    + 'Edge, Opera). Falling back to per-file downloads.');
+                return;
+            }
+            try {
+                const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+                fontDirHandle = handle;
+                document.getElementById('folderLabel').innerText = handle.name;
+                document.getElementById('folderBtn').classList.remove(
+                    'bg-slate-100', 'text-slate-600');
+                document.getElementById('folderBtn').classList.add(
+                    'bg-emerald-100', 'text-emerald-700');
+                document.getElementById('status').innerText =
+                    `Connected to folder: ${handle.name}`;
+                // Auto-refresh dashboard if it's open
+                if (!document.getElementById('coveragePanel').classList.contains('hidden')) {
+                    await refreshCoverage();
+                }
+            } catch (e) {
+                // User cancelled the picker — quiet.
+                if (e.name !== 'AbortError') {
+                    console.error(e);
+                }
+            }
+        }
+
+        async function saveBlobToFolder(filename, blob) {
+            if (!fontDirHandle) return false;
+            const fileHandle = await fontDirHandle.getFileHandle(filename, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(blob);
+            await writable.close();
+            return true;
+        }
+
+        async function listFolderGlyphs() {
+            /** Returns a Map<char, { variantCount, filename }> from the
+             * connected folder by inspecting each *.json and reading its
+             * "char" field + variant array length. */
+            const out = new Map();
+            if (!fontDirHandle) return out;
+            try {
+                for await (const entry of fontDirHandle.values()) {
+                    if (entry.kind !== 'file' || !entry.name.endsWith('.json')) continue;
+                    if (entry.name === 'kerning.json' || entry.name === 'preset.yaml'
+                        || entry.name === 'preset.json') continue;
+                    try {
+                        const file = await entry.getFile();
+                        const data = JSON.parse(await file.text());
+                        if (typeof data.char === 'string') {
+                            out.set(data.char, {
+                                variantCount: Array.isArray(data.variants) ? data.variants.length : 0,
+                                filename: entry.name,
+                            });
+                        }
+                    } catch (_) {
+                        // Skip unreadable / malformed files quietly.
+                    }
+                }
+            } catch (e) {
+                console.warn('Folder enumeration failed', e);
+            }
+            return out;
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC1: Coverage dashboard
+        // ────────────────────────────────────────────────────────────
+        const COVERAGE_PRESETS = {
+            'basic-latin':
+                'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+            'numbers': '0123456789'.split(''),
+            'basic-punctuation': '.,;:!?\'"-()[]{}'.split(''),
+            'german-umlauts': 'äöüÄÖÜß'.split(''),
+            'full-ascii': (function () {
+                const out = [];
+                for (let i = 33; i <= 126; i++) out.push(String.fromCharCode(i));
+                return out;
+            })(),
+        };
+
+        function toggleCoverage() {
+            const panel = document.getElementById('coveragePanel');
+            const wasHidden = panel.classList.contains('hidden');
+            panel.classList.toggle('hidden');
+            if (wasHidden) refreshCoverage();
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const sel = document.getElementById('coveragePreset');
+            if (sel) sel.addEventListener('change', refreshCoverage);
+            const custom = document.getElementById('coverageCustom');
+            if (custom) {
+                let t;
+                custom.addEventListener('input', () => {
+                    clearTimeout(t);
+                    t = setTimeout(refreshCoverage, 300);
+                });
+            }
+            restoreCoverageSettings();
+        });
+
+        async function refreshCoverage() {
+            const panel = document.getElementById('coveragePanel');
+            if (panel.classList.contains('hidden')) return;
+            const target = currentTargetChars();
+            const found = await listFolderGlyphs();
+            const list = document.getElementById('coverageList');
+            list.innerHTML = '';
+
+            let captured = 0;
+            const missing = [];
+            for (const ch of target) {
+                const rec = found.get(ch);
+                const cell = document.createElement('button');
+                cell.type = 'button';
+                cell.textContent = ch;
+                cell.title = rec
+                    ? `${ch}: ${rec.variantCount} variant(s) in ${rec.filename}`
+                    : `${ch}: not yet captured — click to load`;
+                cell.className = 'rounded border p-1 transition '
+                    + (rec
+                        ? 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                        : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-100 hover:text-slate-700');
+                cell.addEventListener('click', () => loadCharIntoInput(ch));
+                if (rec) captured++; else missing.push(ch);
+                list.appendChild(cell);
+            }
+            const total = target.length;
+            const pct = total ? Math.round(100 * captured / total) : 0;
+            document.getElementById('coverageBar').style.width = pct + '%';
+            document.getElementById('coverageText').textContent =
+                `${captured} / ${total} (${pct}%)`;
+            const hint = document.getElementById('coverageHint');
+            hint.textContent = fontDirHandle
+                ? `Scanned ${found.size} glyph file(s) in "${fontDirHandle.name}".`
+                : 'Connect a folder (📁) to enable automatic scanning. '
+                + 'Click any missing character to load it into the input field.';
+
+            // GC3 frequency hints
+            updateFrequencyHints(missing);
+            persistCoverageSettings();
+        }
+
+        // ────────────────────────────────────────────────────────────
+        // GC4: Batch / queue capture
+        // ────────────────────────────────────────────────────────────
+        let queueChars = [];   // remaining characters to capture
+        let queueTotal = 0;    // initial length for progress display
+
+        function startQueue() {
+            const raw = document.getElementById('queueInput').value;
+            // Split the queue on commas OR whitespace so ligatures can be
+            // included as multi-char entries (e.g. "sch,tt,ff a b c").
+            const tokens = raw
+                .split(/[,\s]+/)
+                .map(t => t.trim())
+                .filter(t => t.length > 0);
+            if (tokens.length === 0) {
+                alert('Queue is empty — type the characters you want to capture, '
+                    + 'one per comma / whitespace-separated token.');
+                return;
+            }
+            queueChars = tokens;
+            queueTotal = tokens.length;
+            updateQueueStatus();
+            // Preload the first character into the input
+            document.getElementById('charInput').value = queueChars[0];
+            document.getElementById('charInput').focus();
+            document.getElementById('status').innerText =
+                `Queue: ${queueTotal} character(s) — Enter to save & advance.`;
+        }
+
+        function advanceQueue() {
+            if (queueChars.length === 0) return;
+            queueChars.shift();
+            if (queueChars.length === 0) {
+                stopQueue();
+                document.getElementById('status').innerText =
+                    `Queue complete — ${queueTotal} characters captured.`;
+                return;
+            }
+            updateQueueStatus();
+            document.getElementById('charInput').value = queueChars[0];
+            document.getElementById('charInput').focus();
+        }
+
+        function stopQueue() {
+            queueChars = [];
+            queueTotal = 0;
+            updateQueueStatus();
+        }
+
+        function updateQueueStatus() {
+            const status = document.getElementById('queueStatus');
+            if (queueChars.length === 0) {
+                status.classList.add('hidden');
+                document.getElementById('queueStartBtn').disabled = false;
+                return;
+            }
+            status.classList.remove('hidden');
+            const done = queueTotal - queueChars.length;
+            document.getElementById('queueProgress').textContent =
+                `${done} / ${queueTotal}`;
+            document.getElementById('queueNext').textContent = queueChars[0] || '';
+            document.getElementById('queueStartBtn').disabled = true;
+        }
+
+        // ESC exits queue mode.
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && queueChars.length > 0) {
+                stopQueue();
+                document.getElementById('status').innerText = 'Queue cancelled.';
+            }
+        });
+
         function saveAndReset() {
             const rawChar = document.getElementById('charInput').value;
             // Allow Spaces to be saved as "Space"
@@ -1108,6 +1833,13 @@
 
             const activeVariants = slots.filter(s => s.strokes.length > 0).map(s => {
                 const variant = { id: s.id, strokes: s.strokes };
+                // GC10: per-slot baseline / x-height overrides.
+                if (s.baseline_y_override != null || s.x_height_override != null) {
+                    variant.metadata = {
+                        baseline_y: s.baseline_y_override != null ? s.baseline_y_override : BASELINE_Y,
+                        x_height: s.x_height_override != null ? s.x_height_override : X_HEIGHT,
+                    };
+                }
                 if (BEZIER_ENABLED) {
                     variant.bezier_curves = s.strokes.map(stroke =>
                         stroke.length >= 2 ? fitBezierCurves(stroke, BEZIER_TOLERANCE).map(c => ({
@@ -1132,6 +1864,18 @@
                 return;
             }
 
+            // GC9: zone-coverage check. Single char only.
+            const warnings = zoneWarnings(rawChar, activeVariants);
+            if (warnings.length > 0) {
+                const msg = 'Zone check:\n\n' + warnings.join('\n')
+                    + '\n\nSave anyway?';
+                if (!confirm(msg)) {
+                    document.getElementById('status').innerText =
+                        'Save cancelled — zone check failed.';
+                    return;
+                }
+            }
+
             const exportData = {
                 char: rawChar,
                 exported_at: new Date().toISOString(),
@@ -1145,20 +1889,51 @@
             };
 
             const safeName = getSafeFilename(rawChar);
+            const filename = `${safeName}.json`;
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `${safeName}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
 
-            clearAll(); // Also clears auto-save
-            document.getElementById('status').innerText = `Gespeichert: ${safeName}.json`;
-            document.getElementById('charInput').value = '';
-            document.getElementById('charInput').focus();
+            // GC7: direct save to folder handle, falls back to download.
+            (async () => {
+                let savedDirect = false;
+                if (fontDirHandle) {
+                    try {
+                        savedDirect = await saveBlobToFolder(filename, blob);
+                    } catch (e) {
+                        console.warn('Direct save failed, falling back to download', e);
+                    }
+                }
+                if (!savedDirect) {
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                }
+
+                clearAll(); // Also clears auto-save
+                const where = savedDirect
+                    ? `→ ${fontDirHandle.name}/${filename}`
+                    : `Gespeichert: ${filename}`;
+                document.getElementById('status').innerText = where;
+                document.getElementById('charInput').value = '';
+
+                // GC4: advance queue if active; else focus for manual entry.
+                if (queueChars.length > 0) {
+                    advanceQueue();
+                } else {
+                    document.getElementById('charInput').focus();
+                }
+
+                // GC1: auto-refresh dashboard if open.
+                if (!document.getElementById('coveragePanel').classList.contains('hidden')) {
+                    refreshCoverage();
+                }
+                // GC8: auto-refresh preview if open.
+                refreshPreviewIfOpen();
+            })();
         }
 
         init();
