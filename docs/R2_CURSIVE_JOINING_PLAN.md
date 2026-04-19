@@ -8,24 +8,82 @@
 
 ## 1. Summary & scope
 
-*One-paragraph description of what R2 does, what it explicitly is NOT
-(not a cursive font generator, not a stroke-shape transformer), and
-the Experimental-status contract.*
+R2 adds **automatic cursive-style joining** to the Assembler: between
+two consecutive glyph variants that the Typesetter has already placed,
+synthesise a short stroke ("connector") that bridges the previous
+glyph's natural exit to the next glyph's natural entry. The synthesised
+stroke participates in smoothing, drift, jitter, pagination, and
+rendering like any other stroke — it is *not* a post-process SVG
+filter.
+
+R2 is **opt-in and Experimental** when shipped. Default output is
+byte-identical to today: users must pass `--connect-letters` (or flip
+the matching GUI toggle, or name the preset that carries it). The
+first use in a session prints a one-line stderr notice; the GUI
+control wears an `experimental` badge. Behaviour — scoring weights,
+default threshold, connector geometry — may change between minor
+releases until the feature graduates to stable.
+
+**Out of scope.** R2 does *not* reshape glyphs, does not invent a
+cursive style where one isn't captured, does not retrofit connected
+writing onto a block-print hand by warping letterforms, and does not
+generate exit / entry metadata from nothing. It is a joining step on
+top of the existing data model.
 
 ---
 
 ## 2. Goals and non-goals
 
-*Bullet list of outcomes we're shipping for, plus bullet list of
-things explicitly out of scope so the feature doesn't sprawl.*
+### Goals
+
+- **Convincing connected script** for fonts that carry exit / entry
+  metadata for their variants.
+- **Deterministic** — given a seed and unchanged glyphs, output is
+  byte-identical across runs.
+- **Tunable** — a single `--connect-aggressiveness` knob covers the
+  range from "only very clean matches connect" to "anything vaguely
+  compatible connects".
+- **Opt-in without surprise** — default off, clear notice on first
+  use, per-glyph and per-font veto paths, preset-friendly.
+- **Compatible with everything we shipped** — balanced wrap,
+  pagination, widow / orphan shift, line drift, per-glyph slant
+  jitter, PNG / PDF export.
+- **Offline safe** — no new runtime dependencies beyond what's
+  already in the Assembler.
+
+### Non-goals
+
+- **Auto-generating** exit / entry points from scratch. A migration
+  helper (§7.5) can *guess* initial values from the last / first
+  stroke point of each variant, but the font author owns correctness.
+- **Cursive shape transformation.** If your "b" doesn't end at a
+  place that wants to flow into the next letter, the only fix is to
+  re-capture it. R2 will not bend the b.
+- **Right-to-left / vertical scripts.** The scoring geometry assumes
+  left-to-right progression.
+- **Replacing ligatures.** Greedy ligature matching (`sch`, `tt`, …)
+  still wins; a matched ligature is a single glyph from the
+  Typesetter's perspective and connectors attach on its boundaries
+  just like any other glyph.
+- **Every font looking good with this on.** Block-print hands with
+  consistent letter caps / valleys will produce ugly connectors no
+  matter how well the algorithm works. The visualiser (§7.4) exists
+  so authors can see the mess before shipping.
 
 ---
 
 ## 3. Terminology
 
-*Short glossary: exit point, entry point, connector stroke,
-compatibility score, connect aggressiveness, no-connect veto. Avoids
-ambiguity in the rest of the doc.*
+| Term | Meaning |
+|------|---------|
+| **Exit point** | The (x, y) in glyph coordinates where the writer's pen would naturally leave glyph A to continue writing. Carries a tangent angle θ and pressure. |
+| **Entry point** | The (x, y) where glyph B naturally wants the pen to arrive. Carries its own tangent angle and pressure. |
+| **Connector stroke** | The synthesised cubic bezier from A's exit to B's entry. Emitted as a regular stroke so downstream passes (smoothing, drift, jitter, pagination) treat it uniformly. |
+| **Compatibility score** | Dimensionless number in `[0, 1]`. Inputs: normalised gap distance, zone match (upper / mid / lower), direction continuity (tangent angle difference), pressure continuity. Formula in §4.2. |
+| **Connect aggressiveness** | CLI / GUI knob in `[0.0, 1.0]`. Maps to the minimum score a pair needs to get a connector. `0.0` ≈ only very clean matches (≥ 0.8 score). `1.0` ≈ anything plausible (≥ 0.2). Default `0.5`. |
+| **Veto** | A hard "never connect this pair" decision that short-circuits the scorer. Sources: per-variant `no_connect_left` / `no_connect_right`, whitespace, forced ligature boundaries, `--no-connect-letters` on the CLI. |
+| **Reference font** | A curated, hand-authored font with vetted exit / entry metadata, shipped under `glyphs/reference/`. Used as the graduation-gate fixture for visual regressions. |
+| **Zone** | Vertical band in glyph coords: `upper` (above x-height), `mid` (x-height to baseline), `lower` (below baseline). Same definition as the existing zone-aware kerning code. |
 
 ---
 
