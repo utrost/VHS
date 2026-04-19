@@ -583,17 +583,110 @@ New CLI test in `assembler/test_cli.py`:
 
 ## 7. GlyphCollector changes
 
-*What the capture tool needs to produce fonts that connect well.*
+The Collector is where `exit` and `entry` metadata is *created*. R2's
+output quality depends directly on the care taken here, so the tool
+needs first-class affordances for marking those points and for
+checking how well they compose across the font.
 
-- 7.1 Capturing **exit** and **entry** per variant (click-to-pin UI).
-- 7.2 Validation — flag variants that have connectors enabled but no
-  exit/entry metadata.
-- 7.3 Per-glyph veto flags surfaced as toggles.
-- 7.4 Visualiser mode — render "what would connect to what" so font
-  authors can tune their metadata before enabling the feature.
-- 7.5 Migration helper — a small tool that reads an existing font and
-  guesses exit/entry from the last / first stroke point of each
-  variant (as a starting point).
+### 7.1 Capturing exit and entry (click-to-pin)
+
+A new **Pins** mode in the Collector header, toggled by a keyboard
+shortcut (`P`) or a header button. While Pins mode is on, normal
+drawing is disabled and the canvas accepts two click gestures per
+slot:
+
+- **Click + drag** near where the pen would *leave* the glyph → sets
+  `exit.x`, `exit.y`, and (from the drag direction)
+  `exit.tangent_theta`. `exit.pressure` is sampled from the nearest
+  existing stroke point, defaulting to `0.5`.
+- **Shift + click + drag** near where the pen would *enter* → sets
+  `entry.*`.
+
+Visual feedback:
+
+- The exit pin renders as a green arrow at the pin position, pointing
+  along the tangent.
+- The entry pin renders as a blue arrow, same idea.
+- A faint phantom connector line draws from the exit pin to the *next
+  slot's* entry pin (if any) so the author can see what would connect
+  to what.
+
+A small **Auto-guess** button in Pins mode runs the migration helper
+logic (§7.5) on the current slot: it picks the last stroke point as
+the exit and the first stroke point of the *next* variant's first
+stroke as a candidate entry. Starting point only; the author is
+expected to refine.
+
+### 7.2 Validation
+
+On save, the Collector checks each active variant for consistency:
+
+| Check | Severity |
+|-------|----------|
+| Variant has `exit` but no `entry` (or vice-versa) | Warning, save continues. |
+| `exit.x` or `exit.y` is outside the variant canvas | Warning. |
+| `exit.tangent_theta` falls outside `(-π, π]` (sanity) | Auto-corrected silently. |
+| `connect.enabled = true` at font level but zero variants carry pins | Warning, shown once per session. |
+
+Warnings surface via the same confirm dialog R2 added for zone checks
+(§GC9), with a "Save anyway" escape hatch.
+
+### 7.3 Per-glyph veto flags
+
+Two checkboxes in the Collector **Settings** panel:
+
+- **Never connect on the left** → writes `connect.no_connect_left` to
+  the top-level glyph object.
+- **Never connect on the right** → writes `connect.no_connect_right`.
+
+The checkboxes are per-character (not per-variant): the flag is a
+property of the letter, not of a single drawing of it.
+
+### 7.4 Visualiser mode
+
+A new **Pair Visualiser** panel, opened from a fourth header button
+(🔗 or similar). The panel does two things:
+
+1. **Pair grid.** Renders a small SVG per candidate digram in the
+   target set (e.g. every `ab`, `bc`, `cd`, … for Basic Latin). Each
+   cell shows the two glyphs with the connector drawn if R2 would
+   produce one at the current aggressiveness, and greyed out if it
+   wouldn't. The compatibility score is shown as a tooltip and as a
+   small badge beneath the pair.
+2. **Heatmap.** A 26×26 (or N×N) colour heatmap of scores across the
+   Latin alphabet. Cells in the 0.8+ range are green, 0.5–0.8 yellow,
+   below 0.5 red. Lets authors see at a glance which letters have
+   good exit metadata and which are dragging everything down.
+
+Both views call the Assembler's `/api/generate` endpoint with
+`connect_letters=true` and a short sample text for each pair. The
+server is the one already running the GUI — no new backend.
+
+### 7.5 Migration helper
+
+A standalone CLI tool `assembler/tools/guess_connect_metadata.py`:
+
+```bash
+python3 -m assembler.tools.guess_connect_metadata glyphs/MyFont/ \
+    --dry-run            # print what would change, don't write
+```
+
+For each `*.json` in the font directory, for each variant:
+
+- `exit`  ← last point of the last stroke, with `tangent_theta`
+  computed from the last two points, and `pressure` equal to that
+  point's pressure.
+- `entry` ← first point of the first stroke, similarly.
+
+Writes the updated JSON in place (or shows a diff with `--dry-run`).
+The author runs this once to bootstrap a font's metadata, then
+refines pin-by-pin in the Collector. Explicit `--overwrite` is needed
+to replace existing `exit` / `entry` blocks; by default the tool
+leaves already-annotated variants alone.
+
+**Safety net.** Because every step is additive JSON, `--dry-run` → git
+diff → manual cherry-pick is the recommended workflow for a first
+migration.
 
 ---
 
