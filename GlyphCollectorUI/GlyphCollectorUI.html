@@ -65,6 +65,13 @@
             header { padding: 0.75rem !important; gap: 0.5rem !important; }
             header h1 { font-size: 1rem !important; }
             header button { height: 2.5rem !important; padding: 0.25rem 0.5rem !important; }
+            /* Force every inner flex row in the header to wrap so the
+               toolbar doesn't blow out horizontally and drag the whole
+               page into a 1146 px wide scroll container. Individual
+               buttons stay at their natural width and wrap to the next
+               line as needed. */
+            header > div { flex-wrap: wrap !important; }
+            header > div > * { flex-shrink: 0; }
             #canvasContainer {
                 display: flex !important;
                 flex-direction: column !important;
