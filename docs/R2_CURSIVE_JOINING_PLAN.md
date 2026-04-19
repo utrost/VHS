@@ -784,16 +784,101 @@ as historical context.
 
 ## 9. Architectural implications
 
-*Bigger-picture consequences of adding R2.*
+Shipping R2 is not *just* a local feature add — it introduces new
+coupling between the Typesetter and the font data, and new
+interactions with every other feature that touches stroke geometry.
 
-- 9.1 New dependency graph: Typesetter → font metadata quality.
-- 9.2 Interaction with pagination (connectors crossing page boundaries).
-- 9.3 Interaction with `--paginate`'s widow/orphan shift.
-- 9.4 Interaction with R3 per-glyph slant jitter (connectors must ride
-  the jitter rotation of the glyph they exit).
-- 9.5 Interaction with the Catmull-Rom smoother.
-- 9.6 Plotter pen-up/pen-down implications — a connector *is* a stroke,
-  so a pen plotter stays in contact through it.
+### 9.1 Typesetter ⇄ font metadata quality
+
+Before R2, the Typesetter was robust to low-quality fonts: missing
+glyphs got a debug log and a space-width advance, nothing else. With
+R2 on, output quality depends on `exit` and `entry` accuracy. The
+risk is silent degradation — a font that used to render fine now
+looks wrong because someone moved a pin by a few pixels in the
+Collector.
+
+**Mitigations**:
+
+- Validation warnings at load time (§7.2 rules, enforced
+  server-side too).
+- The Pair Visualiser (§7.4) as the standard "does this font still
+  look ok?" sanity check before committing font changes.
+- The opt-in gate (§1) means fonts default to the pre-R2 rendering
+  pipeline unless the user or preset asks for R2.
+
+### 9.2 Pagination (`--paginate`)
+
+A connector lives between two adjacent glyphs. When pagination slices
+`_line_info` into pages, a word may straddle a page break (rare —
+wrap prevents it), but two words cannot. Connectors therefore never
+cross a page boundary; no special case needed.
+
+**Edge case**: if a font is configured with connectors between
+*words* (hypothetical future work), `_word_info` would need a
+per-word-boundary connector flag so pagination can decide whether to
+suppress or render the boundary connector. Not in scope for R2 v1.
+
+### 9.3 Widow / orphan shift
+
+Widow / orphan logic in `_adjust_page_breaks` operates on whole
+lines; it moves entire lines between pages. A line's connectors move
+with it. No interaction.
+
+### 9.4 R3 per-glyph slant jitter
+
+R3 applies a small rotation to each glyph around a pivot (baseline
+midpoint). That rotation happens *before* connector placement, so
+the exit / entry points fed into §4.2 are already in their
+post-jitter positions. Connectors inherit the jitter naturally: they
+attach to the rotated exit and rotated entry, so the connector bends
+to match.
+
+**Subtlety**: if the author sets a very large `--glyph-slant-jitter`
+(e.g. > 3°), a pair that scored 0.6 at rest may score 0.1 post-jitter
+because the tangent angles diverged. That's fine — the scorer runs
+per render, so it always sees the actual geometry. It does mean R2
+output is *less reproducible* under large jitter than without,
+which the Experimental notice already warns about.
+
+### 9.5 Catmull-Rom smoothing
+
+The Renderer currently runs Catmull-Rom splines over each stroke's
+polyline. For stroke lists from the original capture, this adds
+fluidity. For R2 connectors, the "stroke" is a synthesised 4-point
+bezier control polygon — running Catmull-Rom over those four points
+would smooth a curve that's already smooth, introducing overshoot.
+Connectors therefore bypass the smoother and render directly via
+the existing bezier path (`<path d="M… C…">`). The `is_connector`
+flag on the shape drives that branch.
+
+### 9.6 Pen-plotter implications
+
+A pen plotter interprets each SVG `<path>` as "pen down, trace this,
+pen up". R2 connectors are regular `<path>` elements, so the plotter
+stays in contact through the connector — which is what a real
+cursive hand does. This is the right default.
+
+Two wrinkles for plotter users:
+
+- **Ink flow**. The connector carries interpolated pressure per
+  §4.3, but most pen plotters ignore pressure and draw at constant
+  ink. The on-paper result is a constant-width curve where a real
+  writer might have varied pressure. Acceptable; matches current
+  Assembler behaviour for all strokes.
+- **Pen lifts inside a glyph**. If a variant's strokes required the
+  writer to lift the pen mid-glyph (e.g. the cross-bar on a `t`),
+  R2 does not collapse those lifts. It only adds a connector *after*
+  the variant's last stroke. The plotter still lifts the pen between
+  the variant's internal strokes.
+
+### 9.7 Live preview in the Collector (GC8)
+
+The Collector's live preview goes through `/api/generate` with the
+current font's saved glyphs. When the author enables R2 in the
+preview panel, they see the current font's connector behaviour
+live. This is explicit synergy with the visualiser (§7.4), which
+does the same thing but structured as a pair-wise grid rather than a
+prose sample.
 
 ---
 
