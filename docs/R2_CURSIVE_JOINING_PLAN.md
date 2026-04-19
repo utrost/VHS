@@ -458,18 +458,126 @@ still switch it off via `--no-connect-letters` or the GUI toggle.
 
 ## 6. Assembler changes
 
-*Everything that touches `assembler/`. Split by layer.*
+The bulk of the work lives in `assembler/assembler.py`. Changes are
+scoped so that turning R2 off at any layer reverts to today's
+behaviour exactly.
 
-- 6.1 Typesetter — new connector stroke kind, placement inside the
-  existing glyph-pair loop, interaction with `auto_kern` and balanced
-  wrap.
-- 6.2 Renderer — connectors as regular bezier paths, participation in
-  smoothing / drift / scaling / jitter.
-- 6.3 CLI — `--connect-letters`, `--connect-aggressiveness`,
-  experimental-status notice on first use.
-- 6.4 Server + GUI — matching toggle and slider, experimental badge.
-- 6.5 Tests — unit coverage for scorer, geometry, and the
-  veto-wins-over-score precedence.
+### 6.1 Typesetter
+
+A small, well-bounded addition to `typeset_text`:
+
+- Accept two new kwargs: `connect_letters: bool = False` and
+  `connect_aggressiveness: float = 0.5`.
+- Maintain `last_variant_placed` alongside the existing
+  `last_shape_placed` — we need access to the variant object, not just
+  its stroke list, to read `exit` metadata.
+- After a glyph lands and auto-kern has shifted it, invoke
+  `maybe_add_connector(prev_variant, next_variant, …)` per §4.5. When
+  it returns a `BezierSegment`, append a new shape to `compiled_shapes`
+  (`strokes=[[connector_points]]`) and the same geometry to
+  `self._compiled_beziers` so both the polyline and the bezier-path
+  emitter can render it.
+- Mark the new shape: `{"is_connector": True}` sits alongside the
+  existing stroke data. The Renderer keys off this to route
+  connectors through the bezier path — Catmull-Rom smoothing is a
+  no-op for an already-smooth curve.
+
+**Interaction with `auto_kern`.** The kerning shift runs *before* the
+connector decision, so the exit / entry points are already in their
+final positions when R2 scores them. If kerning pulled two letters
+tight, the gap score rises; if it pushed them apart, the gap score
+falls. This is the correct coupling.
+
+**Interaction with balanced wrap.** Wrap decisions are made at word
+boundaries (a space commits the previous word). Connectors only
+exist *within* a word, so balanced wrap doesn't see them — the
+word's width is still the sum of its glyph widths + kerning +
+connector arcs. One subtle point: the connector may extend the
+word's bounding box by a fraction of a glyph unit. The word-width
+measurement in `_apply_balanced_wrap` must include connectors; a
+small change to the measurement pass covers this.
+
+**Interaction with line drift.** Line drift is applied at the Renderer
+level via a `<g>` around each line. Connectors belong to their line;
+they rotate with it, same as any other stroke.
+
+### 6.2 Renderer
+
+No structural change. Connectors go through the existing path emitter:
+
+- If a shape has `is_connector=True` AND `bezier_data` is set, emit as
+  a single `<path d="M… C…">`. Already the fast path.
+- Smoothing is skipped for connector shapes (they're already smooth).
+- Jitter is applied per-point as today. In practice each connector
+  only has 4 bezier control points, so it picks up a very mild jitter
+  — which looks right.
+- Per-line drift wraps connectors just like any other stroke (they
+  live inside the line's `<g>`).
+- In `--format png` / `--format pdf` pipelines, connectors render
+  exactly like strokes. No special casing.
+
+### 6.3 CLI
+
+Three new flags in `argparse`:
+
+```
+--connect-letters            Enable cursive joining (Experimental).
+--no-connect-letters         Disable; wins over preset / config.
+--connect-aggressiveness F   Minimum-score knob, 0.0 strict → 1.0
+                             permissive. Default: 0.5.
+```
+
+On first use in a run, emit a one-line **stderr** notice:
+
+```
+[R2 experimental] Cursive joining is enabled. Output quality depends
+on each font's exit / entry metadata; see docs/R2_CURSIVE_JOINING_PLAN.md
+```
+
+The notice is suppressed by `--quiet` or by setting
+`VHS_SUPPRESS_EXPERIMENTAL=1` in the env so CI doesn't drown in it.
+
+### 6.4 Server + GUI
+
+`server.py` accepts two new fields on `/api/generate`:
+`connect_letters` (bool) and `connect_aggressiveness` (float). They
+pass straight through to `typeset_text`.
+
+`templates/index.html` gains, in the Styling section:
+
+- A **Connect Letters** toggle with an `experimental` badge next to the
+  label.
+- A slider labelled **Connect Aggressiveness** (0.0 – 1.0, default
+  0.5), visible only when the toggle is on.
+
+Both feed through the existing payload-construction code in
+`generate()`. The badge is pure CSS (no new asset).
+
+### 6.5 Tests
+
+New unit tests in `assembler/test_assembler.py`:
+
+- `test_connector_scorer_pure` — feed the scorer synthetic exit /
+  entry inputs and assert the 4 sub-score edge cases: perfect match →
+  1.0, reversed tangent → `score_direction ≈ 0`, cross-zone upper ↔
+  lower → `score_zone == 0`, very large gap → `score_gap == 0`.
+- `test_connector_threshold_monotonic` — at a fixed score, sweep
+  `connect_aggressiveness` from 0 to 1 and assert the connect /
+  no-connect decision flips at exactly one aggressiveness.
+- `test_connector_geometry` — given exit, entry, and tangents, assert
+  the cubic bezier's control-point length equals `0.35 × gap`.
+- `test_connector_veto_precedence` — per-variant veto wins over high
+  score; `--no-connect-letters` wins over preset. Missing `exit` or
+  `entry` short-circuits.
+- `test_connect_no_effect_without_flag` — with the flag off, a font
+  carrying full R2 metadata renders byte-identically to the same font
+  rendered today.
+
+New CLI test in `assembler/test_cli.py`:
+
+- `test_cli_connect_letters_experimental_notice` — asserts the stderr
+  notice fires on first invocation and doesn't duplicate across
+  subsequent renders in the same process.
 
 ---
 
