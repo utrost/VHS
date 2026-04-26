@@ -42,6 +42,11 @@
         /* GC11: mobile / tablet layout. Below 900 px wide, switch to a
            single-column, one-variant-at-a-time flow. The toolbar wraps
            aggressively and the settings / coverage panels become
+           full-width sheets pinned to the bottom of the viewport. */
+        @media (max-width: 900px) {
+            header { padding: 0.75rem !important; gap: 0.5rem !important; }
+            header h1 { font-size: 1rem !important; }
+            header button { height: 2.5rem !important; padding: 0.25rem 0.5rem !important; }
            full-width sheets pinned to the bottom of the viewport.
 
            Also: allow the body AND the main drawing area to scroll
