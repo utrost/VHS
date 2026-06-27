@@ -12,6 +12,19 @@ from typing import Dict, List, Optional, Tuple, Any
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+# Samples per cubic bezier segment when measuring a glyph's ink extent for
+# advance-width/kerning. Sampling the curve (rather than using raw control
+# points) keeps the measured width faithful to the rendered ink.
+_BEZIER_BBOX_SAMPLES = 16
+
+# Vertical clearance for optical kerning, as a fraction of the x-height
+# (falls back to a fraction of the pair's combined height when no baseline/
+# x-height metadata is available). An overhanging stroke within this vertical
+# band of the neighbouring glyph's ink still constrains the spacing, so the
+# next letter can't slide underneath it and collide. See
+# Typesetter.calculate_optical_kerning.
+_KERN_VCLEARANCE_FRACTION = 0.2
+
 # Paper size presets in mm (width, height) — portrait orientation
 PAPER_SIZES = {
     "A3": (297, 420),
@@ -354,6 +367,34 @@ class GlyphLibrary:
                     min_x = min(min_x, point['x'])
                     max_x = max(max_x, point['x'])
 
+            # Bezier curves are rendered in the same raw coordinate space
+            # (see _process_glyph) and can bulge past the raw stroke bbox, so
+            # they must be included or cursor-advance/kerning width
+            # under-measures the ink and the next glyph overlaps the bulge.
+            # Sample points ON the curve rather than using the raw control
+            # points: a cubic's interior control points (p1/p2) usually lie
+            # outside the curve, so using them would OVER-state the width and
+            # over-advance the cursor (too-wide intra-word gaps). The convex
+            # hull endpoints p0/p3 are on the curve, so sampling captures the
+            # true extent in both directions.
+            for stroke in variant.get('bezier_curves', []):
+                for seg in stroke:
+                    p0, p1 = seg.get('p0'), seg.get('p1')
+                    p2, p3 = seg.get('p2'), seg.get('p3')
+                    if not (p0 and p1 and p2 and p3):
+                        continue
+                    for n in range(_BEZIER_BBOX_SAMPLES + 1):
+                        t = n / _BEZIER_BBOX_SAMPLES
+                        mt = 1.0 - t
+                        a = mt * mt * mt
+                        b = 3 * mt * mt * t
+                        c = 3 * mt * t * t
+                        d = t * t * t
+                        x = a * p0['x'] + b * p1['x'] + c * p2['x'] + d * p3['x']
+                        has_points = True
+                        min_x = min(min_x, x)
+                        max_x = max(max_x, x)
+
             if has_points:
                 variant['metrics'] = {
                     'min_x': min_x,
@@ -496,6 +537,45 @@ class Typesetter:
         return 'ground'
 
     @staticmethod
+    def _sample_cubic_bezier(p0: Dict[str, float], p1: Dict[str, float],
+                              p2: Dict[str, float], p3: Dict[str, float],
+                              num_samples: int = 12) -> List[Dict[str, float]]:
+        """Evaluate a cubic bezier segment at evenly spaced t values."""
+        pts = []
+        for i in range(num_samples + 1):
+            t = i / num_samples
+            mt = 1.0 - t
+            a, b, c, d = mt ** 3, 3 * mt * mt * t, 3 * mt * t * t, t ** 3
+            pts.append({
+                'x': a * p0['x'] + b * p1['x'] + c * p2['x'] + d * p3['x'],
+                'y': a * p0['y'] + b * p1['y'] + c * p2['y'] + d * p3['y'],
+            })
+        return pts
+
+    @staticmethod
+    def _bezier_control_polylines(bezier_strokes: Optional[List]) -> List[List[Dict[str, float]]]:
+        """Flatten transformed bezier curves into sampled-point polylines.
+
+        The optical kerning scan walks strokes as straight-line polylines, so
+        connecting the raw p0..p3 control points (rather than points actually
+        on the curve) can misrepresent where the ink sits at a given height —
+        the control polygon can bulge away from the true curve, overstating
+        the gap to the next glyph and over-tightening the kerning into an
+        overlap. Sampling the curve itself keeps the scan faithful to the
+        rendered ink.
+        """
+        if not bezier_strokes:
+            return []
+        polylines = []
+        for stroke in bezier_strokes:
+            pts = []
+            for seg in stroke:
+                pts.extend(Typesetter._sample_cubic_bezier(seg['p0'], seg['p1'], seg['p2'], seg['p3']))
+            if pts:
+                polylines.append(pts)
+        return polylines
+
+    @staticmethod
     def _nearest_pressure(raw_points: List[Dict[str, float]], target_x: float, target_y: float) -> float:
         """Find pressure of the nearest raw point to the given target coordinates."""
         if not raw_points:
@@ -580,6 +660,43 @@ class Typesetter:
 
         fill_buckets(shapes_a, buckets_a, is_max=True)
         fill_buckets(shapes_b, buckets_b, is_max=False)
+
+        # Vertical-clearance dilation.
+        #
+        # The scan only compares the two edge profiles at scanlines where
+        # BOTH glyphs have ink. That silently ignores an overhang that sits
+        # just above (or below) the neighbour's ink — e.g. a handwritten
+        # 'f' whose crossbar/swash sweeps far to the right a few units above
+        # where the next letter's body starts. With the overhang invisible,
+        # the next glyph slides left underneath it until their stems collide.
+        #
+        # Dilate each glyph's edge profile vertically by a small clearance so
+        # an overhang within that band still constrains the spacing: A's
+        # rightmost profile takes the max over a window of nearby scanlines,
+        # B's leftmost profile the min. This is a Minkowski-style clearance —
+        # it can only reduce the computed gap (push glyphs apart), never
+        # over-tighten them.
+        if zone_aware:
+            clearance = _KERN_VCLEARANCE_FRACTION * abs(baseline_y - x_height_y)
+        else:
+            clearance = _KERN_VCLEARANCE_FRACTION * height
+        k = max(1, int(round(clearance / step))) if step > 0 else 1
+
+        prof_a = {i: float('-inf') for i in range(resolution + 1)}
+        prof_b = {i: float('inf') for i in range(resolution + 1)}
+        for i in range(resolution + 1):
+            lo = max(0, i - k)
+            hi = min(resolution, i + k)
+            best_a = float('-inf')
+            best_b = float('inf')
+            for j in range(lo, hi + 1):
+                if buckets_a[j] > best_a:
+                    best_a = buckets_a[j]
+                if buckets_b[j] < best_b:
+                    best_b = buckets_b[j]
+            prof_a[i] = best_a
+            prof_b[i] = best_b
+        buckets_a, buckets_b = prof_a, prof_b
 
         # Determine which zones each glyph occupies (from actual stroke data)
         if zone_aware:
@@ -697,6 +814,7 @@ class Typesetter:
         cursor_y = 0.0  # Baseline
         last_shape_placed = None
         last_glyph_data = None
+        last_bezier_placed = None
 
         # Per-word state (index + x at first glyph of the current word)
         word_start_x = 0.0
@@ -712,12 +830,23 @@ class Typesetter:
             nonlocal word_active, word_shape_start_idx, word_start_x
             if not word_active:
                 return
+            # Count any blank lines (consecutive \n) immediately following
+            # this break, so the balanced-wrap pass can reproduce paragraph
+            # gaps that the unwrapped pass-1 layout already accounted for.
+            blank_lines_after = 0
+            if break_after:
+                j = i + 1
+                while j < len(text) and text[j] == '\n':
+                    blank_lines_after += 1
+                    j += 1
             self._word_info.append({
                 'start_idx': word_shape_start_idx,
                 'end_idx': len(compiled_shapes),
                 'start_x': word_start_x,
                 'end_x': end_x,
                 'line_break_after': break_after,
+                'pass1_y': cursor_y,
+                'blank_lines_after': blank_lines_after,
             })
             word_active = False
 
@@ -744,6 +873,7 @@ class Typesetter:
                 line_baseline_y = cursor_y
                 last_shape_placed = None
                 last_glyph_data = None
+                last_bezier_placed = None
                 word_start_x = 0.0
                 word_shape_start_idx = len(compiled_shapes)
                 i += 1
@@ -756,6 +886,7 @@ class Typesetter:
                 cursor_x += max(0.0, base_space_width + jitter)
                 last_shape_placed = None
                 last_glyph_data = None
+                last_bezier_placed = None
                 word_start_x = cursor_x
                 word_shape_start_idx = len(compiled_shapes)
                 i += 1
@@ -784,6 +915,8 @@ class Typesetter:
                     if candidate in self.kerning_exceptions:
                         manual_tracking_offset = self.kerning_exceptions[candidate].get('tracking_offset', 0.0)
 
+                    bezier_entry = self._compiled_beziers[-1]
+
                     if auto_kern and last_shape_placed:
                         bl_a = last_glyph_data.get('metadata', {}).get('baseline_y') if last_glyph_data else None
                         xh_a = last_glyph_data.get('metadata', {}).get('x_height') if last_glyph_data else None
@@ -796,8 +929,17 @@ class Typesetter:
                             bl = cursor_y
                             xh = ((xh_a - bl_a) + (xh_b - bl_b)) / 2.0 + cursor_y
 
+                        # Include bezier control polygons so curves that bulge
+                        # past their raw-stroke bbox aren't kerned into an
+                        # overlap (the rendered ink follows the bezier, not
+                        # just the raw stroke points).
+                        shapes_a = (last_shape_placed
+                                    + self._bezier_control_polylines(last_bezier_placed))
+                        shapes_b = (placed_strokes
+                                    + self._bezier_control_polylines(bezier_entry))
+
                         gap = self.calculate_optical_kerning(
-                            last_shape_placed, placed_strokes,
+                            shapes_a, shapes_b,
                             baseline_y=bl, x_height_y=xh,
                             kern_aggressiveness=kern_aggressiveness)
                         shift = gap - self.tracking_buffer
@@ -805,7 +947,6 @@ class Typesetter:
                         for stroke in placed_strokes:
                             for p in stroke:
                                 p['x'] -= shift
-                        bezier_entry = self._compiled_beziers[-1]
                         if bezier_entry is not None:
                             for bstroke in bezier_entry:
                                 for seg in bstroke:
@@ -848,6 +989,7 @@ class Typesetter:
                     cursor_x += width + self.tracking_buffer + manual_tracking_offset
                     last_shape_placed = placed_strokes
                     last_glyph_data = glyph_data
+                    last_bezier_placed = bezier_entry
 
                     # Greedy wrap (only active when placement_max_width is set)
                     if placement_max_width is not None and cursor_x > placement_max_width and word_start_x > 0:
@@ -883,6 +1025,7 @@ class Typesetter:
                 cursor_x += base_space_width  # Placeholder advance
                 last_shape_placed = None
                 last_glyph_data = None
+                last_bezier_placed = None
                 self._compiled_beziers.append(None)
                 i += 1
 
@@ -977,14 +1120,17 @@ class Typesetter:
 
                 first_word_start_x = self._word_info[i0]['start_x']
                 shift_x = -first_word_start_x
-                shift_y = line_y  # absolute y for this line
+                # Pass 1 laid every paragraph out unwrapped on its own
+                # accumulated cursor_y (which already reflects every \n
+                # seen so far, including blank-line paragraph breaks) —
+                # not at y = 0. Shift by the delta from that baseline to
+                # the new target, rather than adding line_y on top of it.
+                shift_y = line_y - self._word_info[i0]['pass1_y']
 
                 shape_start = self._word_info[i0]['start_idx']
                 shape_end = self._word_info[i1_last]['end_idx']
 
                 # Shift all shapes in this line into position.
-                # Original shapes were placed at y = 0 (single line) with
-                # offsets from descenders etc. We translate by shift_y.
                 for si in range(shape_start, shape_end):
                     for stroke in compiled_shapes[si]:
                         for p in stroke:
@@ -1001,6 +1147,12 @@ class Typesetter:
                                   'end_idx': shape_end,
                                   'baseline_y': line_y})
                 line_y += line_advance
+
+            # Reproduce any blank lines (paragraph gaps) that followed
+            # this paragraph in the source text — pass 1 advanced cursor_y
+            # for each of them, but they carry no words of their own so
+            # the paragraph split above can't see them otherwise.
+            line_y += line_advance * self._word_info[para[-1]]['blank_lines_after']
 
         self._line_info = new_lines
 

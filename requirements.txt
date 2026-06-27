@@ -1,0 +1,11 @@
+# Core Assembler CLI (assembler/assembler.py)
+# Required for --preset and --config, since all bundled presets in
+# configs/presets/ are .yaml. JSON presets/configs work without it.
+PyYAML>=6.0
+
+# Web GUI (assembler/server.py / vhs-gui.sh)
+Flask>=3.0
+
+# Optional: --format png|pdf output
+cairosvg>=2.7
+pypdf>=4.0
