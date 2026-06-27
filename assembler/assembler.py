@@ -17,6 +17,14 @@ logger = logging.getLogger(__name__)
 # points) keeps the measured width faithful to the rendered ink.
 _BEZIER_BBOX_SAMPLES = 16
 
+# Vertical clearance for optical kerning, as a fraction of the x-height
+# (falls back to a fraction of the pair's combined height when no baseline/
+# x-height metadata is available). An overhanging stroke within this vertical
+# band of the neighbouring glyph's ink still constrains the spacing, so the
+# next letter can't slide underneath it and collide. See
+# Typesetter.calculate_optical_kerning.
+_KERN_VCLEARANCE_FRACTION = 0.2
+
 # Paper size presets in mm (width, height) — portrait orientation
 PAPER_SIZES = {
     "A3": (297, 420),
@@ -652,6 +660,43 @@ class Typesetter:
 
         fill_buckets(shapes_a, buckets_a, is_max=True)
         fill_buckets(shapes_b, buckets_b, is_max=False)
+
+        # Vertical-clearance dilation.
+        #
+        # The scan only compares the two edge profiles at scanlines where
+        # BOTH glyphs have ink. That silently ignores an overhang that sits
+        # just above (or below) the neighbour's ink — e.g. a handwritten
+        # 'f' whose crossbar/swash sweeps far to the right a few units above
+        # where the next letter's body starts. With the overhang invisible,
+        # the next glyph slides left underneath it until their stems collide.
+        #
+        # Dilate each glyph's edge profile vertically by a small clearance so
+        # an overhang within that band still constrains the spacing: A's
+        # rightmost profile takes the max over a window of nearby scanlines,
+        # B's leftmost profile the min. This is a Minkowski-style clearance —
+        # it can only reduce the computed gap (push glyphs apart), never
+        # over-tighten them.
+        if zone_aware:
+            clearance = _KERN_VCLEARANCE_FRACTION * abs(baseline_y - x_height_y)
+        else:
+            clearance = _KERN_VCLEARANCE_FRACTION * height
+        k = max(1, int(round(clearance / step))) if step > 0 else 1
+
+        prof_a = {i: float('-inf') for i in range(resolution + 1)}
+        prof_b = {i: float('inf') for i in range(resolution + 1)}
+        for i in range(resolution + 1):
+            lo = max(0, i - k)
+            hi = min(resolution, i + k)
+            best_a = float('-inf')
+            best_b = float('inf')
+            for j in range(lo, hi + 1):
+                if buckets_a[j] > best_a:
+                    best_a = buckets_a[j]
+                if buckets_b[j] < best_b:
+                    best_b = buckets_b[j]
+            prof_a[i] = best_a
+            prof_b[i] = best_b
+        buckets_a, buckets_b = prof_a, prof_b
 
         # Determine which zones each glyph occupies (from actual stroke data)
         if zone_aware:
