@@ -12,6 +12,11 @@ from typing import Dict, List, Optional, Tuple, Any
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
 
+# Samples per cubic bezier segment when measuring a glyph's ink extent for
+# advance-width/kerning. Sampling the curve (rather than using raw control
+# points) keeps the measured width faithful to the rendered ink.
+_BEZIER_BBOX_SAMPLES = 16
+
 # Paper size presets in mm (width, height) — portrait orientation
 PAPER_SIZES = {
     "A3": (297, 420),
@@ -354,19 +359,33 @@ class GlyphLibrary:
                     min_x = min(min_x, point['x'])
                     max_x = max(max_x, point['x'])
 
-            # Bezier control points are rendered in the same raw coordinate
-            # space (see _process_glyph) and can bulge past the raw stroke
-            # bbox. Include them so cursor-advance/kerning width reflects the
-            # actual ink extent — otherwise the next glyph gets placed too
-            # close and overlaps the bulge.
+            # Bezier curves are rendered in the same raw coordinate space
+            # (see _process_glyph) and can bulge past the raw stroke bbox, so
+            # they must be included or cursor-advance/kerning width
+            # under-measures the ink and the next glyph overlaps the bulge.
+            # Sample points ON the curve rather than using the raw control
+            # points: a cubic's interior control points (p1/p2) usually lie
+            # outside the curve, so using them would OVER-state the width and
+            # over-advance the cursor (too-wide intra-word gaps). The convex
+            # hull endpoints p0/p3 are on the curve, so sampling captures the
+            # true extent in both directions.
             for stroke in variant.get('bezier_curves', []):
                 for seg in stroke:
-                    for key in ('p0', 'p1', 'p2', 'p3'):
-                        pt = seg.get(key)
-                        if pt:
-                            has_points = True
-                            min_x = min(min_x, pt['x'])
-                            max_x = max(max_x, pt['x'])
+                    p0, p1 = seg.get('p0'), seg.get('p1')
+                    p2, p3 = seg.get('p2'), seg.get('p3')
+                    if not (p0 and p1 and p2 and p3):
+                        continue
+                    for n in range(_BEZIER_BBOX_SAMPLES + 1):
+                        t = n / _BEZIER_BBOX_SAMPLES
+                        mt = 1.0 - t
+                        a = mt * mt * mt
+                        b = 3 * mt * mt * t
+                        c = 3 * mt * t * t
+                        d = t * t * t
+                        x = a * p0['x'] + b * p1['x'] + c * p2['x'] + d * p3['x']
+                        has_points = True
+                        min_x = min(min_x, x)
+                        max_x = max(max_x, x)
 
             if has_points:
                 variant['metrics'] = {
