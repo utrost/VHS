@@ -344,7 +344,17 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > area (measured from the real glyph geometry, so it's exact). It owns no
 > state of its own and reuses the existing render pipeline. Overlay↔ink
 > alignment uses the SVG's `getScreenCTM()` (exact, letterbox-safe).
-> Phase 2 (click-to-caret, multiple text frames) remains proposed.
+>
+> **Phase 2 — click-to-caret:** shipped. The renderer now tags each glyph
+> group with a `data-ci` source-character index (a small, opt-in addition:
+> the GUI passes the typesetter's per-shape index list; CLI output is
+> unchanged). Clicking on the rendered ink snaps the on-page caret to the
+> nearest glyph's index, so the caret lands where the handwriting is rather
+> than where the invisible textarea's own layout would put it. Known limit:
+> `data-ci` indexes the post-fallback text, so when Unicode fallbacks
+> substitute characters the caret can be off by the substitution delta
+> (exact in the common no-substitution case). **Multiple text frames**
+> remains proposed.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image

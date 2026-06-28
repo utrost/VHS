@@ -275,7 +275,8 @@ def api_generate():
                                            line_info=typesetter._line_info,
                                            line_drift_angle_deg=line_drift_angle,
                                            line_drift_y=line_drift_y_glyph,
-                                           drift_seed=seed)
+                                           drift_seed=seed,
+                                           shape_source_idx=typesetter._shape_source_idx)
 
     response = Response(svg_str, mimetype="image/svg+xml")
     # Coverage report surfaces to the GUI via a custom header so the

@@ -153,6 +153,28 @@ class TestAssembler(unittest.TestCase):
 
          # We can't easily check internal metrics here, but we check count.
 
+    def test_shape_source_index_parallel(self):
+        """Each placed shape records its source char index (U7 Phase 2)."""
+        # "a.tt" → shapes a(@0), .(@1), tt(@2). The ligature spans chars 2-3
+        # but is recorded at its start index.
+        shapes = self.typesetter.typeset_text("a.tt")
+        self.assertEqual(len(shapes), 3)
+        self.assertEqual(self.typesetter._shape_source_idx, [0, 1, 2])
+
+    def test_shape_source_index_emitted_as_data_ci(self):
+        """Renderer tags glyphs with data-ci when given the source-index list."""
+        shapes = self.typesetter.typeset_text("a.tt")
+        renderer = Renderer()
+        svg = renderer.generate_svg_string(
+            shapes, page_width_mm=210.0, page_height_mm=297.0,
+            shape_source_idx=self.typesetter._shape_source_idx)
+        for ci in (0, 1, 2):
+            self.assertIn(f'data-ci="{ci}"', svg)
+        # Without the list, no data-ci attributes are emitted (CLI default).
+        svg_plain = renderer.generate_svg_string(
+            shapes, page_width_mm=210.0, page_height_mm=297.0)
+        self.assertNotIn('data-ci', svg_plain)
+
     def test_renderer_svg_generation(self):
         output_file = os.path.join(script_dir, "test_output_unittest.svg")
         shapes = self.typesetter.typeset_text("a.")

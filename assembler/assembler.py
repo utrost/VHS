@@ -804,6 +804,10 @@ class Typesetter:
         self._compiled_beziers = []
         self._line_info = []
         self._word_info = []
+        # Source character index (into the post-fallback text) of each placed
+        # shape, kept parallel to compiled_shapes. Lets the renderer tag glyphs
+        # so the GUI can map a click back to a caret position (U7 Phase 2).
+        self._shape_source_idx = []
 
         # Balanced wrap is a two-pass flow: first lay out unwrapped (so we
         # know every word's true width), then run minimum-raggedness DP,
@@ -909,6 +913,10 @@ class Typesetter:
 
                     width, placed_strokes = self._process_glyph(
                         glyph_data, candidate, cursor_x, cursor_y, compiled_shapes)
+                    # _process_glyph appends exactly one shape; record the
+                    # source index it came from (stays parallel through the
+                    # wrap passes, which reorder coordinates but not shapes).
+                    self._shape_source_idx.append(i)
 
                     # Optical Kerning
                     manual_tracking_offset = 0.0
@@ -1329,7 +1337,8 @@ class Renderer:
                      line_info: Optional[List[Dict[str, Any]]] = None,
                      line_drift_angle_deg: float = 0.0,
                      line_drift_y: float = 0.0,
-                     drift_seed: Optional[int] = None):
+                     drift_seed: Optional[int] = None,
+                     shape_source_idx: Optional[List[int]] = None):
         """
         Generate an SVG file from compiled shapes.
 
@@ -1463,6 +1472,13 @@ class Renderer:
             shape_bezier = None
             if self.use_bezier and bezier_data and shape_idx < len(bezier_data):
                 shape_bezier = bezier_data[shape_idx]
+
+            # Tag each glyph with its source character index so the GUI can map
+            # a click on the ink back to a caret position. Wrapping in a <g>
+            # keeps the per-stroke <path>s grouped under one clickable node.
+            if shape_source_idx is not None and shape_idx < len(shape_source_idx):
+                parent = ET.SubElement(parent, "g", {
+                    "data-ci": str(shape_source_idx[shape_idx])})
 
             for stroke_idx, stroke in enumerate(shape):
                 stroke_bezier = None
@@ -1603,7 +1619,8 @@ class Renderer:
                             margin_mm=20.0, bezier_data=None,
                             explicit_scale=None, start_x_mm=None, start_y_mm=None,
                             line_info=None, line_drift_angle_deg=0.0,
-                            line_drift_y=0.0, drift_seed=None):
+                            line_drift_y=0.0, drift_seed=None,
+                            shape_source_idx=None):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
@@ -1615,7 +1632,8 @@ class Renderer:
                           line_info=line_info,
                           line_drift_angle_deg=line_drift_angle_deg,
                           line_drift_y=line_drift_y,
-                          drift_seed=drift_seed)
+                          drift_seed=drift_seed,
+                          shape_source_idx=shape_source_idx)
         buf.seek(0)
         return buf.read().decode("utf-8")
 

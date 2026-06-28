@@ -1407,6 +1407,14 @@ Line breaks are preserved."></textarea>
                     main.value = ta.value;
                     main.dispatchEvent(new Event('input', { bubbles: true }));
                 });
+                // Click-to-caret (Phase 2): map a click on the rendered ink to
+                // a caret position by snapping to the nearest tagged glyph, so
+                // the caret lands where the handwriting is (not where the
+                // invisible textarea's own monospace layout would put it).
+                ta.addEventListener('click', (e) => {
+                    const idx = glyphIndexAtPoint(e.clientX, e.clientY);
+                    if (idx != null) ta.setSelectionRange(idx, idx);
+                });
                 o.querySelectorAll('.wys-handle').forEach(attachHandle);
             }
 
@@ -1510,6 +1518,31 @@ Line breaks are preserved."></textarea>
                 readout.classList.remove('warn');
                 tb.classList.remove('overflow');
             }
+        }
+
+        // Find the source-text index for a click at (cx, cy) by snapping to
+        // the nearest glyph the renderer tagged with data-ci. Returns the index
+        // before the glyph, or after it when the click is past its centre.
+        // (data-ci indexes the post-fallback text; with no substitutions that
+        // equals the textarea's text, which is the common case.)
+        function glyphIndexAtPoint(cx, cy) {
+            const holder = document.querySelector('.preview-svg-holder');
+            if (!holder) return null;
+            const nodes = holder.querySelectorAll('[data-ci]');
+            if (!nodes.length) return null;
+            let bestIdx = null, bestD = Infinity, after = false;
+            nodes.forEach(n => {
+                const r = n.getBoundingClientRect();
+                const mx = r.left + r.width / 2, my = r.top + r.height / 2;
+                const d = (mx - cx) * (mx - cx) + (my - cy) * (my - cy);
+                if (d < bestD) {
+                    bestD = d;
+                    bestIdx = parseInt(n.getAttribute('data-ci'), 10);
+                    after = cx > mx;
+                }
+            });
+            if (bestIdx == null || isNaN(bestIdx)) return null;
+            return after ? bestIdx + 1 : bestIdx;
         }
 
         // Step a sidebar field by delta (clamped) and re-render. Used by the
