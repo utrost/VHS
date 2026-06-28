@@ -331,7 +331,16 @@ pagination (easy — `_word_info` already has `line_break_after`).
 
 ---
 
-### U7. Lightweight WYSIWYG page editor — **Proposed**
+### U7. Lightweight WYSIWYG page editor — **In progress** (Phase 1 landed)
+
+> **Phase 1 status:** shipped in the web GUI as an additive "✎ Edit on page"
+> mode — page-as-canvas with a margin frame, a draggable text block
+> (writes `start-x`/`start-y`), a column-width handle (`max-width-mm`), a
+> margin handle (`margin`), and a transparent on-page text layer that types
+> back into the sidebar and re-renders live. It owns no state of its own and
+> reuses the existing render pipeline. Overlay↔ink alignment uses the SVG's
+> `getScreenCTM()` (exact, letterbox-safe). Phase 2 (click-to-caret,
+> multiple text frames) remains proposed.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image

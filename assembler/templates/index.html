@@ -338,6 +338,79 @@
         input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
         input[type="color"]::-webkit-color-swatch { border-radius: 3px; border: none; }
 
+        /* ── WYSIWYG on-page editor ── */
+        .preview-svg-wrapper { position: relative; }
+        .preview-svg-holder { display: block; line-height: 0; }
+        .editor-toggle.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .editor-hint { font-size: 12px; color: var(--warn); }
+        .wysiwyg-overlay {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;   /* children opt back in */
+            z-index: 5;
+        }
+        .wys-margin {
+            position: absolute;
+            border: 1px dashed rgba(99, 102, 241, 0.45);
+            pointer-events: none;
+        }
+        .wys-textbox {
+            position: absolute;
+            border: 1px solid rgba(99, 102, 241, 0.7);
+            background: rgba(99, 102, 241, 0.05);
+            pointer-events: none;
+        }
+        .wys-edit {
+            position: absolute;
+            margin: 0;
+            padding: 0;
+            border: none;
+            background: transparent;
+            color: transparent;
+            -webkit-text-fill-color: transparent;
+            caret-color: var(--accent);
+            resize: none;
+            outline: none;
+            overflow: hidden;
+            pointer-events: auto;
+            font-family: 'Inter', sans-serif;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+        .wys-edit::selection { background: rgba(99, 102, 241, 0.25); }
+        .wys-label {
+            position: absolute;
+            font-size: 10px;
+            font-weight: 600;
+            color: #fff;
+            background: rgba(99, 102, 241, 0.85);
+            padding: 1px 6px;
+            border-radius: 4px;
+            pointer-events: none;
+            white-space: nowrap;
+            transform: translateY(-130%);
+            z-index: 7;
+        }
+        .wys-handle {
+            position: absolute;
+            width: 14px;
+            height: 14px;
+            background: var(--accent);
+            border: 2px solid #fff;
+            border-radius: 50%;
+            pointer-events: auto;
+            box-shadow: 0 1px 5px rgba(0, 0, 0, 0.45);
+            z-index: 6;
+            touch-action: none;
+        }
+        .wys-handle.move { cursor: move; border-radius: 4px; }
+        .wys-handle.ew { cursor: ew-resize; }
+        .wys-handle.margin { cursor: ns-resize; background: #a855f7; }
+
         /* ── Responsive ── */
         @media (max-width: 768px) {
             .main { flex-direction: column; }
@@ -607,7 +680,16 @@ Line breaks are preserved."></textarea>
         <main class="preview-area">
             <div class="preview-toolbar">
                 <span class="preview-info" id="previewInfo">No preview yet</span>
-                <span class="preview-info" id="previewDims"></span>
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <span class="editor-hint" id="editorHint" style="display: none;">
+                        Select a paper size to edit on the page
+                    </span>
+                    <button class="btn btn-secondary editor-toggle" id="editorToggle" type="button"
+                            onclick="toggleEditor()" style="padding: 6px 12px; font-size: 12px;">
+                        ✎ Edit on page
+                    </button>
+                    <span class="preview-info" id="previewDims"></span>
+                </div>
             </div>
             <div class="preview-container" id="previewContainer">
                 <div class="empty-state" id="emptyState">
@@ -763,6 +845,7 @@ Line breaks are preserved."></textarea>
                 'glyphSlantJitter', 'glyphYJitter',
             ];
             const scheduleLive = () => {
+                if (editorDragging) return;  // mid-drag: commit on pointerup
                 if (!document.getElementById('livePreview').checked) return;
                 if (!document.getElementById('textInput').value.trim()) return;
                 clearTimeout(liveDebounceTimer);
@@ -781,6 +864,11 @@ Line breaks are preserved."></textarea>
                     e.preventDefault();
                     generate();
                 }
+            });
+
+            // Keep the on-page editor aligned when the window resizes.
+            window.addEventListener('resize', () => {
+                if (editorEnabled && !editorDragging) buildEditorOverlay();
             });
         }
 
@@ -958,10 +1046,18 @@ Line breaks are preserved."></textarea>
                 container.appendChild(wrapper);
             }
 
-            wrapper.innerHTML = svgText;
+            // The SVG lives in its own holder so the editor overlay (a sibling)
+            // is not wiped on every re-render.
+            let holder = wrapper.querySelector('.preview-svg-holder');
+            if (!holder) {
+                holder = document.createElement('div');
+                holder.className = 'preview-svg-holder';
+                wrapper.appendChild(holder);
+            }
+            holder.innerHTML = svgText;
 
             // Update info
-            const svg = wrapper.querySelector('svg');
+            const svg = holder.querySelector('svg');
             if (svg) {
                 const w = svg.getAttribute('width') || '?';
                 const h = svg.getAttribute('height') || '?';
@@ -970,6 +1066,9 @@ Line breaks are preserved."></textarea>
             const ps = payload.paper_size || 'Auto-fit';
             const orient = payload.paper_size ? ` ${payload.orientation}` : '';
             document.getElementById('previewInfo').textContent = `${ps}${orient} · ${payload.font || 'default'}`;
+
+            // Re-align the on-page editor to the freshly rendered page.
+            if (editorEnabled && !editorDragging) buildEditorOverlay();
         }
 
         // ── Coverage panel ──
@@ -1090,6 +1189,223 @@ Line breaks are preserved."></textarea>
                 btn.disabled = false;
                 btn.textContent = orig;
             }
+        }
+
+        // ── WYSIWYG on-page editor (U7, Phase 1) ───────────────────────────
+        //
+        // An additive editing mode: it overlays the rendered page with
+        // draggable guides and a transparent on-page text layer. It owns NO
+        // state of its own — every gesture writes back to the existing sidebar
+        // fields (start-x/-y, margin, max-width, text) and reuses the live
+        // render pipeline. The page's SVG is sized in millimetres in fixed-page
+        // mode (viewBox = "0 0 pageW pageH", width="{w}mm"), so mm↔px is simply
+        // svgPixelWidth / pageWidthMm — one transform, reused everywhere.
+        let editorEnabled = false;
+        let editorDragging = false;
+
+        function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+        function _num(id, fallback) {
+            const v = document.getElementById(id).value;
+            const n = parseFloat(v);
+            return (v === '' || isNaN(n)) ? fallback : n;
+        }
+        // Set a sidebar field mid-drag WITHOUT firing the debounced live render
+        // (the render is committed once on pointer-up instead).
+        function setFieldRaw(id, value) {
+            document.getElementById(id).value = Math.round(value);
+        }
+
+        function toggleEditor() {
+            editorEnabled = !editorEnabled;
+            document.getElementById('editorToggle').classList.toggle('active', editorEnabled);
+            if (!editorEnabled) { removeEditorOverlay(); return; }
+            // If nothing is rendered yet, render first; otherwise overlay now.
+            const haveSvg = document.querySelector('.preview-svg-holder svg');
+            if (!haveSvg && document.getElementById('textInput').value.trim()) {
+                generate(true);
+            } else {
+                buildEditorOverlay();
+            }
+        }
+
+        function removeEditorOverlay() {
+            const o = document.querySelector('.wysiwyg-overlay');
+            if (o) o.remove();
+        }
+
+        // Resolve the current page geometry from the rendered SVG + sidebar.
+        // Returns null when not in fixed-page (mm) mode — the editor only makes
+        // sense when coordinates are millimetres.
+        //
+        // Mapping note: the SVG can be sized non-uniformly by CSS (max-width vs
+        // max-height), so preserveAspectRatio letterboxes the content. We must
+        // NOT assume svgPixelWidth / pageWidthMm is the scale. Instead we use
+        // the SVG's own getScreenCTM() — the exact user(mm)→screen transform —
+        // which folds in viewBox, preserveAspectRatio, and CSS scaling. The
+        // viewBox is in millimetres, so user units ARE millimetres.
+        function editorGeom() {
+            const wrapper = document.querySelector('.preview-svg-wrapper');
+            const holder = wrapper && wrapper.querySelector('.preview-svg-holder');
+            const svg = holder && holder.querySelector('svg');
+            if (!svg || !document.getElementById('paperSize').value) return null;
+
+            const pageWmm = parseFloat(svg.getAttribute('width'));   // "210mm" → 210
+            const pageHmm = parseFloat(svg.getAttribute('height'));
+            if (!pageWmm || !pageHmm) return null;
+
+            const ctm = svg.getScreenCTM();
+            if (!ctm) return null;
+            const wrapRect = wrapper.getBoundingClientRect();
+            const pt = svg.createSVGPoint();
+            // mm (user units) → wrapper-local px.
+            const toLocal = (xmm, ymm) => {
+                pt.x = xmm; pt.y = ymm;
+                const p = pt.matrixTransform(ctm);
+                return { x: p.x - wrapRect.left, y: p.y - wrapRect.top };
+            };
+
+            const margin = _num('margin', 20);
+            const startX = _num('startX', margin);
+            const startY = _num('startY', margin);
+            return {
+                pageWmm, pageHmm,
+                pxPerMm: ctm.a,    // uniform "meet" scaling → a == d
+                toLocal,
+                margin, startX, startY,
+                maxW: _num('maxWidthMm', pageWmm - margin - startX),
+                lineH: _num('lineHeightMm', 8),
+                lineSp: _num('lineSpacing', 1.0),
+                colH: Math.max(_num('lineHeightMm', 8), (pageHmm - margin) - startY),
+            };
+        }
+
+        function buildEditorOverlay() {
+            const wrapper = document.querySelector('.preview-svg-wrapper');
+            if (!wrapper) return;
+            const hint = document.getElementById('editorHint');
+            const g = editorGeom();
+            if (!g) {
+                removeEditorOverlay();
+                hint.style.display =
+                    document.getElementById('paperSize').value ? 'none' : 'inline';
+                return;
+            }
+            hint.style.display = 'none';
+
+            let o = wrapper.querySelector('.wysiwyg-overlay');
+            if (!o) {
+                o = document.createElement('div');
+                o.className = 'wysiwyg-overlay';
+                o.innerHTML =
+                    '<div class="wys-margin"></div>' +
+                    '<div class="wys-textbox"></div>' +
+                    '<textarea class="wys-edit" spellcheck="false"></textarea>' +
+                    '<div class="wys-label"></div>' +
+                    '<div class="wys-handle move" data-h="move" title="Drag to position the text"></div>' +
+                    '<div class="wys-handle ew" data-h="ew" title="Drag to set column width"></div>' +
+                    '<div class="wys-handle margin" data-h="margin" title="Drag to set the page margin"></div>';
+                wrapper.appendChild(o);
+
+                // On-page typing → mirror into the sidebar textarea + live render.
+                const ta = o.querySelector('.wys-edit');
+                ta.addEventListener('input', () => {
+                    const main = document.getElementById('textInput');
+                    main.value = ta.value;
+                    main.dispatchEvent(new Event('input', { bubbles: true }));
+                });
+                o.querySelectorAll('.wys-handle').forEach(attachHandle);
+            }
+
+            // Keep the on-page text in sync unless the user is typing into it.
+            const ta = o.querySelector('.wys-edit');
+            if (document.activeElement !== ta) {
+                ta.value = document.getElementById('textInput').value;
+            }
+            layoutEditor(o, g);
+        }
+
+        function setBox(el, l, t, w, h) {
+            el.style.left = l + 'px'; el.style.top = t + 'px';
+            el.style.width = w + 'px'; el.style.height = h + 'px';
+        }
+        function placeHandle(el, cx, cy) {
+            el.style.left = (cx - 7) + 'px';
+            el.style.top = (cy - 7) + 'px';
+        }
+
+        function layoutEditor(o, g) {
+            const ppm = g.pxPerMm;
+            const m0 = g.toLocal(g.margin, g.margin);
+            setBox(o.querySelector('.wys-margin'), m0.x, m0.y,
+                   (g.pageWmm - 2 * g.margin) * ppm, (g.pageHmm - 2 * g.margin) * ppm);
+
+            const t0 = g.toLocal(g.startX, g.startY);
+            const tW = g.maxW * ppm, tH = g.colH * ppm;
+            setBox(o.querySelector('.wys-textbox'), t0.x, t0.y, tW, tH);
+
+            const ta = o.querySelector('.wys-edit');
+            setBox(ta, t0.x, t0.y, tW, tH);
+            ta.style.fontSize = (g.lineH * 0.5 * ppm) + 'px';
+            ta.style.lineHeight = (g.lineH * g.lineSp * ppm) + 'px';
+
+            const label = o.querySelector('.wys-label');
+            label.textContent =
+                Math.round(g.startX) + ', ' + Math.round(g.startY) + ' mm · ' +
+                Math.round(g.maxW) + ' mm wide';
+            label.style.left = t0.x + 'px';
+            label.style.top = t0.y + 'px';
+
+            placeHandle(o.querySelector('.wys-handle.move'), t0.x, t0.y);
+            placeHandle(o.querySelector('.wys-handle.ew'), t0.x + tW, t0.y + tH / 2);
+            // Margin handle sits at the top-centre of the margin frame (drag
+            // vertically to set the uniform margin) — kept clear of the move
+            // handle, which lives at the text block's top-left corner.
+            const mc = g.toLocal(g.margin + (g.pageWmm - 2 * g.margin) / 2, g.margin);
+            placeHandle(o.querySelector('.wys-handle.margin'), mc.x, mc.y);
+        }
+
+        // Wire one drag handle. Each gesture clamps to the page and writes the
+        // mapped sidebar field live; the page re-renders once on release.
+        function attachHandle(h) {
+            h.addEventListener('pointerdown', (e) => {
+                const g0 = editorGeom();
+                if (!g0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                h.setPointerCapture(e.pointerId);
+                editorDragging = true;
+
+                const kind = h.dataset.h;
+                const x0 = e.clientX, y0 = e.clientY;
+                const s = { startX: g0.startX, startY: g0.startY, maxW: g0.maxW, margin: g0.margin };
+
+                const move = (ev) => {
+                    const g = editorGeom();
+                    if (!g) return;
+                    const dx = (ev.clientX - x0) / g.pxPerMm;
+                    const dy = (ev.clientY - y0) / g.pxPerMm;
+                    if (kind === 'move') {
+                        setFieldRaw('startX', clamp(s.startX + dx, 0, g.pageWmm - 5));
+                        setFieldRaw('startY', clamp(s.startY + dy, 0, g.pageHmm - 5));
+                    } else if (kind === 'ew') {
+                        setFieldRaw('maxWidthMm', clamp(s.maxW + dx, 10, g.pageWmm - g.startX));
+                    } else if (kind === 'margin') {
+                        const lim = Math.min(g.pageWmm, g.pageHmm) / 2 - 5;
+                        setFieldRaw('margin', clamp(s.margin + dy, 0, lim));
+                    }
+                    const o = document.querySelector('.wysiwyg-overlay');
+                    if (o) layoutEditor(o, editorGeom());
+                };
+                const up = () => {
+                    h.releasePointerCapture(e.pointerId);
+                    h.removeEventListener('pointermove', move);
+                    h.removeEventListener('pointerup', up);
+                    editorDragging = false;
+                    generate(true);  // commit the new layout
+                };
+                h.addEventListener('pointermove', move);
+                h.addEventListener('pointerup', up);
+            });
         }
 
         // ── Status ──
