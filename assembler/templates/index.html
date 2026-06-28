@@ -410,6 +410,50 @@
         .wys-handle.move { cursor: move; border-radius: 4px; }
         .wys-handle.ew { cursor: ew-resize; }
         .wys-handle.margin { cursor: ns-resize; background: #a855f7; }
+        .wys-guides { position: absolute; inset: 0; pointer-events: none; }
+        .wys-guideline {
+            position: absolute;
+            height: 0;
+            border-top: 1px dashed rgba(99, 102, 241, 0.18);
+        }
+        .wys-textbox.overflow {
+            border-color: var(--warn);
+            background: rgba(245, 158, 11, 0.07);
+        }
+        /* ── Fit chip (line pitch / capacity readout) ── */
+        .preview-area { position: relative; }
+        .wys-fitchip {
+            position: absolute;
+            top: 56px;
+            left: 20px;
+            background: rgba(26, 29, 39, 0.92);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 12px;
+            color: var(--text);
+            z-index: 8;
+            backdrop-filter: blur(8px);
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+            user-select: none;
+        }
+        .fitchip-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+        .fitchip-row .lbl { color: var(--text-muted); width: 52px; }
+        .fitchip-btn {
+            width: 22px; height: 22px;
+            border: 1px solid var(--border);
+            background: var(--bg-input);
+            color: var(--text);
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 15px;
+            line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .fitchip-btn:hover { background: var(--bg-card); }
+        .fitchip-val { min-width: 44px; text-align: center; font-variant-numeric: tabular-nums; }
+        .fitchip-readout { margin-top: 2px; font-size: 11px; color: var(--text-muted); }
+        .fitchip-readout.warn { color: var(--warn); font-weight: 600; }
 
         /* ── Responsive ── */
         @media (max-width: 768px) {
@@ -691,6 +735,28 @@ Line breaks are preserved."></textarea>
                     <span class="preview-info" id="previewDims"></span>
                 </div>
             </div>
+            <!-- WYSIWYG fit chip: line pitch steppers + capacity/overflow readout -->
+            <div class="wys-fitchip" id="fitChip" style="display: none;">
+                <div class="fitchip-row">
+                    <span class="lbl">Line</span>
+                    <button class="fitchip-btn" type="button"
+                            onclick="nudgeField('lineHeightMm', -0.5, 1, 50, 1)">−</button>
+                    <span class="fitchip-val" id="fitLineH">8.0</span>
+                    <button class="fitchip-btn" type="button"
+                            onclick="nudgeField('lineHeightMm', 0.5, 1, 50, 1)">+</button>
+                    <span style="color: var(--text-dim);">mm</span>
+                </div>
+                <div class="fitchip-row">
+                    <span class="lbl">Spacing</span>
+                    <button class="fitchip-btn" type="button"
+                            onclick="nudgeField('lineSpacing', -0.1, 0.5, 4, 1)">−</button>
+                    <span class="fitchip-val" id="fitLineSp">1.0</span>
+                    <button class="fitchip-btn" type="button"
+                            onclick="nudgeField('lineSpacing', 0.1, 0.5, 4, 1)">+</button>
+                </div>
+                <div class="fitchip-readout" id="fitReadout">≈ — lines fit</div>
+            </div>
+
             <div class="preview-container" id="previewContainer">
                 <div class="empty-state" id="emptyState">
                     <div class="empty-state-icon">✍</div>
@@ -1231,6 +1297,7 @@ Line breaks are preserved."></textarea>
         function removeEditorOverlay() {
             const o = document.querySelector('.wysiwyg-overlay');
             if (o) o.remove();
+            document.getElementById('fitChip').style.display = 'none';
         }
 
         // Resolve the current page geometry from the rendered SVG + sidebar.
@@ -1267,15 +1334,41 @@ Line breaks are preserved."></textarea>
             const margin = _num('margin', 20);
             const startX = _num('startX', margin);
             const startY = _num('startY', margin);
+            const lineH = _num('lineHeightMm', 8);
+            const lineSp = _num('lineSpacing', 1.0);
+
+            // Effective line pitch (mm between successive baselines). When
+            // lines/page is set it drives the pitch (server: advance =
+            // (pageH − 2·margin) / linesPerPage); otherwise it's lineH·spacing.
+            const lpp = parseInt(document.getElementById('linesPerPage').value, 10);
+            const advance = (lpp > 0)
+                ? (pageHmm - 2 * margin) / lpp
+                : lineH * lineSp;
+
+            // Measure the actual rendered ink extent (mm) for overflow checks —
+            // exact, since it reads the real glyph geometry via the inverse CTM.
+            let inkTopMm = null, inkBottomMm = null;
+            const contentG = svg.querySelector('g');
+            if (contentG) {
+                const r = contentG.getBoundingClientRect();
+                if (r.height > 0) {
+                    const inv = ctm.inverse();
+                    const a = svg.createSVGPoint(); a.x = r.left; a.y = r.top;
+                    const b = svg.createSVGPoint(); b.x = r.left; b.y = r.bottom;
+                    inkTopMm = a.matrixTransform(inv).y;
+                    inkBottomMm = b.matrixTransform(inv).y;
+                }
+            }
+
             return {
                 pageWmm, pageHmm,
                 pxPerMm: ctm.a,    // uniform "meet" scaling → a == d
                 toLocal,
-                margin, startX, startY,
+                margin, startX, startY, lineH, lineSp, advance,
+                inkTopMm, inkBottomMm,
+                writableBottomMm: pageHmm - margin,
                 maxW: _num('maxWidthMm', pageWmm - margin - startX),
-                lineH: _num('lineHeightMm', 8),
-                lineSp: _num('lineSpacing', 1.0),
-                colH: Math.max(_num('lineHeightMm', 8), (pageHmm - margin) - startY),
+                colH: Math.max(lineH, (pageHmm - margin) - startY),
             };
         }
 
@@ -1297,6 +1390,7 @@ Line breaks are preserved."></textarea>
                 o = document.createElement('div');
                 o.className = 'wysiwyg-overlay';
                 o.innerHTML =
+                    '<div class="wys-guides"></div>' +
                     '<div class="wys-margin"></div>' +
                     '<div class="wys-textbox"></div>' +
                     '<textarea class="wys-edit" spellcheck="false"></textarea>' +
@@ -1362,6 +1456,77 @@ Line breaks are preserved."></textarea>
             // handle, which lives at the text block's top-left corner.
             const mc = g.toLocal(g.margin + (g.pageWmm - 2 * g.margin) / 2, g.margin);
             placeHandle(o.querySelector('.wys-handle.margin'), mc.x, mc.y);
+
+            renderGuides(o, g, t0.x, tW);
+            updateFitChip(o, g);
+        }
+
+        // Ruled writing-line guides across the text column, spaced by the
+        // effective line pitch. Pooled (reused) so dragging stays smooth.
+        function renderGuides(o, g, colLeftPx, colWidthPx) {
+            const guides = o.querySelector('.wys-guides');
+            const n = (g.advance > 0)
+                ? Math.min(300, Math.max(0, Math.floor((g.writableBottomMm - g.startY) / g.advance)))
+                : 0;
+            while (guides.children.length < n) {
+                const d = document.createElement('div');
+                d.className = 'wys-guideline';
+                guides.appendChild(d);
+            }
+            while (guides.children.length > n) guides.lastChild.remove();
+            for (let i = 0; i < n; i++) {
+                const p = g.toLocal(g.startX, g.startY + (i + 1) * g.advance);
+                const el = guides.children[i];
+                el.style.left = colLeftPx + 'px';
+                el.style.top = p.y + 'px';
+                el.style.width = colWidthPx + 'px';
+            }
+        }
+
+        // Capacity / overflow readout + line-pitch labels. Also flags the text
+        // box amber when the rendered ink runs past the writable area.
+        function updateFitChip(o, g) {
+            const chip = document.getElementById('fitChip');
+            chip.style.display = 'block';
+            document.getElementById('fitLineH').textContent =
+                (g.advance / g.lineSp).toFixed(1);
+            document.getElementById('fitLineSp').textContent = g.lineSp.toFixed(1);
+
+            const capacity = (g.advance > 0)
+                ? Math.max(0, Math.floor((g.writableBottomMm - g.startY) / g.advance))
+                : 0;
+            const readout = document.getElementById('fitReadout');
+            const tb = o.querySelector('.wys-textbox');
+
+            const overshoot = (g.inkBottomMm != null)
+                ? g.inkBottomMm - g.writableBottomMm : -1;
+            if (overshoot > 0.5 && g.advance > 0) {
+                const over = Math.ceil(overshoot / g.advance);
+                readout.textContent = `⚠ text overflows by ~${over} line${over === 1 ? '' : 's'}`;
+                readout.classList.add('warn');
+                tb.classList.add('overflow');
+            } else {
+                readout.textContent = `≈ ${capacity} line${capacity === 1 ? '' : 's'} fit`;
+                readout.classList.remove('warn');
+                tb.classList.remove('overflow');
+            }
+        }
+
+        // Step a sidebar field by delta (clamped) and re-render. Used by the
+        // fit chip's line-height / spacing +/− buttons.
+        function nudgeField(id, delta, lo, hi, decimals) {
+            const el = document.getElementById(id);
+            let v = parseFloat(el.value);
+            if (isNaN(v)) v = (id === 'lineHeightMm') ? 8 : 1;
+            v = clamp(v + delta, lo, hi);
+            el.value = v.toFixed(decimals || 0);
+            // Line height is authoritative here: clear lines/page (which would
+            // otherwise override it) so the chosen pitch actually takes effect.
+            if (id === 'lineHeightMm') {
+                const lpp = document.getElementById('linesPerPage');
+                if (lpp.value !== '') lpp.value = '';
+            }
+            el.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
         // Wire one drag handle. Each gesture clamps to the page and writes the

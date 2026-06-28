@@ -337,10 +337,14 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > mode — page-as-canvas with a margin frame, a draggable text block
 > (writes `start-x`/`start-y`), a column-width handle (`max-width-mm`), a
 > margin handle (`margin`), and a transparent on-page text layer that types
-> back into the sidebar and re-renders live. It owns no state of its own and
-> reuses the existing render pipeline. Overlay↔ink alignment uses the SVG's
-> `getScreenCTM()` (exact, letterbox-safe). Phase 2 (click-to-caret,
-> multiple text frames) remains proposed.
+> back into the sidebar and re-renders live. Also: ruled writing-line guides
+> across the column, a "fit chip" with line-height / line-spacing steppers,
+> a live "≈ N lines fit" capacity readout, and an overflow warning that
+> flags the text block amber when the rendered ink runs past the writable
+> area (measured from the real glyph geometry, so it's exact). It owns no
+> state of its own and reuses the existing render pipeline. Overlay↔ink
+> alignment uses the SVG's `getScreenCTM()` (exact, letterbox-safe).
+> Phase 2 (click-to-caret, multiple text frames) remains proposed.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image
