@@ -331,6 +331,127 @@ pagination (easy — `_word_info` already has `line_break_after`).
 
 ---
 
+### U7. Lightweight WYSIWYG page editor — **In progress** (Phase 1 landed)
+
+> **Phase 1 status:** shipped in the web GUI as an additive "✎ Edit on page"
+> mode — page-as-canvas with a margin frame, a draggable text block
+> (writes `start-x`/`start-y`), a column-width handle (`max-width-mm`), a
+> margin handle (`margin`), and a transparent on-page text layer that types
+> back into the sidebar and re-renders live. Also: ruled writing-line guides
+> across the column, a "fit chip" with line-height / line-spacing steppers,
+> a live "≈ N lines fit" capacity readout, and an overflow warning that
+> flags the text block amber when the rendered ink runs past the writable
+> area (measured from the real glyph geometry, so it's exact). It owns no
+> state of its own and reuses the existing render pipeline. Overlay↔ink
+> alignment uses the SVG's `getScreenCTM()` (exact, letterbox-safe).
+> Phase 2 (click-to-caret, multiple text frames) remains proposed.
+
+The web GUI today is a *control panel beside a preview*: you type in a
+sidebar textarea, tune ~20 numeric knobs, and watch a rendered image
+update. Everything the casual user asked for already exists as fields —
+text, paper size, margin, `start-x`/`start-y` (positioning), lines-per-
+page, line spacing, and a "Download SVG" button. What's missing is the
+*interaction model*: editing **on the page** with direct manipulation,
+so a non-technical user never has to reason about millimetre offsets.
+
+This item does not add rendering capability — it is a new front-end over
+the **existing** `/api/generate` + `/api/png` + `/api/coverage`
+endpoints and the existing parameters. The goal is to make the page the
+editing surface.
+
+**The core constraint.** The rendered output is hand-drawn glyph *paths*,
+not selectable web text — you cannot drop a browser caret inside an SVG
+`<path>`. So "WYSIWYG" here means an **aligned editing overlay**, not
+contenteditable glyph paths. That choice keeps the feature lightweight
+and is what makes Phase 1 small.
+
+**What changes**
+
+*Phase 1 — overlay editing + direct-manipulation layout (lightweight):*
+
+- **Page-as-canvas.** Render the current page (SVG via U2's live preview)
+  as the centrepiece, at a true-to-paper aspect ratio with a visible
+  sheet, margins, and baseline guides drawn as overlays.
+- **Type on the page.** A transparent, exactly-aligned `textarea`
+  (or contenteditable) sits over the text region. The caret and
+  selection are the browser's; keystrokes debounce-trigger a re-render
+  underneath (reusing U2's pipeline). The user types "into" the page and
+  watches their handwriting appear. This replaces the sidebar textarea
+  for casual users; the sidebar stays available as "advanced".
+- **Drag to position.** Dragging the text block writes back to
+  `start-x` / `start-y`; dragging the margin guide writes `margin`;
+  dragging the right edge of the text column writes `max-width-mm`.
+  Every gesture maps 1:1 to an existing parameter — no new render
+  semantics.
+- **Pick paper & fit visually.** Paper-size dropdown (already present)
+  plus a live "N lines fit / page" readout driven by U1's report data;
+  `lines-per-page` and `line-spacing` get small +/- steppers shown on
+  the page margin rather than buried in the sidebar.
+- **Save as SVG / PNG.** Reuse the existing download endpoints; add a
+  one-click "Save SVG" in the editor toolbar (PNG/PDF behind a menu).
+- **Presets as starting points.** "New from preset" (U3) seeds paper,
+  margins, and realism settings so a first-time user starts from
+  `notebook-page` rather than a blank slate.
+
+*Phase 2 — richer editing (optional follow-up):*
+
+- **Click-to-caret on the rendered glyphs.** Have `/api/generate` emit a
+  per-glyph `data-char-index` on each glyph `<g>` so a click on rendered
+  ink maps back to a text offset and positions the overlay caret there.
+  This is the only piece that needs a backend change (a small metadata
+  emission, already feasible from `_word_info`).
+- **Multiple text frames.** More than one independently-positioned block
+  per page (e.g. a heading box + a body box), each with its own
+  `start-x/y` and width. Requires the Assembler to accept a list of
+  placed blocks rather than a single text + origin — a real but
+  contained typesetter extension.
+- **Live coverage inline.** Surface U4's missing-glyph markers directly
+  under the offending character on the page instead of in a side panel.
+
+**Effort:** Phase 1 **medium** — almost entirely front-end, because the
+backend (render, PNG, coverage, presets, live preview) already exists;
+the work is the overlay alignment maths (mm↔px), drag handles, and
+keeping the editable layer pixel-locked to the render across zoom and
+paper-size changes. Phase 2 **medium–large** — click-to-caret needs a
+small backend metadata change; multiple text frames is a genuine
+typesetter/data-model extension and should be scoped separately if
+pursued.
+
+**CLI / GUI parity note.** Under the Ground-rules parity rule, direct
+manipulation is a justified **GUI-only** interaction, exactly like U2's
+live preview — it introduces *no* capability the CLI lacks. Every editor
+gesture resolves to an existing flag (`--start-x`, `--start-y`,
+`--margin`, `--max-width-mm`, `--paper-size`, `--lines-per-page`,
+`--line-spacing`). Phase 2's multiple-text-frames is the exception that
+*would* add a new capability; if built, it must land with a matching CLI
+surface (e.g. a multi-block config schema) to preserve parity, and is
+flagged here so that requirement isn't forgotten.
+
+**Depends on:** U2 (live preview pipeline + server caching — the editor
+re-renders on every keystroke), U3 (presets as starting points), U1
+(line-fit readout), U5 (SVG/PNG export). All **Done**, so Phase 1 has no
+blocking prerequisites. Phase 2's click-to-caret depends on a new
+per-glyph character-index emission from the renderer.
+
+**Watch out for:**
+
+- **Overlay drift.** The editable text layer must stay pixel-aligned to
+  the rendered glyphs across window resize, zoom, and paper-size change.
+  This is the main technical risk — get the single mm↔px transform right
+  and reuse it everywhere; don't let the overlay and the render compute
+  geometry independently.
+- **Render latency on every keystroke.** Long documents with heavy
+  realism effects can make per-keystroke re-render feel laggy. Reuse
+  U2's debounce + in-flight cancellation, and consider a "fast draft"
+  render mode (skip jitter/smoothing) while actively typing, swapping in
+  the full render on pause.
+- **Don't fork the parameter model.** The editor and the sidebar must
+  read/write the *same* state object, so a value changed by dragging is
+  reflected in the sidebar field and vice-versa. Two sources of truth
+  here would be a maintenance trap.
+
+---
+
 ## GlyphCollector UI
 
 The browser-based capture tool already covers variant capture, Bezier
@@ -620,7 +741,16 @@ the captures consistently.
 | U3 | Config files + presets | Medium | Medium | Low | 7 |
 | U6 | PDF + widow/orphan | Medium | Medium | Low | 8 |
 | R2 | Cursive joining (opt-in, Experimental) | High | Medium | Medium-high quality-risk when enabled (default output unchanged) | 9 |
+| U7 | Lightweight WYSIWYG page editor (Phase 1) | High | Medium | Medium (overlay alignment) | 10 |
 | R1 | Pressure-aware stroke | — | — | — | Won't do |
+
+U7 deliberately sits after the building-block items: it is a new
+front-end over machinery that R4/U1/U2/U3/U5 already provide, so it
+carries little backend risk and high end-user value (it's the item that
+makes the tool approachable to a non-technical writer). Phase 2
+(click-to-caret, multiple text frames) is intentionally *not* in this
+table — it should be re-scoped on its own once Phase 1 ships and real
+usage shows which richer-editing features are actually wanted.
 
 R4 + U4 + U1 form a natural first bundle: together they remove the
 single biggest current defect (silent drops) and give the user both a
