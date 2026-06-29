@@ -410,6 +410,37 @@
         .wys-handle.move { cursor: move; border-radius: 4px; }
         .wys-handle.ew { cursor: ew-resize; }
         .wys-handle.margin { cursor: ns-resize; background: #a855f7; }
+        /* Extra text frames (frame 1+; frame 0 is the sidebar-driven box). */
+        .wys-frame-box {
+            position: absolute;
+            border: 1px solid rgba(34, 197, 94, 0.75);
+            background: rgba(34, 197, 94, 0.05);
+            pointer-events: none;
+        }
+        .wys-frame-box.overflow { border-color: var(--warn); background: rgba(245,158,11,0.07); }
+        .wys-frame-edit {
+            position: absolute;
+            margin: 0; padding: 0; border: none;
+            background: transparent; color: transparent;
+            -webkit-text-fill-color: transparent;
+            caret-color: var(--success);
+            resize: none; outline: none; overflow: hidden;
+            pointer-events: auto;
+            font-family: 'Inter', sans-serif;
+            white-space: pre-wrap; word-break: break-word;
+        }
+        .wys-frame-edit::selection { background: rgba(34, 197, 94, 0.25); }
+        .wys-frame-del {
+            position: absolute;
+            width: 18px; height: 18px;
+            background: var(--danger); color: #fff;
+            border: 2px solid #fff; border-radius: 50%;
+            font-size: 12px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; pointer-events: auto;
+            z-index: 7; box-shadow: 0 1px 5px rgba(0,0,0,0.45);
+        }
+        .wys-handle.frame { background: var(--success); }
         .wys-guides { position: absolute; inset: 0; pointer-events: none; }
         .wys-guideline {
             position: absolute;
@@ -732,6 +763,10 @@ Line breaks are preserved."></textarea>
                             onclick="toggleEditor()" style="padding: 6px 12px; font-size: 12px;">
                         ✎ Edit on page
                     </button>
+                    <button class="btn btn-secondary" id="addFrameBtn" type="button"
+                            onclick="addFrame()" style="padding: 6px 12px; font-size: 12px; display: none;">
+                        ➕ Frame
+                    </button>
                     <span class="preview-info" id="previewDims"></span>
                 </div>
             </div>
@@ -998,7 +1033,7 @@ Line breaks are preserved."></textarea>
         // ── Generate ──
         async function generate(live = false) {
             const text = document.getElementById('textInput').value;
-            if (!text.trim()) {
+            if (!text.trim() && !framesActive()) {
                 if (!live) setStatus('error', 'Please enter some text');
                 return;
             }
@@ -1049,6 +1084,9 @@ Line breaks are preserved."></textarea>
                 glyph_y_jitter: valOrNull('glyphYJitter'),
                 fallbacks: document.getElementById('fallbacks').checked
             };
+
+            // Multi-frame mode: send the frames list (server prefers it over text).
+            if (framesActive()) payload.frames = buildFramesPayload();
 
             try {
                 const res = await fetch('/api/generate', {
@@ -1268,6 +1306,12 @@ Line breaks are preserved."></textarea>
         // svgPixelWidth / pageWidthMm — one transform, reused everywhere.
         let editorEnabled = false;
         let editorDragging = false;
+        // Extra text frames (frame 0 is the sidebar-driven block; these are
+        // frames 1+). When any exist, the render switches to the multi-frame
+        // `frames` payload. extraEls holds each frame's persistent DOM refs.
+        let extraFrames = [];
+        let extraEls = [];
+        function framesActive() { return extraFrames.length > 0; }
 
         function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
         function _num(id, fallback) {
@@ -1297,7 +1341,9 @@ Line breaks are preserved."></textarea>
         function removeEditorOverlay() {
             const o = document.querySelector('.wysiwyg-overlay');
             if (o) o.remove();
+            extraEls = [];   // DOM lived inside the overlay; refs are now stale
             document.getElementById('fitChip').style.display = 'none';
+            document.getElementById('addFrameBtn').style.display = 'none';
         }
 
         // Resolve the current page geometry from the rendered SVG + sidebar.
@@ -1412,7 +1458,9 @@ Line breaks are preserved."></textarea>
                 // the caret lands where the handwriting is (not where the
                 // invisible textarea's own monospace layout would put it).
                 ta.addEventListener('click', (e) => {
-                    const idx = glyphIndexAtPoint(e.clientX, e.clientY);
+                    // In multi-frame mode frame 0's glyphs carry data-frame="0".
+                    const fi = framesActive() ? 0 : null;
+                    const idx = glyphIndexAtPoint(e.clientX, e.clientY, fi);
                     if (idx != null) ta.setSelectionRange(idx, idx);
                 });
                 o.querySelectorAll('.wys-handle').forEach(attachHandle);
@@ -1424,6 +1472,8 @@ Line breaks are preserved."></textarea>
                 ta.value = document.getElementById('textInput').value;
             }
             layoutEditor(o, g);
+            layoutExtraFrames(o, g);
+            document.getElementById('addFrameBtn').style.display = 'inline-flex';
         }
 
         function setBox(el, l, t, w, h) {
@@ -1525,10 +1575,12 @@ Line breaks are preserved."></textarea>
         // before the glyph, or after it when the click is past its centre.
         // (data-ci indexes the post-fallback text; with no substitutions that
         // equals the textarea's text, which is the common case.)
-        function glyphIndexAtPoint(cx, cy) {
+        function glyphIndexAtPoint(cx, cy, frameIdx) {
             const holder = document.querySelector('.preview-svg-holder');
             if (!holder) return null;
-            const nodes = holder.querySelectorAll('[data-ci]');
+            const sel = (frameIdx == null)
+                ? '[data-ci]' : `[data-frame="${frameIdx}"]`;
+            const nodes = holder.querySelectorAll(sel);
             if (!nodes.length) return null;
             let bestIdx = null, bestD = Infinity, after = false;
             nodes.forEach(n => {
@@ -1560,6 +1612,182 @@ Line breaks are preserved."></textarea>
                 if (lpp.value !== '') lpp.value = '';
             }
             el.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+
+        // ── Multiple text frames (U7 Phase 2b, editor) ─────────────────────
+        // Frame 0 is the sidebar-driven block; these are frames 1+. Each extra
+        // frame is an additive box + transparent textarea + drag handles + a
+        // delete button. When any exist, generate() sends the `frames` payload.
+        function _el(tag, cls) {
+            const e = document.createElement(tag);
+            if (cls) e.className = cls;
+            return e;
+        }
+
+        function addFrame() {
+            const g = editorGeom();
+            const margin = _num('margin', 20);
+            let sx, sy, mw;
+            if (extraFrames.length) {
+                const last = extraFrames[extraFrames.length - 1];
+                sx = last.start_x; sy = last.start_y + 30; mw = last.max_width;
+            } else {
+                sx = _num('startX', margin);
+                sy = _num('startY', margin) + 40;
+                mw = _num('maxWidthMm', g ? (g.pageWmm - margin - sx) : 80);
+            }
+            if (g) sy = Math.min(sy, g.pageHmm - margin - 10);
+            extraFrames.push({ text: 'Neuer Rahmen', start_x: Math.round(sx),
+                               start_y: Math.round(sy), max_width: Math.round(mw) });
+            generate(true);   // re-render with frames; showPreview rebuilds overlay
+        }
+
+        function deleteFrame(refs) {
+            const i = extraEls.indexOf(refs);
+            if (i < 0) return;
+            refs.nodes.forEach(n => n.remove());
+            extraEls.splice(i, 1);
+            extraFrames.splice(i, 1);
+            generate(true);
+        }
+
+        // Keep exactly extraFrames.length persistent element-sets, then position
+        // each. Persistent (not rebuilt per render) so typing keeps focus.
+        function layoutExtraFrames(o, g) {
+            let c = o.querySelector('.wys-extra');
+            if (!c) {
+                c = _el('div', 'wys-extra');
+                c.style.cssText = 'position:absolute;inset:0;pointer-events:none;';
+                o.appendChild(c);
+            }
+            while (extraEls.length < extraFrames.length) extraEls.push(buildExtraFrame(c));
+            while (extraEls.length > extraFrames.length) {
+                extraEls.pop().nodes.forEach(n => n.remove());
+            }
+            extraEls.forEach((refs, i) => positionExtraFrame(refs, extraFrames[i], g));
+        }
+
+        function buildExtraFrame(container) {
+            const box = _el('div', 'wys-frame-box');
+            const ta = _el('textarea', 'wys-frame-edit'); ta.spellcheck = false;
+            const label = _el('div', 'wys-label');
+            const hMove = _el('div', 'wys-handle move frame');
+            const hEw = _el('div', 'wys-handle ew frame');
+            const del = _el('div', 'wys-frame-del'); del.textContent = '✕'; del.title = 'Delete frame';
+            const refs = { box, ta, label, hMove, hEw, del,
+                           nodes: [box, ta, label, hMove, hEw, del] };
+            container.append(box, ta, label, hMove, hEw, del);
+
+            ta.addEventListener('input', () => {
+                const i = extraEls.indexOf(refs);
+                if (i >= 0) { extraFrames[i].text = ta.value; scheduleFramesRender(); }
+            });
+            ta.addEventListener('click', (e) => {
+                const i = extraEls.indexOf(refs);
+                if (i < 0) return;
+                const idx = glyphIndexAtPoint(e.clientX, e.clientY, i + 1);
+                if (idx != null) ta.setSelectionRange(idx, idx);
+            });
+            del.addEventListener('click', () => deleteFrame(refs));
+            attachFrameHandle(hMove, refs, 'move');
+            attachFrameHandle(hEw, refs, 'ew');
+            return refs;
+        }
+
+        function positionExtraFrame(refs, fr, g) {
+            const ppm = g.pxPerMm;
+            const colH = Math.max(g.lineH, (g.pageHmm - g.margin) - fr.start_y);
+            const t0 = g.toLocal(fr.start_x, fr.start_y);
+            const w = fr.max_width * ppm, h = colH * ppm;
+            setBox(refs.box, t0.x, t0.y, w, h);
+            setBox(refs.ta, t0.x, t0.y, w, h);
+            refs.ta.style.fontSize = (g.lineH * 0.5 * ppm) + 'px';
+            refs.ta.style.lineHeight = (g.lineH * g.lineSp * ppm) + 'px';
+            if (document.activeElement !== refs.ta) refs.ta.value = fr.text;
+            const n = extraEls.indexOf(refs) + 1;
+            refs.label.textContent =
+                `Frame ${n + 1}: ${Math.round(fr.start_x)}, ${Math.round(fr.start_y)} mm`;
+            refs.label.style.left = t0.x + 'px';
+            refs.label.style.top = t0.y + 'px';
+            placeHandle(refs.hMove, t0.x, t0.y);
+            placeHandle(refs.hEw, t0.x + w, t0.y + h / 2);
+            refs.del.style.left = (t0.x + w - 9) + 'px';
+            refs.del.style.top = (t0.y - 9) + 'px';
+            refs.box.classList.toggle('overflow', frameOverflow(n, g));
+        }
+
+        // Measure this frame's rendered ink bottom (via data-frame) vs the
+        // writable area, exactly like the single-frame overflow chip.
+        function frameOverflow(frameIdx, g) {
+            const holder = document.querySelector('.preview-svg-holder');
+            const svg = holder && holder.querySelector('svg');
+            if (!svg) return false;
+            const nodes = holder.querySelectorAll(`[data-frame="${frameIdx}"]`);
+            if (!nodes.length) return false;
+            const inv = svg.getScreenCTM().inverse();
+            let maxBottom = -Infinity;
+            nodes.forEach(node => {
+                const r = node.getBoundingClientRect();
+                const p = svg.createSVGPoint(); p.x = r.left; p.y = r.bottom;
+                maxBottom = Math.max(maxBottom, p.matrixTransform(inv).y);
+            });
+            return maxBottom > g.writableBottomMm + 0.5;
+        }
+
+        function attachFrameHandle(h, refs, kind) {
+            h.addEventListener('pointerdown', (e) => {
+                const g0 = editorGeom();
+                if (!g0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                h.setPointerCapture(e.pointerId);
+                editorDragging = true;
+                const fr = extraFrames[extraEls.indexOf(refs)];
+                const x0 = e.clientX, y0 = e.clientY;
+                const s = { sx: fr.start_x, sy: fr.start_y, mw: fr.max_width };
+                const move = (ev) => {
+                    const g = editorGeom();
+                    if (!g) return;
+                    const dx = (ev.clientX - x0) / g.pxPerMm;
+                    const dy = (ev.clientY - y0) / g.pxPerMm;
+                    if (kind === 'move') {
+                        fr.start_x = Math.round(clamp(s.sx + dx, 0, g.pageWmm - 5));
+                        fr.start_y = Math.round(clamp(s.sy + dy, 0, g.pageHmm - 5));
+                    } else if (kind === 'ew') {
+                        fr.max_width = Math.round(clamp(s.mw + dx, 10, g.pageWmm - fr.start_x));
+                    }
+                    positionExtraFrame(refs, fr, g);
+                };
+                const up = () => {
+                    h.releasePointerCapture(e.pointerId);
+                    h.removeEventListener('pointermove', move);
+                    h.removeEventListener('pointerup', up);
+                    editorDragging = false;
+                    generate(true);
+                };
+                h.addEventListener('pointermove', move);
+                h.addEventListener('pointerup', up);
+            });
+        }
+
+        function scheduleFramesRender() {
+            if (editorDragging) return;
+            if (!document.getElementById('livePreview').checked) return;
+            clearTimeout(liveDebounceTimer);
+            liveDebounceTimer = setTimeout(() => generate(true), LIVE_DEBOUNCE_MS);
+        }
+
+        // frame 0 from the sidebar, then the extras → the `frames` payload.
+        function buildFramesPayload() {
+            const margin = _num('margin', 20);
+            const f0 = { text: document.getElementById('textInput').value,
+                         start_x: _num('startX', margin),
+                         start_y: _num('startY', margin) };
+            const mw0 = document.getElementById('maxWidthMm').value;
+            if (mw0 !== '') f0.max_width = parseFloat(mw0);
+            return [f0, ...extraFrames.map(f => ({
+                text: f.text, start_x: f.start_x,
+                start_y: f.start_y, max_width: f.max_width }))];
         }
 
         // Wire one drag handle. Each gesture clamps to the page and writes the

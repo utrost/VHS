@@ -357,9 +357,13 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > remains proposed — see
 > [`docs/U7_TEXT_FRAMES_PLAN.md`](U7_TEXT_FRAMES_PLAN.md) for the full
 > data-model / typesetter / renderer / CLI / editor plan and phased
-> rollout. **Slice 1 shipped** (backend foundation: `typeset_frames` with
-> position baking, renderer `prebaked` + `data-frame`, and the `--frames`
-> CLI, with tests). Slice 2 (the multi-frame editor UI) is next.
+> rollout. **Slices 1–2 shipped**: backend foundation (`typeset_frames` with
+> position baking, renderer `prebaked` + `data-frame`, `--frames` CLI and
+> `/api/generate` support, with tests) **and** the multi-frame editor — an
+> additive "➕ Frame" layer giving each extra frame its own draggable box,
+> transparent textarea, width handle, label, delete button, per-frame
+> click-to-caret and overflow. Slice 3 (overlap warning, per-frame
+> `--report`, optional per-frame typography) remains proposed.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image

@@ -6,9 +6,14 @@ two-column layout). This is the last open item of the U7 WYSIWYG editor
 and the only one that changes the rendering data model, so it is scoped
 here separately per the roadmap.
 
-Status: **Slice 1 shipped** (backend foundation — §6 phase 1: `typeset_frames`
-with position baking, renderer `prebaked` + `data-frame`, and the `--frames`
-CLI, with tests). Slices 2–3 (multi-frame editor UI, polish) remain proposed.
+Status: **Slices 1–2 shipped.** Slice 1 = backend foundation (`typeset_frames`
+with position baking, renderer `prebaked` + `data-frame`, the `--frames` CLI,
+and `/api/generate` frames support, with tests). Slice 2 = the multi-frame
+editor — an additive "➕ Frame" layer over the single-frame editor: each extra
+frame gets its own draggable box, transparent textarea, width handle, label,
+and delete button, sends the `frames` payload, supports per-frame
+click-to-caret and overflow. Slice 3 (overlap warning, per-frame `--report`,
+optional per-frame typography) remains proposed.
 
 ---
 
