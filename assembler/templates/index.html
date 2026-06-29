@@ -309,6 +309,19 @@
             height: auto;
         }
 
+        /* Actual-size (1:1) mode: drop the fit-to-window constraints so the
+           SVG renders at its physical mm dimensions (≈ true size at 100%
+           browser zoom). The page scrolls from the top-left. */
+        .preview-container.actual-size {
+            align-items: flex-start;
+            justify-content: flex-start;
+        }
+        .preview-svg-wrapper.actual-size { max-width: none; max-height: none; }
+        .preview-svg-wrapper.actual-size svg {
+            max-width: none;
+            max-height: none;
+        }
+
         .empty-state {
             display: flex;
             flex-direction: column;
@@ -341,7 +354,8 @@
         /* ── WYSIWYG on-page editor ── */
         .preview-svg-wrapper { position: relative; }
         .preview-svg-holder { display: block; line-height: 0; }
-        .editor-toggle.active {
+        .editor-toggle.active,
+        #actualSizeBtn.active {
             background: var(--accent);
             color: #fff;
             border-color: var(--accent);
@@ -772,6 +786,11 @@ Line breaks are preserved."></textarea>
                             onclick="addFrame()" style="padding: 6px 12px; font-size: 12px; display: none;">
                         ➕ Frame
                     </button>
+                    <button class="btn btn-secondary" id="actualSizeBtn" type="button"
+                            onclick="toggleActualSize()" style="padding: 6px 12px; font-size: 12px;"
+                            title="Show the page at its physical size (≈ true size at 100% browser zoom)">
+                        ⊞ Actual size
+                    </button>
                     <span class="preview-info" id="previewDims"></span>
                 </div>
             </div>
@@ -815,6 +834,7 @@ Line breaks are preserved."></textarea>
         // ── State ──
         let currentSvgBlob = null;
         let currentSvgText = '';
+        let actualSize = false;   // 1:1 physical-size preview vs fit-to-window
         let liveDebounceTimer = null;
         let liveAbortController = null;
         const LIVE_DEBOUNCE_MS = 350;
@@ -1154,6 +1174,7 @@ Line breaks are preserved."></textarea>
                 wrapper.className = 'preview-svg-wrapper';
                 container.appendChild(wrapper);
             }
+            applyActualSize();   // keep 1:1 / fit state across re-renders
 
             // The SVG lives in its own holder so the editor overlay (a sibling)
             // is not wiped on every re-render.
@@ -1178,6 +1199,27 @@ Line breaks are preserved."></textarea>
 
             // Re-align the on-page editor to the freshly rendered page.
             if (editorEnabled && !editorDragging) buildEditorOverlay();
+        }
+
+        // ── Actual-size (1:1) preview ──
+        // Toggle between fit-to-window and true physical mm size. Relies on
+        // CSS mm units (≈ real size at 100% browser zoom on a calibrated
+        // display). The editor overlay re-aligns automatically because it maps
+        // through the SVG's getScreenCTM, which reflects whatever scale is live.
+        function toggleActualSize() {
+            actualSize = !actualSize;
+            applyActualSize();
+            const btn = document.getElementById('actualSizeBtn');
+            btn.classList.toggle('active', actualSize);
+            btn.textContent = actualSize ? '⊟ Fit to window' : '⊞ Actual size';
+            if (editorEnabled && !editorDragging) buildEditorOverlay();
+        }
+
+        function applyActualSize() {
+            const container = document.getElementById('previewContainer');
+            container.classList.toggle('actual-size', actualSize);
+            const wrapper = container.querySelector('.preview-svg-wrapper');
+            if (wrapper) wrapper.classList.toggle('actual-size', actualSize);
         }
 
         // ── Coverage panel ──

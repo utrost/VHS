@@ -427,6 +427,13 @@ independently-positioned blocks — the same layout you can drive from the
 CLI with `--frames`. Full walkthrough in the Web GUI guide
 (`docs/GUIDE_ASSEMBLER_GUI.md` §6).
 
+The preview defaults to fit-to-window; the **⊞ Actual size** toolbar
+button switches to a 1:1 view that shows the page at its real physical
+dimensions (an A5 page appears A5-sized), scrolling if larger than the
+panel — true-to-life at 100 % browser zoom. Paper size (A6 / Letter /
+Legal included) and portrait / landscape orientation both feed the
+displayed size.
+
 ---
 
 ## 8. Custom fonts
