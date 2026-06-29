@@ -418,6 +418,11 @@
             pointer-events: none;
         }
         .wys-frame-box.overflow { border-color: var(--warn); background: rgba(245,158,11,0.07); }
+        /* Frames whose boxes intersect — allowed, but flagged. */
+        .wys-frame-box.collide, .wys-textbox.collide {
+            outline: 2px dashed var(--warn);
+            outline-offset: 1px;
+        }
         .wys-frame-edit {
             position: absolute;
             margin: 0; padding: 0; border: none;
@@ -1473,7 +1478,51 @@ Line breaks are preserved."></textarea>
             }
             layoutEditor(o, g);
             layoutExtraFrames(o, g);
+            flagFrameCollisions(o, g);
             document.getElementById('addFrameBtn').style.display = 'inline-flex';
+        }
+
+        // Flag (amber dashed outline) any frames whose *rendered ink*
+        // rectangles intersect. Overlap is allowed — later frames draw on top
+        // — but the user should know it's happening. Using the ink (not the
+        // full-height column box) means stacked frames don't false-positive.
+        function flagFrameCollisions(o, g) {
+            if (!framesActive()) {
+                const b0 = o.querySelector('.wys-textbox');
+                if (b0) b0.classList.remove('collide');
+                return;
+            }
+            const entries = [{ el: o.querySelector('.wys-textbox'), r: frameInkRect(0) }];
+            extraEls.forEach((refs, i) =>
+                entries.push({ el: refs.box, r: frameInkRect(i + 1) }));
+            const hit = new Array(entries.length).fill(false);
+            const hits = (a, b) => a && b && !(a.x + a.w <= b.x || b.x + b.w <= a.x ||
+                                               a.y + a.h <= b.y || b.y + b.h <= a.y);
+            for (let i = 0; i < entries.length; i++)
+                for (let j = i + 1; j < entries.length; j++)
+                    if (hits(entries[i].r, entries[j].r)) { hit[i] = hit[j] = true; }
+            entries.forEach((e, i) => e.el && e.el.classList.toggle('collide', hit[i]));
+        }
+
+        // The rendered ink bounding box (mm) of one frame, or null if empty.
+        function frameInkRect(frameIdx) {
+            const holder = document.querySelector('.preview-svg-holder');
+            const svg = holder && holder.querySelector('svg');
+            if (!svg) return null;
+            const nodes = holder.querySelectorAll(`[data-frame="${frameIdx}"]`);
+            if (!nodes.length) return null;
+            const inv = svg.getScreenCTM().inverse();
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            nodes.forEach(n => {
+                const r = n.getBoundingClientRect();
+                [[r.left, r.top], [r.right, r.bottom]].forEach(([cx, cy]) => {
+                    const pt = svg.createSVGPoint(); pt.x = cx; pt.y = cy;
+                    const m = pt.matrixTransform(inv);
+                    minX = Math.min(minX, m.x); maxX = Math.max(maxX, m.x);
+                    minY = Math.min(minY, m.y); maxY = Math.max(maxY, m.y);
+                });
+            });
+            return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
         }
 
         function setBox(el, l, t, w, h) {
@@ -1681,6 +1730,10 @@ Line breaks are preserved."></textarea>
             ta.addEventListener('input', () => {
                 const i = extraEls.indexOf(refs);
                 if (i >= 0) { extraFrames[i].text = ta.value; scheduleFramesRender(); }
+            });
+            // Select the placeholder on first focus so typing replaces it.
+            ta.addEventListener('focus', () => {
+                if (ta.value === 'Neuer Rahmen') ta.select();
             });
             ta.addEventListener('click', (e) => {
                 const i = extraEls.indexOf(refs);

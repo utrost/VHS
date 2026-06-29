@@ -64,6 +64,7 @@ control.
 | `text` (positional) | Inline text to render. Omit if using `--file`. |
 | `output` (positional) | Output SVG path (required). |
 | `--file`, `-f PATH` | Read input text from a file. |
+| `--frames PATH` | Render several independently-positioned text blocks from a JSON file (see *Multiple text frames* below). Requires `--paper-size`; replaces the positional text / `--file`. |
 | `--font NAME` | Glyph subdirectory under `glyphs/` (e.g. `font1`). |
 
 ### Page & layout (the important ones)
@@ -240,6 +241,33 @@ or `--lines-per-page` on a long file.
 | `--no-bezier` | Ignore Bezier paths stored in the glyph JSON. |
 | `--no-normalize` | Ignore normalized strokes stored in the glyph JSON. |
 
+### Multiple text frames (`--frames`)
+
+Place more than one independently-positioned block on a page — a heading
+box plus a body column, a margin note, two columns. Pass a JSON file:
+
+```json
+{
+  "frames": [
+    { "text": "Reisetagebuch",       "start_x": 20, "start_y": 20, "max_width": 120 },
+    { "text": "Heute war ein …",      "start_x": 20, "start_y": 45, "max_width": 100 },
+    { "text": "Notiz am Rand",        "start_x": 130, "start_y": 45, "max_width": 60 }
+  ]
+}
+```
+
+```bash
+python3 assembler/assembler.py --frames frames.json out.svg \
+    --font font1 --paper-size A4 --margin 15 --line-height-mm 7
+```
+
+Each frame's `start_x` / `start_y` / `max_width` are mm and default like
+the single-block flags; every frame wraps to its own column. Global
+options (font, line height, spacing, colour, realism) apply to all
+frames. Requires `--paper-size`; not combinable with `--paginate` /
+`--report`. The web GUI's **➕ Frame** mode builds the same structure —
+see the GUI guide. Full design notes: `docs/U7_TEXT_FRAMES_PLAN.md`.
+
 ---
 
 ## 4. Recipes
@@ -387,6 +415,16 @@ Selecting a paper size requires either "Line Height (mm)" or
 "Lines / Page"; leaving paper size on "Auto-fit" falls back to
 bounding-box output for quick previews. Pagination and `--report` are
 CLI-only — the GUI shows a single live preview.
+
+**Edit on page (WYSIWYG).** With a paper size selected, the **✎ Edit on
+page** button turns the rendered page into the editing surface: type
+directly on the page, drag handles to set the text position / column
+width / margin (each writes the matching sidebar field), click the
+handwriting to place the caret on a letter, and read off how many lines
+fit (with an overflow warning). The **➕ Frame** button adds more
+independently-positioned blocks — the same layout you can drive from the
+CLI with `--frames`. Full walkthrough in the Web GUI guide
+(`docs/GUIDE_ASSEMBLER_GUI.md` §6).
 
 ---
 
