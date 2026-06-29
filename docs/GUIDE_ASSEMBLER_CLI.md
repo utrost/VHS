@@ -205,7 +205,54 @@ CLI flags still override anything in the file.
 
 ---
 
-## 10. How to refresh the screenshots in this guide
+## 10. Multiple text frames (`--frames`)
+
+Sometimes one page needs more than one independently-positioned block —
+a heading box plus a body column, a margin note, two columns. Describe
+each block in a JSON file and pass it with `--frames`:
+
+```json
+{
+  "frames": [
+    { "text": "Reisetagebuch",
+      "start_x": 20, "start_y": 20, "max_width": 120 },
+    { "text": "Heute war ein ruhiger Morgen. Ich sass lange am Fenster.",
+      "start_x": 20, "start_y": 45, "max_width": 100 },
+    { "text": "Notiz am Rand",
+      "start_x": 130, "start_y": 45, "max_width": 60 }
+  ]
+}
+```
+
+```bash
+python3 assembler/assembler.py --frames frames.json output/page.svg \
+    --font font1 --paper-size A4 --margin 15 --line-height-mm 7 --seed 42
+```
+
+Each frame field is in millimetres: `text` (required), `start_x`,
+`start_y`, `max_width` (these default to the margin / page width, exactly
+like the single-block flags). Every frame wraps to its own `max_width`
+column. A bare top-level JSON array works too (the `{"frames": [...]}`
+wrapper is optional).
+
+Notes:
+
+- `--frames` **requires `--paper-size`** (positions are mm) and is
+  mutually exclusive with the positional text / `--file`.
+- Global options — font, line height, spacing, colour, realism, stroke —
+  apply to all frames. (Per-frame typography is a possible future
+  extension.)
+- Works with `--format png` / `--format pdf`. Not combinable with
+  `--paginate` (a frame layout is one positioned page).
+- `--report` gives a **per-frame** fit summary (words, lines, content vs
+  available height, and an overflow flag) instead of rendering — add
+  `--report-format json` for a machine-readable version.
+- The web GUI's **➕ Frame** mode (GUI guide §6) builds and sends exactly
+  this structure, so a layout designed on the page is reproducible here.
+
+---
+
+## 11. How to refresh the screenshots in this guide
 
 The PNGs in `docs/img/cli-*.png` are produced by
 `docs/tools/capture_screenshots.py`. Re-run it after a visible CLI

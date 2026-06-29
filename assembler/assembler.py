@@ -522,6 +522,7 @@ class Typesetter:
         self._shape_source_idx: List[int] = []
         self._shape_frame_idx: List[int] = []
         self._frame_coverage: List[Dict[str, Any]] = []
+        self._frame_meta: List[Dict[str, Any]] = []
 
 
     @staticmethod
@@ -1112,6 +1113,7 @@ class Typesetter:
         """
         combined_shapes, combined_bezier, combined_line_info = [], [], []
         combined_source_idx, combined_frame_idx, coverage = [], [], []
+        frame_meta = []
 
         for b, frame in enumerate(frames):
             sx = float(frame.get('start_x', 0.0))
@@ -1132,6 +1134,11 @@ class Typesetter:
             line_info = self._line_info
             source_idx = self._shape_source_idx
             coverage.append(self._coverage_report)
+            frame_meta.append({
+                'start_x': sx, 'start_y': sy, 'max_width': mw_mm,
+                'lines': sum(1 for li in line_info if li.get('start_idx') is not None),
+                'words': len(self._word_info),
+            })
 
             # Content-min over every rendered point (strokes + bezier control
             # points), matching the renderer's bbox so the bake aligns exactly.
@@ -1188,6 +1195,7 @@ class Typesetter:
         self._shape_source_idx = combined_source_idx
         self._shape_frame_idx = combined_frame_idx
         self._frame_coverage = coverage
+        self._frame_meta = frame_meta
         return combined_shapes
 
     def _apply_balanced_wrap(self, compiled_shapes, bezier_data, max_width,
@@ -2087,6 +2095,59 @@ if __name__ == "__main__":
             seed=args.seed, fallbacks=fallbacks,
             glyph_slant_jitter=args.glyph_slant_jitter, glyph_y_jitter=glyph_y_jitter_glyph)
         logger.info(f"Frames: {len(norm_frames)} frame(s), {len(frame_shapes)} glyphs total")
+
+        # --report: per-frame fit summary instead of rendering.
+        if args.report:
+            advance_mm = line_height_mm * args.line_spacing
+            total_missing = 0
+            frames_report = []
+            any_overflow = False
+            for idx, meta in enumerate(typesetter._frame_meta):
+                content_h = meta['lines'] * advance_mm
+                avail_h = page_h - meta['start_y'] - args.margin
+                overflow = content_h > avail_h + 0.01
+                any_overflow = any_overflow or overflow
+                cov = (typesetter._frame_coverage[idx]
+                       if idx < len(typesetter._frame_coverage) else {})
+                total_missing += cov.get('missing_count', 0) or 0
+                frames_report.append({
+                    'frame': idx,
+                    'start_x_mm': meta['start_x'], 'start_y_mm': meta['start_y'],
+                    'max_width_mm': meta['max_width'],
+                    'words': meta['words'], 'lines': meta['lines'],
+                    'content_h_mm': round(content_h, 2),
+                    'avail_h_mm': round(avail_h, 2),
+                    'overflow': overflow,
+                })
+            summary = {
+                'page': {'size': args.paper_size, 'orientation': args.orientation,
+                         'width_mm': page_w, 'height_mm': page_h, 'margin_mm': args.margin},
+                'layout': {'line_height_mm': line_height_mm,
+                           'line_spacing': args.line_spacing,
+                           'effective_advance_mm': advance_mm},
+                'frames': frames_report,
+                'coverage': {'missing_count': total_missing},
+            }
+            if args.report_format == 'json':
+                print(json.dumps(summary, indent=2, default=str))
+            else:
+                pg = summary['page']
+                print(f"Page: {pg['size']} {pg['orientation']} "
+                      f"({pg['width_mm']}×{pg['height_mm']} mm), margin {pg['margin_mm']} mm")
+                print(f"Layout: line {line_height_mm:.2f} mm × spacing "
+                      f"{args.line_spacing:.2f} → advance {advance_mm:.2f} mm")
+                for fr in frames_report:
+                    flag = "  ⚠ OVERFLOWS" if fr['overflow'] else ""
+                    print(f"Frame {fr['frame']}: {fr['words']} words, {fr['lines']} lines, "
+                          f"{fr['content_h_mm']:.1f}/{fr['avail_h_mm']:.1f} mm at "
+                          f"({fr['start_x_mm']:.0f},{fr['start_y_mm']:.0f}){flag}")
+                if total_missing:
+                    print(f"Coverage: {total_missing} missing codepoint occurrence(s)")
+                else:
+                    print("Coverage: all characters covered")
+            if args.strict_glyphs and total_missing > 0:
+                exit(2)
+            exit(0)
 
         renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth,
                             color=args.color, stroke_width=args.stroke_width,

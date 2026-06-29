@@ -100,9 +100,55 @@ font is missing.
 
 ---
 
-## 6. CLI / GUI parity
+## 6. Edit on page (WYSIWYG)
 
-Every non-paginate flag has a matching GUI field. The only documented
+Click **✎ Edit on page** in the preview toolbar to turn the rendered
+page into the editing surface. The button needs a **paper size** selected
+(positions are in millimetres); in auto-fit mode it shows a hint instead.
+
+What you get on the page:
+
+- **Type on the page.** A transparent text layer sits exactly over the
+  rendered handwriting — type into it and the handwriting re-renders live
+  underneath. It mirrors the sidebar **Text** box (they stay in sync).
+- **Drag to position.** A square **move** handle at the text block's
+  top-left sets **start-x / start-y**; a round **width** handle on the
+  right edge sets **max-width**; a purple handle at the top-centre of the
+  page sets the **margin**. A small label shows the live mm values. Every
+  gesture writes the matching sidebar field — there's one source of truth.
+- **Click-to-caret.** Click anywhere on the handwriting to place the text
+  caret at that letter (it snaps to the nearest glyph), so editing lands
+  where you point rather than where a hidden textarea would guess.
+- **Ruled line guides** show the writing lines at the current pitch.
+- **Fit chip** (top-left of the preview) has **line-height** and
+  **spacing** `−/+` steppers and a live **"≈ N lines fit"** readout. If the
+  text runs past the writable area the chip warns **"overflows by ~K
+  lines"** and the text block turns amber.
+
+### Multiple text frames
+
+Click **➕ Frame** to add another independently-positioned block — a
+heading box plus a body column, a margin note, two columns, etc. Each
+extra frame is drawn in green with its own:
+
+- draggable **box** (move + width handles) writing that frame's
+  start-x / start-y / max-width,
+- transparent **textarea** (type on it; click-to-caret works per frame),
+- **label** (`Frame 2: x, y mm`) and a red **✕** to delete it.
+
+Frame 0 stays the sidebar-driven block. Overlap is allowed (later frames
+draw on top) but intersecting frames are flagged with an amber dashed
+outline. Deleting the last extra frame reverts to the single-text render.
+
+Under the hood the editor sends the same `frames` payload the CLI's
+`--frames` flag uses (see the CLI guide §11), so a multi-frame layout you
+build here is reproducible from the command line.
+
+---
+
+## 7. CLI / GUI parity
+
+Every non-paginate flag has a matching GUI field. The documented
 CLI-only features are:
 
 - `--paginate` (the GUI shows a single preview).
@@ -110,12 +156,18 @@ CLI-only features are:
   not a rendered file).
 - `--strict-glyphs` (CI gate — same reason).
 
+Conversely, **Edit on page** (drag-to-position, click-to-caret, on-page
+typing) is a GUI-only *interaction* — it introduces no capability the CLI
+lacks: every gesture resolves to an existing flag, and multi-frame layouts
+map to `--frames`. See `docs/ROADMAP.md` → *Ground rules* and the
+`U7` entries.
+
 When a new flag lands on the CLI, a matching GUI input lands in the
-same pull request. See `docs/ROADMAP.md` → *Ground rules*.
+same pull request.
 
 ---
 
-## 7. How to refresh the screenshots in this guide
+## 8. How to refresh the screenshots in this guide
 
 Screenshots in this guide are captured by
 `docs/tools/capture_screenshots.py`. Start the server in one terminal,

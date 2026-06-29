@@ -485,6 +485,74 @@ class TestErrorHandling(CLITestBase):
         g = root.find(f"{{{SVG_NS}}}g")
         self.assertEqual(g.get("stroke"), "#ff0000")
 
+    # ── Multiple text frames (--frames) ──
+
+    def _run_frames(self, frames, extra, out_name="frames_out.svg"):
+        """Run --frames with the mock font; returns (rc, stdout, stderr, out_path)."""
+        fpath = os.path.join(self.output_dir, "frames.json")
+        with open(fpath, "w", encoding="utf-8") as f:
+            json.dump({"frames": frames}, f)
+        out = self._out(out_name)
+        real_glyphs_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "glyphs"))
+        mock_link = os.path.join(real_glyphs_dir, "MockFont")
+        link_created = False
+        if not os.path.exists(mock_link):
+            os.symlink(self.font_dir, mock_link)
+            link_created = True
+        args = ["--frames", fpath, out, "--font", "MockFont",
+                "--paper-size", "A4", "--line-height-mm", "10"] + extra
+        try:
+            rc, so, se = self._run(args, expect_fail=True)  # don't assert rc here
+        finally:
+            if link_created and os.path.islink(mock_link):
+                os.unlink(mock_link)
+        return rc, so, se, out
+
+    def test_frames_render(self):
+        rc, so, se, out = self._run_frames(
+            [{"text": "a.", "start_x": 20, "start_y": 20, "max_width": 50},
+             {"text": "a.", "start_x": 20, "start_y": 80, "max_width": 50}], [])
+        self.assertEqual(rc, 0, se)
+        self.assertTrue(os.path.exists(out))
+        root = self._parse_svg(out)
+        self.assertGreater(self._count_paths(root), 0)
+        # CLI frames output stays lean — no per-glyph data tags.
+        self.assertNotIn("data-frame", open(out, encoding="utf-8").read())
+
+    def test_frames_report_json(self):
+        rc, so, se, out = self._run_frames(
+            [{"text": "a.", "start_x": 20, "start_y": 20, "max_width": 50},
+             {"text": "a.", "start_x": 20, "start_y": 80, "max_width": 50}],
+            ["--report", "--report-format", "json"], out_name="frames_report.svg")
+        self.assertEqual(rc, 0, se)
+        data = json.loads(so)
+        self.assertEqual(len(data["frames"]), 2)
+        self.assertIn("content_h_mm", data["frames"][0])
+        self.assertIn("overflow", data["frames"][0])
+        self.assertFalse(os.path.exists(out))  # report mode writes no SVG
+
+    def test_frames_requires_paper_size(self):
+        # Symlink the mock font so resolution succeeds and we reach the
+        # paper-size check (which is what we're asserting).
+        fpath = os.path.join(self.output_dir, "frames_np.json")
+        with open(fpath, "w", encoding="utf-8") as f:
+            json.dump([{"text": "a.", "start_x": 10, "start_y": 10}], f)
+        real_glyphs_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "glyphs"))
+        mock_link = os.path.join(real_glyphs_dir, "MockFont")
+        link_created = False
+        if not os.path.exists(mock_link):
+            os.symlink(self.font_dir, mock_link)
+            link_created = True
+        try:
+            rc, _, stderr = self._run(
+                ["--frames", fpath, self._out("np.svg"), "--font", "MockFont"],
+                expect_fail=True)
+        finally:
+            if link_created and os.path.islink(mock_link):
+                os.unlink(mock_link)
+        self.assertNotEqual(rc, 0)
+        self.assertIn("paper", stderr.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
