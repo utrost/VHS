@@ -175,6 +175,46 @@ class TestAssembler(unittest.TestCase):
             shapes, page_width_mm=210.0, page_height_mm=297.0)
         self.assertNotIn('data-ci', svg_plain)
 
+    def test_typeset_frames_positions_and_parallel(self):
+        """Frames are baked to their own origins; parallel arrays line up."""
+        scale = 0.1
+        frames = [
+            {'text': 'a.', 'start_x': 10, 'start_y': 10, 'max_width': 50},
+            {'text': 'a.', 'start_x': 10, 'start_y': 40, 'max_width': 50},
+        ]
+        shapes = self.typesetter.typeset_frames(frames, scale, seed=1)
+        self.assertEqual(len(shapes), 4)  # 2 glyphs per frame
+        self.assertEqual(self.typesetter._shape_frame_idx, [0, 0, 1, 1])
+        self.assertEqual(len(self.typesetter._shape_source_idx), 4)
+
+        def frame_top_mm(fi):
+            ys = [p['y'] for si, sh in enumerate(shapes)
+                  if self.typesetter._shape_frame_idx[si] == fi
+                  for st in sh for p in st]
+            return min(ys) * scale
+
+        self.assertAlmostEqual(frame_top_mm(0), 10.0, places=4)
+        self.assertAlmostEqual(frame_top_mm(1), 40.0, places=4)
+
+    def test_frames_render_data_frame_and_neutral_transform(self):
+        """Prebaked render tags frames and uses a zero-origin transform."""
+        scale = 0.1
+        frames = [
+            {'text': 'a.', 'start_x': 10, 'start_y': 10, 'max_width': 50},
+            {'text': 'a.', 'start_x': 10, 'start_y': 40, 'max_width': 50},
+        ]
+        shapes = self.typesetter.typeset_frames(frames, scale)
+        renderer = Renderer()
+        svg = renderer.generate_svg_string(
+            shapes, page_width_mm=210.0, page_height_mm=297.0,
+            explicit_scale=scale, prebaked=True,
+            line_info=self.typesetter._line_info,
+            shape_source_idx=self.typesetter._shape_source_idx,
+            shape_frame_idx=self.typesetter._shape_frame_idx)
+        self.assertIn('data-frame="0"', svg)
+        self.assertIn('data-frame="1"', svg)
+        self.assertIn('translate(0.00,0.00)', svg)  # neutral baked origin
+
     def test_renderer_svg_generation(self):
         output_file = os.path.join(script_dir, "test_output_unittest.svg")
         shapes = self.typesetter.typeset_text("a.")
