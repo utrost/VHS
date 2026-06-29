@@ -40,6 +40,26 @@ BASE_GLYPHS_DIR = os.path.normpath(os.path.join(script_dir, "..", "glyphs"))
 _library_cache: Dict[str, Tuple[float, GlyphLibrary]] = {}
 
 
+def _merge_coverage(per_frame):
+    """Combine per-frame coverage reports into one for the GUI panel.
+
+    Sums occurrence counts per codepoint across frames; keeps the first
+    context/replacement seen for each.
+    """
+    merged = {"substituted": {}, "missing": {}, "missing_count": 0, "total_count": 0}
+    for rep in (per_frame or []):
+        merged["missing_count"] += rep.get("missing_count", 0) or 0
+        merged["total_count"] += rep.get("total_count", 0) or 0
+        for key in ("substituted", "missing"):
+            for cp, info in (rep.get(key) or {}).items():
+                bucket = merged[key]
+                if cp not in bucket:
+                    bucket[cp] = dict(info)
+                else:
+                    bucket[cp]["count"] = bucket[cp].get("count", 0) + info.get("count", 0)
+    return merged
+
+
 def _latest_mtime(path: str) -> float:
     latest = 0.0
     try:
@@ -142,7 +162,8 @@ def api_generate():
     data = request.get_json(force=True)
 
     text = data.get("text", "")
-    if not text.strip():
+    has_frames = isinstance(data.get("frames"), list) and bool(data.get("frames"))
+    if not text.strip() and not has_frames:
         return jsonify({"error": "No text provided"}), 400
 
     font_name = data.get("font", "")
@@ -252,6 +273,47 @@ def api_generate():
             glyph_y_jitter_glyph = glyph_y_jitter_mm / explicit_scale
 
     fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
+
+    # ── Multiple text frames (U7 Phase 2b) ──────────────────────────────
+    # When the payload carries a non-empty `frames` list, render several
+    # independently-positioned blocks via typeset_frames + a prebaked render.
+    # Each glyph is tagged data-frame/data-ci for per-frame click-to-caret.
+    frames_in = data.get("frames")
+    if isinstance(frames_in, list) and frames_in:
+        if explicit_scale is None:
+            return jsonify({"error": "frames require a paper size (positions are mm)"}), 400
+        norm_frames = []
+        for fr in frames_in:
+            fx = fr.get("start_x", margin)
+            norm_frames.append({
+                "text": fr.get("text", ""),
+                "start_x": fx,
+                "start_y": fr.get("start_y", margin),
+                "max_width": fr.get("max_width", page_w - margin - fx),
+            })
+        frame_shapes = typesetter.typeset_frames(
+            norm_frames, explicit_scale,
+            auto_kern=auto_kern, line_spacing=line_spacing,
+            kern_aggressiveness=kern_aggressiveness, wrap_mode=wrap_mode,
+            space_width_override=space_width_override, space_jitter=space_jitter,
+            seed=seed, fallbacks=fallbacks,
+            glyph_slant_jitter=glyph_slant_jitter, glyph_y_jitter=glyph_y_jitter_glyph)
+
+        renderer = Renderer(jitter_amount=jitter, smoothing=smooth, color=color,
+                            stroke_width=stroke_width, seed=seed)
+        svg_str = renderer.generate_svg_string(
+            frame_shapes, page_width_mm=page_w, page_height_mm=page_h, margin_mm=margin,
+            explicit_scale=explicit_scale, prebaked=True,
+            line_info=typesetter._line_info,
+            line_drift_angle_deg=line_drift_angle, line_drift_y=line_drift_y_glyph,
+            drift_seed=seed,
+            shape_source_idx=typesetter._shape_source_idx,
+            shape_frame_idx=typesetter._shape_frame_idx)
+
+        response = Response(svg_str, mimetype="image/svg+xml")
+        response.headers['X-Glyph-Coverage'] = json.dumps(
+            _merge_coverage(typesetter._frame_coverage), default=str)
+        return response
 
     shapes = typesetter.typeset_text(text,
                                      auto_kern=auto_kern, line_spacing=line_spacing,
