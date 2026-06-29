@@ -107,7 +107,7 @@
         class="flex-none p-4 bg-white border-b border-slate-200 shadow-sm z-10 flex flex-wrap gap-4 items-end justify-between">
         <div>
             <h1 class="text-xl font-bold text-slate-900 leading-tight">VHS Batch Collector</h1>
-            <p class="text-xs text-slate-500">Zeichne Varianten. Enter zum Speichern. · <a href="https://simiono.com/VHS" class="text-blue-500 hover:text-blue-700 transition">by simiono</a></p>
+            <p class="text-xs text-slate-500"><a href="/" target="_top" class="text-blue-500 hover:text-blue-700 transition">← Assembler</a> · Zeichne Varianten. Enter zum Speichern. · <a href="https://simiono.com/VHS" class="text-blue-500 hover:text-blue-700 transition">by simiono</a></p>
         </div>
 
         <div class="flex gap-4 items-end">
@@ -1924,12 +1924,39 @@
             const filename = `${safeName}.json`;
             const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
 
-            // GC7: direct save to folder handle, falls back to download.
+            // Save order: (1) server save when served by the Assembler — this
+            // is the round trip, the glyph lands in glyphs/<font>/ and the
+            // Assembler picks it up immediately; (2) GC7 direct folder handle;
+            // (3) browser download.
             (async () => {
                 let savedDirect = false;
-                if (fontDirHandle) {
+                let where = '';
+
+                if (location.protocol.startsWith('http')) {
+                    try {
+                        const res = await fetch('/api/save-glyph', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                font: FONT_FAMILY, filename, glyph: exportData })
+                        });
+                        if (res.ok) {
+                            const j = await res.json();
+                            savedDirect = true;
+                            where = `→ ${j.path || ('glyphs/' + FONT_FAMILY + '/' + filename)}`;
+                        } else {
+                            const j = await res.json().catch(() => ({}));
+                            console.warn('Server save rejected:', j.error);
+                        }
+                    } catch (e) {
+                        console.warn('Server save failed, falling back', e);
+                    }
+                }
+
+                if (!savedDirect && fontDirHandle) {
                     try {
                         savedDirect = await saveBlobToFolder(filename, blob);
+                        if (savedDirect) where = `→ ${fontDirHandle.name}/${filename}`;
                     } catch (e) {
                         console.warn('Direct save failed, falling back to download', e);
                     }
@@ -1943,12 +1970,10 @@
                     a.click();
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
+                    where = `Gespeichert: ${filename}`;
                 }
 
                 clearAll(); // Also clears auto-save
-                const where = savedDirect
-                    ? `→ ${fontDirHandle.name}/${filename}`
-                    : `Gespeichert: ${filename}`;
                 document.getElementById('status').innerText = where;
                 document.getElementById('charInput').value = '';
 

@@ -13,6 +13,7 @@ Usage:
 
 import os
 import sys
+import re
 import json
 import logging
 from typing import Dict, Tuple
@@ -419,6 +420,50 @@ def api_coverage():
     fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
     _, report = scan_text_coverage(text, lib, fallbacks=fallbacks)
     return jsonify(report)
+
+
+# Glyph save (GlyphCollector → Assembler round trip). The font name and
+# filename are validated to confine writes strictly to glyphs/<font>/, and
+# the realpath is double-checked against the glyphs root.
+_GLYPH_FONT_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+_GLYPH_FILE_RE = re.compile(r"[0-9A-Fa-f]{2,256}\.json")
+
+
+@app.route("/api/save-glyph", methods=["POST"])
+def api_save_glyph():
+    """Persist one captured glyph JSON into glyphs/<font>/<filename>.
+
+    Body: {"font": "<subdir>", "filename": "<HEX>.json", "glyph": {...}}.
+    The GlyphLibrary cache is mtime-based, so the next render picks up the
+    new glyph automatically.
+    """
+    data = request.get_json(force=True)
+    font = (data.get("font") or "").strip()
+    filename = (data.get("filename") or "").strip()
+    glyph = data.get("glyph")
+
+    if not _GLYPH_FONT_RE.fullmatch(font):
+        return jsonify({"error": "invalid font name (use letters, digits, _ or -)"}), 400
+    if not _GLYPH_FILE_RE.fullmatch(filename):
+        return jsonify({"error": "invalid filename (expected hex .json)"}), 400
+    if not isinstance(glyph, dict) or "variants" not in glyph:
+        return jsonify({"error": "glyph must be an object with a 'variants' array"}), 400
+
+    base_real = os.path.realpath(BASE_GLYPHS_DIR)
+    font_dir = os.path.join(base_real, font)
+    target_real = os.path.realpath(os.path.join(font_dir, filename))
+    if os.path.commonpath([base_real, target_real]) != base_real:
+        return jsonify({"error": "path escapes glyphs directory"}), 400
+
+    try:
+        os.makedirs(font_dir, exist_ok=True)
+        with open(target_real, "w", encoding="utf-8") as f:
+            json.dump(glyph, f, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        return jsonify({"error": f"write failed: {exc}"}), 500
+
+    return jsonify({"ok": True, "font": font, "filename": filename,
+                    "path": f"glyphs/{font}/{filename}"})
 
 
 if __name__ == "__main__":

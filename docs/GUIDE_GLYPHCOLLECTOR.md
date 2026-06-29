@@ -8,18 +8,31 @@ the workflow from an empty grid to a usable font.
 
 ## 1. Open the Collector
 
-Two ways to launch:
+Three ways to launch:
 
-- **Via the Assembler server** (recommended — unlocks the Assembler
-  live-preview panel):
+- **From the Assembler UI (recommended)** — the Assembler page has a
+  **✍ Capture glyphs** tab in the top bar that embeds the Collector
+  right next to **✦ Assemble**. Capture a glyph, switch back, and the
+  Assembler's font list refreshes so your new glyph is ready to typeset —
+  a full capture → assemble round trip in one window.
   ```bash
   ./vhs-gui.sh        # or python3 assembler/server.py
-  # open http://localhost:5001/collector
+  # open http://localhost:5001  →  click "✍ Capture glyphs"
   ```
+- **Direct URL** — `http://localhost:5001/collector` (has a
+  **← Assembler** link back).
 - **As a static file** — open
   `GlyphCollectorUI/GlyphCollectorUI.html` directly in a Chromium-family
-  browser. The live preview (👁) needs the server, but everything else
-  works.
+  browser. The live preview (👁) and server-save need the server, but
+  everything else works.
+
+> **The round trip.** When the Collector is served by the Assembler
+> (either tab or the `/collector` URL), **Save writes the glyph straight
+> into `glyphs/<font>/` on the server** via `/api/save-glyph` — no folder
+> connect, no download, and it works in every browser. The target folder
+> is the **Font** name in Settings (⚙️), so set it to the font you want to
+> extend (e.g. `font1`). The Assembler reloads that font automatically on
+> its next render.
 
 ![Empty Collector UI](img/collector-empty.png)
 
@@ -49,6 +62,12 @@ With a folder connected:
 Firefox and Safari don't implement the File System Access API yet —
 the button is still visible but saves will fall back to per-file
 downloads. Chrome, Edge, and Opera are the supported connect path.
+
+> **Note:** when the Collector is served by the Assembler, you don't need
+> **📁 Connect** at all — Save persists to the server's `glyphs/<font>/`
+> directly (see §1, *The round trip*). The folder picker is only for the
+> static-file (`file://`) workflow. Save order is: server → connected
+> folder → download.
 
 ---
 

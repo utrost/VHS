@@ -31,6 +31,12 @@ CLI guide:
 The right-hand **preview** area shows the currently rendered SVG and
 updates live as you change controls.
 
+The top bar has two tabs: **✦ Assemble** (this view) and **✍ Capture
+glyphs**, which embeds the GlyphCollector in the same window. Capture a
+glyph there and switch back — the font list refreshes automatically and
+your new glyph is ready to typeset (a capture → assemble round trip; see
+the GlyphCollector guide for details).
+
 ---
 
 ## 2. Live preview
