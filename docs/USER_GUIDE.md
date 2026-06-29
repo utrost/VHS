@@ -264,9 +264,10 @@ python3 assembler/assembler.py --frames frames.json out.svg \
 Each frame's `start_x` / `start_y` / `max_width` are mm and default like
 the single-block flags; every frame wraps to its own column. Global
 options (font, line height, spacing, colour, realism) apply to all
-frames. Requires `--paper-size`; not combinable with `--paginate` /
-`--report`. The web GUI's **➕ Frame** mode builds the same structure —
-see the GUI guide. Full design notes: `docs/U7_TEXT_FRAMES_PLAN.md`.
+frames. Requires `--paper-size`; not combinable with `--paginate`.
+`--report` gives a per-frame fit summary (words/lines/overflow). The web
+GUI's **➕ Frame** mode builds the same structure — see the GUI guide.
+Full design notes: `docs/U7_TEXT_FRAMES_PLAN.md`.
 
 ---
 

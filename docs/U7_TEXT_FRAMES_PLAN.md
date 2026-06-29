@@ -12,8 +12,9 @@ and `/api/generate` frames support, with tests). Slice 2 = the multi-frame
 editor — an additive "➕ Frame" layer over the single-frame editor: each extra
 frame gets its own draggable box, transparent textarea, width handle, label,
 and delete button, sends the `frames` payload, supports per-frame
-click-to-caret and overflow. Slice 3 (overlap warning, per-frame `--report`,
-optional per-frame typography) remains proposed.
+click-to-caret and overflow. Slice 3 mostly shipped (overlap/collision
+warning + per-frame `--report`); only optional per-frame typography
+overrides remain proposed.
 
 ---
 

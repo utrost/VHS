@@ -362,8 +362,9 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > `/api/generate` support, with tests) **and** the multi-frame editor — an
 > additive "➕ Frame" layer giving each extra frame its own draggable box,
 > transparent textarea, width handle, label, delete button, per-frame
-> click-to-caret and overflow. Slice 3 (overlap warning, per-frame
-> `--report`, optional per-frame typography) remains proposed.
+> click-to-caret and overflow. Slice 3 mostly shipped (collision/overlap
+> warning between frames + per-frame `--report`); only optional per-frame
+> typography overrides remain proposed.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image

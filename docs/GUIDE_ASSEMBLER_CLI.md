@@ -242,8 +242,11 @@ Notes:
 - Global options — font, line height, spacing, colour, realism, stroke —
   apply to all frames. (Per-frame typography is a possible future
   extension.)
-- Works with `--format png` / `--format pdf`. Does not combine with
-  `--paginate` (a frame layout is one positioned page) or `--report`.
+- Works with `--format png` / `--format pdf`. Not combinable with
+  `--paginate` (a frame layout is one positioned page).
+- `--report` gives a **per-frame** fit summary (words, lines, content vs
+  available height, and an overflow flag) instead of rendering — add
+  `--report-format json` for a machine-readable version.
 - The web GUI's **➕ Frame** mode (GUI guide §6) builds and sends exactly
   this structure, so a layout designed on the page is reproducible here.
 
