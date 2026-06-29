@@ -519,6 +519,9 @@ class Typesetter:
         self._line_info: List[Dict[str, Any]] = []
         self._word_info: List[Dict[str, Any]] = []
         self._coverage_report: Dict[str, Any] = {}
+        self._shape_source_idx: List[int] = []
+        self._shape_frame_idx: List[int] = []
+        self._frame_coverage: List[Dict[str, Any]] = []
 
 
     @staticmethod
@@ -1086,6 +1089,107 @@ class Typesetter:
                     paragraph_idx += 1
                     break
 
+    def typeset_frames(self, frames, scale,
+                       override_line_height=None, auto_kern=False, line_spacing=1.0,
+                       kern_aggressiveness=0.5, wrap_mode='balanced',
+                       space_width_override=None, space_jitter=0.0, seed=None,
+                       fallbacks=None, glyph_slant_jitter=0.0, glyph_y_jitter=0.0):
+        """Typeset several independently-positioned frames into one shared
+        glyph-coordinate space, with each frame's page position *baked* into
+        the coordinates (U7 Phase 2b — see docs/U7_TEXT_FRAMES_PLAN.md).
+
+        frames: list of {'text', 'start_x'(mm), 'start_y'(mm), 'max_width'(mm)}.
+        scale:  mm per glyph unit (the renderer's explicit_scale).
+
+        Each frame is typeset on its own (so it wraps to its own column), then
+        translated by (start/scale − content-min) so its content-min lands at
+        the frame origin. The renderer is then called with a neutral outer
+        transform (origin 0, content-offset 0) — see ``prebaked`` there.
+
+        Sets self._compiled_beziers / _line_info / _shape_source_idx /
+        _shape_frame_idx / _frame_coverage to the combined results and returns
+        the combined shapes list.
+        """
+        combined_shapes, combined_bezier, combined_line_info = [], [], []
+        combined_source_idx, combined_frame_idx, coverage = [], [], []
+
+        for b, frame in enumerate(frames):
+            sx = float(frame.get('start_x', 0.0))
+            sy = float(frame.get('start_y', 0.0))
+            mw_mm = frame.get('max_width')
+            max_width = (mw_mm / scale) if (mw_mm and mw_mm > 0) else None
+            frame_seed = (seed + b) if seed is not None else None
+
+            shapes = self.typeset_text(
+                frame.get('text', ''),
+                override_line_height=override_line_height, auto_kern=auto_kern,
+                line_spacing=line_spacing, max_width=max_width,
+                kern_aggressiveness=kern_aggressiveness, wrap_mode=wrap_mode,
+                space_width_override=space_width_override, space_jitter=space_jitter,
+                seed=frame_seed, fallbacks=fallbacks,
+                glyph_slant_jitter=glyph_slant_jitter, glyph_y_jitter=glyph_y_jitter)
+            bezier = self._compiled_beziers
+            line_info = self._line_info
+            source_idx = self._shape_source_idx
+            coverage.append(self._coverage_report)
+
+            # Content-min over every rendered point (strokes + bezier control
+            # points), matching the renderer's bbox so the bake aligns exactly.
+            min_x = min_y = float('inf')
+            for shape in shapes:
+                for stroke in shape:
+                    for p in stroke:
+                        if p['x'] < min_x: min_x = p['x']
+                        if p['y'] < min_y: min_y = p['y']
+            for bz in bezier:
+                if bz:
+                    for bstroke in bz:
+                        for seg in bstroke:
+                            for key in ('p0', 'p1', 'p2', 'p3'):
+                                pt = seg[key]
+                                if pt['x'] < min_x: min_x = pt['x']
+                                if pt['y'] < min_y: min_y = pt['y']
+            if min_x == float('inf'):
+                continue  # empty frame — nothing to place
+
+            dx = sx / scale - min_x
+            dy = sy / scale - min_y
+            for shape in shapes:
+                for stroke in shape:
+                    for p in stroke:
+                        p['x'] += dx
+                        p['y'] += dy
+            for bz in bezier:
+                if bz:
+                    for bstroke in bz:
+                        for seg in bstroke:
+                            for key in ('p0', 'p1', 'p2', 'p3'):
+                                seg[key]['x'] += dx
+                                seg[key]['y'] += dy
+
+            base = len(combined_shapes)   # shape-index offset for this frame
+            for info in line_info:
+                ni = dict(info)
+                if ni.get('baseline_y') is not None:
+                    ni['baseline_y'] += dy
+                if ni.get('start_idx') is not None:
+                    ni['start_idx'] += base
+                if ni.get('end_idx') is not None:
+                    ni['end_idx'] += base
+                combined_line_info.append(ni)
+
+            combined_shapes.extend(shapes)
+            combined_bezier.extend(bezier)
+            combined_source_idx.extend(source_idx)
+            combined_frame_idx.extend([b] * len(shapes))
+
+        self._compiled_beziers = combined_bezier
+        self._line_info = combined_line_info
+        self._shape_source_idx = combined_source_idx
+        self._shape_frame_idx = combined_frame_idx
+        self._frame_coverage = coverage
+        return combined_shapes
+
     def _apply_balanced_wrap(self, compiled_shapes, bezier_data, max_width,
                              space_width, line_advance):
         """Rewrite line breaks using a minimum-raggedness DP.
@@ -1338,9 +1442,15 @@ class Renderer:
                      line_drift_angle_deg: float = 0.0,
                      line_drift_y: float = 0.0,
                      drift_seed: Optional[int] = None,
-                     shape_source_idx: Optional[List[int]] = None):
+                     shape_source_idx: Optional[List[int]] = None,
+                     shape_frame_idx: Optional[List[int]] = None,
+                     prebaked: bool = False):
         """
         Generate an SVG file from compiled shapes.
+
+        When ``prebaked`` is set (multi-frame layout, U7 Phase 2b), the glyph
+        coordinates already carry their absolute page position, so the outer
+        transform is just ``scale`` with a zero origin / content-offset.
 
         When page_width_mm/page_height_mm are set, the SVG is sized to that
         fixed page and content is offset by margin_mm on all sides.
@@ -1400,10 +1510,16 @@ class Renderer:
                 # mm-based layout: caller supplies the scale (mm per glyph unit)
                 # and optional page origin. No scale-to-fit.
                 scale = explicit_scale
-                origin_x = start_x_mm if start_x_mm is not None else margin_mm
-                origin_y = start_y_mm if start_y_mm is not None else margin_mm
-                content_offset_x = min(all_x) if all_x else 0.0
-                content_offset_y = min(all_y) if all_y else 0.0
+                if prebaked:
+                    # Positions are already baked into the coordinates; render
+                    # with a neutral outer transform (just the scale).
+                    origin_x = origin_y = 0.0
+                    content_offset_x = content_offset_y = 0.0
+                else:
+                    origin_x = start_x_mm if start_x_mm is not None else margin_mm
+                    origin_y = start_y_mm if start_y_mm is not None else margin_mm
+                    content_offset_x = min(all_x) if all_x else 0.0
+                    content_offset_y = min(all_y) if all_y else 0.0
             else:
                 # Compute scale factor to fit content within the available area
                 avail_w = page_width_mm - 2 * margin_mm
@@ -1473,12 +1589,15 @@ class Renderer:
             if self.use_bezier and bezier_data and shape_idx < len(bezier_data):
                 shape_bezier = bezier_data[shape_idx]
 
-            # Tag each glyph with its source character index so the GUI can map
-            # a click on the ink back to a caret position. Wrapping in a <g>
-            # keeps the per-stroke <path>s grouped under one clickable node.
+            # Tag each glyph with its source character index (and frame index
+            # in multi-frame mode) so the GUI can map a click on the ink back to
+            # a caret position. Wrapping in a <g> keeps the per-stroke <path>s
+            # grouped under one clickable node.
             if shape_source_idx is not None and shape_idx < len(shape_source_idx):
-                parent = ET.SubElement(parent, "g", {
-                    "data-ci": str(shape_source_idx[shape_idx])})
+                attrs = {"data-ci": str(shape_source_idx[shape_idx])}
+                if shape_frame_idx is not None and shape_idx < len(shape_frame_idx):
+                    attrs["data-frame"] = str(shape_frame_idx[shape_idx])
+                parent = ET.SubElement(parent, "g", attrs)
 
             for stroke_idx, stroke in enumerate(shape):
                 stroke_bezier = None
@@ -1620,7 +1739,8 @@ class Renderer:
                             explicit_scale=None, start_x_mm=None, start_y_mm=None,
                             line_info=None, line_drift_angle_deg=0.0,
                             line_drift_y=0.0, drift_seed=None,
-                            shape_source_idx=None):
+                            shape_source_idx=None, shape_frame_idx=None,
+                            prebaked=False):
         """Generate SVG and return it as a UTF-8 string (for web serving)."""
         import io
         buf = io.BytesIO()
@@ -1633,7 +1753,9 @@ class Renderer:
                           line_drift_angle_deg=line_drift_angle_deg,
                           line_drift_y=line_drift_y,
                           drift_seed=drift_seed,
-                          shape_source_idx=shape_source_idx)
+                          shape_source_idx=shape_source_idx,
+                          shape_frame_idx=shape_frame_idx,
+                          prebaked=prebaked)
         buf.seek(0)
         return buf.read().decode("utf-8")
 
@@ -1644,6 +1766,10 @@ if __name__ == "__main__":
     parser.add_argument("text", nargs="?", help="Text to render (optional if --file is used)")
     parser.add_argument("output", help="Output SVG filename")
     parser.add_argument("--file", "-f", help="Read text from file instead of command line argument")
+    parser.add_argument("--frames", help="Path to a JSON file holding a list (or a {\"frames\": [...]}) "
+                        "of {text, start_x, start_y, max_width} blocks in mm. Renders several "
+                        "independently-positioned text frames on one page. Requires --paper-size; "
+                        "mutually exclusive with the positional text / --file.")
     parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--no-smooth", action="store_true", help="Disable spline smoothing (smoothing is on by default)")
@@ -1821,8 +1947,10 @@ if __name__ == "__main__":
             exit(1)
     elif args.text:
         input_text = args.text
+    elif args.frames:
+        input_text = ""  # frames carry their own text (handled below)
     else:
-        logger.error("No input provided. Use 'text' argument or --file.")
+        logger.error("No input provided. Use 'text' argument, --file, or --frames.")
         exit(1)
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -1921,6 +2049,71 @@ if __name__ == "__main__":
             logger.warning("--glyph-y-jitter ignored without --paper-size.")
 
     fallbacks = None if args.no_fallbacks else DEFAULT_UNICODE_FALLBACKS
+
+    # ── Multiple text frames (U7 Phase 2b) ──────────────────────────────
+    # Self-contained path: typeset each positioned frame, bake positions, and
+    # render once. Does not support --paginate / --report (single positioned
+    # page by definition). CLI output stays lean (no data-ci/-frame tags).
+    if args.frames:
+        if explicit_scale is None:
+            logger.error("--frames requires --paper-size (frame positions are in mm).")
+            exit(1)
+        try:
+            with open(args.frames, 'r', encoding='utf-8') as f:
+                frames_doc = json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to read frames file: {e}")
+            exit(1)
+        frame_list = frames_doc.get('frames') if isinstance(frames_doc, dict) else frames_doc
+        if not isinstance(frame_list, list) or not frame_list:
+            logger.error("--frames file must hold a non-empty list (or {'frames': [...]}).")
+            exit(1)
+
+        norm_frames = []
+        for fr in frame_list:
+            fx = fr.get('start_x', args.margin)
+            norm_frames.append({
+                'text': fr.get('text', ''),
+                'start_x': fx,
+                'start_y': fr.get('start_y', args.margin),
+                'max_width': fr.get('max_width', page_w - args.margin - fx),
+            })
+
+        frame_shapes = typesetter.typeset_frames(
+            norm_frames, explicit_scale,
+            auto_kern=args.auto_kern, line_spacing=args.line_spacing,
+            kern_aggressiveness=args.kern_aggressiveness, wrap_mode=args.wrap_mode,
+            space_width_override=space_width_override, space_jitter=space_jitter,
+            seed=args.seed, fallbacks=fallbacks,
+            glyph_slant_jitter=args.glyph_slant_jitter, glyph_y_jitter=glyph_y_jitter_glyph)
+        logger.info(f"Frames: {len(norm_frames)} frame(s), {len(frame_shapes)} glyphs total")
+
+        renderer = Renderer(jitter_amount=args.jitter, smoothing=not args.no_smooth,
+                            color=args.color, stroke_width=args.stroke_width,
+                            seed=args.seed, use_bezier=use_bezier)
+        svg_path = args.output
+        if args.format in ("png", "pdf"):
+            svg_path = os.path.splitext(args.output)[0] + ".svg"
+        renderer.generate_svg(
+            frame_shapes, svg_path,
+            page_width_mm=page_w, page_height_mm=page_h, margin_mm=args.margin,
+            bezier_data=typesetter._compiled_beziers if use_bezier else None,
+            explicit_scale=explicit_scale, prebaked=True,
+            line_info=typesetter._line_info,
+            line_drift_angle_deg=args.line_drift_angle,
+            line_drift_y=line_drift_y_glyph, drift_seed=args.seed)
+        if args.format == "png":
+            try:
+                renderer.generate_png(svg_path, os.path.splitext(args.output)[0] + ".png",
+                                      dpi=args.dpi, transparent=args.transparent)
+            except RuntimeError as exc:
+                logger.error(str(exc)); exit(1)
+        elif args.format == "pdf":
+            try:
+                renderer.generate_pdf([svg_path], os.path.splitext(args.output)[0] + ".pdf")
+            except RuntimeError as exc:
+                logger.error(str(exc)); exit(1)
+        exit(0)
 
     shapes = typesetter.typeset_text(input_text,
                                      auto_kern=args.auto_kern, line_spacing=args.line_spacing,

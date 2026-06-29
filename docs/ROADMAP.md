@@ -354,7 +354,12 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > `data-ci` indexes the post-fallback text, so when Unicode fallbacks
 > substitute characters the caret can be off by the substitution delta
 > (exact in the common no-substitution case). **Multiple text frames**
-> remains proposed.
+> remains proposed — see
+> [`docs/U7_TEXT_FRAMES_PLAN.md`](U7_TEXT_FRAMES_PLAN.md) for the full
+> data-model / typesetter / renderer / CLI / editor plan and phased
+> rollout. **Slice 1 shipped** (backend foundation: `typeset_frames` with
+> position baking, renderer `prebaked` + `data-frame`, and the `--frames`
+> CLI, with tests). Slice 2 (the multi-frame editor UI) is next.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image
