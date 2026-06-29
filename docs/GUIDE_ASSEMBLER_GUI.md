@@ -46,6 +46,20 @@ state updates are ~20× faster than a cold render.
 Disable the toggle to fall back to click-to-generate when you want to
 batch changes.
 
+### Actual size vs fit-to-window
+
+The preview defaults to **fit-to-window** (the page is scaled to fit the
+panel). The **⊞ Actual size** button in the toolbar switches to a **1:1**
+view, where the page renders at its real physical dimensions — an A5 page
+is shown A5-sized, A4 A4-sized, and so on — and the panel scrolls if the
+page is larger than the window. Click **⊟ Fit to window** to switch back.
+
+This relies on CSS millimetre units, so it's true-to-life at **100 %
+browser zoom** on a calibrated display; if your monitor's DPI is
+non-standard it will be close but not exact. Paper size and orientation
+(portrait / landscape) both feed the displayed dimensions, shown in the
+top-right of the toolbar (e.g. `148.0mm × 210.0mm`).
+
 ---
 
 ## 3. Presets
