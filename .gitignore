@@ -13,6 +13,10 @@ __pycache__/
 dist/
 build/
 
+# Local environment created by the launchers (vhs-gui.sh / .bat)
+.venv/
+venv/
+
 # Output
 *.svg
 !assembler/hello_world.svg

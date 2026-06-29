@@ -466,10 +466,35 @@ def api_save_glyph():
                     "path": f"glyphs/{font}/{filename}"})
 
 
-if __name__ == "__main__":
+def main():
+    """Launch the web UI. Safe defaults for end users: binds to localhost,
+    debug off, and opens the browser automatically. Override via env:
+      VHS_HOST (default 127.0.0.1), VHS_PORT (5001), VHS_DEBUG (off),
+      VHS_NO_BROWSER (set to skip auto-open).
+    """
+    import threading
+    import webbrowser
+
+    host = os.environ.get("VHS_HOST", "127.0.0.1")
+    port = int(os.environ.get("VHS_PORT", "5001"))
+    debug = os.environ.get("VHS_DEBUG", "").lower() in ("1", "true", "yes", "on")
+    shown_host = "localhost" if host in ("127.0.0.1", "0.0.0.0") else host
+    url = f"http://{shown_host}:{port}"
+
     print("\n  VHS Assembler Web UI")
     print("  ====================")
     print(f"  Glyphs dir : {BASE_GLYPHS_DIR}")
     print(f"  Fonts found: {', '.join(list_fonts()) or '(none)'}")
-    print(f"  Open       : http://localhost:5001\n")
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    print(f"  Open       : {url}")
+    print("  (Ctrl+C to stop)\n")
+
+    # Open the browser shortly after the server comes up. Skip under the
+    # reloader's worker process (debug mode) and when explicitly disabled.
+    if not os.environ.get("VHS_NO_BROWSER") and not os.environ.get("WERKZEUG_RUN_MAIN"):
+        threading.Timer(1.0, lambda: webbrowser.open(url)).start()
+
+    app.run(host=host, port=port, debug=debug)
+
+
+if __name__ == "__main__":
+    main()

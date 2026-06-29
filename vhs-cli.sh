@@ -1,10 +1,16 @@
 #!/bin/bash
+#
+# VHS Assembler CLI launcher (macOS / Linux).
+# Uses the project's .venv if present (created by vhs-gui.sh), else the
+# system python. The CLI core needs no third-party packages; only --format
+# png/pdf and YAML presets require the optional deps in requirements.txt.
 
-# VHS CLI Start Script for macOS/Linux
-# This script runs the VHS assembler CLI from the root directory.
-
-# Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
-# Run the assembler
-python3 "$SCRIPT_DIR/assembler/assembler.py" "$@"
+if [ -x "$SCRIPT_DIR/.venv/bin/python" ]; then
+    PYBIN="$SCRIPT_DIR/.venv/bin/python"
+else
+    PYBIN="${PYTHON:-python3}"
+fi
+
+exec "$PYBIN" "$SCRIPT_DIR/assembler/assembler.py" "$@"
