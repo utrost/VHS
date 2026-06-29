@@ -21,6 +21,34 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 
 ## Quick Start
 
+### 0. Install & run (one command)
+
+The only prerequisite is **Python 3.10+**. Get the project (clone or
+download the ZIP), then start the web UI:
+
+**macOS / Linux**
+```bash
+./vhs-gui.sh
+```
+**Windows**
+```cmd
+vhs-gui.bat
+```
+
+On first run this creates a self-contained local environment (`.venv/`),
+installs the dependencies, starts the server, and opens your browser at
+**http://localhost:5001**. Later runs just start the server. Nothing is
+installed system-wide and nothing leaves your machine.
+
+That one window has both tools: **✦ Assemble** (type → handwriting) and
+**✍ Capture glyphs** (draw your own letters), with a capture → assemble
+round trip. The CLI uses the same engine — see §2.
+
+> Prefer to manage Python yourself? `pip install -r requirements.txt`
+> then `python3 assembler/server.py`. (Only `--format png/pdf` and YAML
+> presets need the optional packages; the SVG core is pure standard
+> library.)
+
 ### 1. Capture Glyphs
 1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser (or use the [live version](https://simiono.com/vhs/)).
 2. Enter a character in the input field.
@@ -58,19 +86,20 @@ All page-related values (`--line-height-mm`, `--margin`, `--start-x/y`, `--max-w
 
 ### 3. Web UI
 
-**macOS/Linux:**
-```bash
-./vhs-gui.sh
-```
+Run `./vhs-gui.sh` (macOS/Linux) or `vhs-gui.bat` (Windows) — see
+[§0](#0-install--run-one-command). The browser opens automatically at
+[http://localhost:5001](http://localhost:5001).
 
-**Windows:**
-```cmd
-vhs-gui.bat
-```
+The web UI provides a modern visual interface with live SVG preview, an
+**on-page WYSIWYG editor** (drag to position, click-to-caret, actual-size
+1:1 view, multiple text frames), file upload, paper-size presets,
+real-time adjustment of all assembler parameters, and the embedded
+**Capture glyphs** tool.
 
-Open [http://localhost:5001](http://localhost:5001) in your browser.
-
-The web UI provides a modern visual interface with live SVG preview, file upload, paper size presets, and real-time adjustment of all assembler parameters.
+By default the server binds to `localhost` only and runs with debug off.
+To expose it on your LAN or change the port, set environment variables:
+`VHS_HOST=0.0.0.0 VHS_PORT=8080 ./vhs-gui.sh`. `VHS_NO_BROWSER=1` skips the
+auto-open.
 
 ## Features
 
