@@ -324,8 +324,12 @@
         }
         .preview-svg-wrapper svg {
             display: block;
+            /* Pre-JS fallback only. Authoritative fit sizing is done in JS by
+               fitPreview() (CSS can't preserve aspect on an SVG that has both
+               intrinsic mm width AND height when a max-* constraint clamps). */
             max-width: 100%;
             max-height: calc(100vh - 160px);
+            width: auto;
             height: auto;
         }
 
@@ -1024,8 +1028,9 @@ Line breaks are preserved."></textarea>
                 }
             });
 
-            // Keep the on-page editor aligned when the window resizes.
+            // Keep the page fit + on-page editor aligned when the window resizes.
             window.addEventListener('resize', () => {
+                fitPreview();
                 if (editorEnabled && !editorDragging) buildEditorOverlay();
             });
         }
@@ -1229,8 +1234,38 @@ Line breaks are preserved."></textarea>
             const orient = payload.paper_size ? ` ${payload.orientation}` : '';
             document.getElementById('previewInfo').textContent = `${ps}${orient} · ${payload.font || 'default'}`;
 
+            // Size the page to fit the panel while preserving paper aspect.
+            fitPreview();
+
             // Re-align the on-page editor to the freshly rendered page.
             if (editorEnabled && !editorDragging) buildEditorOverlay();
+        }
+
+        // Fit-to-window sizing. CSS can't reliably scale an SVG that has both
+        // intrinsic width AND height (mm attributes) while preserving aspect —
+        // clamping max-height leaves the width pinned, distorting the page box.
+        // So compute the display size here: scale the paper's viewBox aspect to
+        // fit the available panel area. In actual-size mode we clear these
+        // inline styles and let the 1:1 CSS take over.
+        function fitPreview() {
+            const container = document.getElementById('previewContainer');
+            const svg = document.querySelector('.preview-svg-holder svg');
+            if (!svg) return;
+            if (actualSize) {
+                svg.style.width = svg.style.height = '';
+                svg.style.maxWidth = svg.style.maxHeight = '';
+                return;
+            }
+            const vb = (svg.getAttribute('viewBox') || '').split(/[ ,]+/).map(Number);
+            const ratio = (vb[2] && vb[3]) ? vb[2] / vb[3] : 1;
+            const pad = 32;
+            const availW = Math.max(40, container.clientWidth - 2 * pad);
+            const availH = Math.max(40, container.clientHeight - 2 * pad);
+            let w = availW, h = w / ratio;
+            if (h > availH) { h = availH; w = h * ratio; }
+            svg.style.maxWidth = svg.style.maxHeight = 'none';
+            svg.style.width = w + 'px';
+            svg.style.height = h + 'px';
         }
 
         // ── View switching: Assemble ⟷ Capture glyphs ──
@@ -1287,6 +1322,7 @@ Line breaks are preserved."></textarea>
         function toggleActualSize() {
             actualSize = !actualSize;
             applyActualSize();
+            fitPreview();   // size for fit, or clear inline styles for 1:1
             const btn = document.getElementById('actualSizeBtn');
             btn.classList.toggle('active', actualSize);
             btn.textContent = actualSize ? '⊟ Fit to window' : '⊞ Actual size';
