@@ -65,6 +65,39 @@ class SaveGlyphTest(unittest.TestCase):
         r = self.client.get("/api/fonts")
         self.assertIn("freshfont", r.get_json())
 
+    # ── read endpoints (edit-existing / add-missing round trip) ──
+
+    def test_list_glyphs(self):
+        self._post({"font": "f", "filename": "0061.json",
+                    "glyph": {"char": "a", "variants": [{"strokes": []}]}})
+        self._post({"font": "f", "filename": "0062.json",
+                    "glyph": {"char": "b", "variants": [{"strokes": []}, {"strokes": []}]}})
+        r = self.client.get("/api/glyphs/f")
+        self.assertEqual(r.status_code, 200)
+        data = r.get_json()
+        chars = {g["char"]: g["variants"] for g in data["glyphs"]}
+        self.assertEqual(chars, {"a": 1, "b": 2})
+
+    def test_list_glyphs_unknown_font_is_empty(self):
+        r = self.client.get("/api/glyphs/nope")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["glyphs"], [])
+
+    def test_get_glyph_roundtrip(self):
+        self._post({"font": "f", "filename": "0061.json",
+                    "glyph": {"char": "a", "variants": [{"strokes": [[{"x": 1, "y": 2}]]}]}})
+        r = self.client.get("/api/glyph/f/0061.json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.get_json()["char"], "a")
+
+    def test_get_glyph_missing_is_404(self):
+        r = self.client.get("/api/glyph/f/0099.json")
+        self.assertEqual(r.status_code, 404)
+
+    def test_get_glyph_rejects_bad_filename(self):
+        r = self.client.get("/api/glyph/f/passwd")  # not hex.json
+        self.assertEqual(r.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()
