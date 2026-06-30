@@ -746,6 +746,64 @@ the captures consistently.
 
 ---
 
+## Deployment & distribution
+
+### P1. Static in-browser build (Pyodide) — **Proposed**
+
+> **See [`docs/PYODIDE_STATIC_BUILD_PLAN.md`](PYODIDE_STATIC_BUILD_PLAN.md)**
+> for the full plan: architecture, the front-end `vhsApi` abstraction, the
+> glyph-loading / persistence redesign, phased rollout, risks, and testing.
+
+Run VHS **100 % in the browser** by executing the existing Python engine
+under [Pyodide](https://pyodide.org) (CPython→WebAssembly), so the whole
+tool can be hosted **statically on GitHub Pages** — no install, no server,
+works offline. This maximises accessibility for non-technical users while
+keeping a **single source of truth**: the same `assembler.py` that powers
+the CLI and the local server runs unchanged in the browser, so there is no
+second engine to keep in sync.
+
+**Why Pyodide over a rewrite.** The text→SVG core (~1450 lines) is pure
+standard library, so it loads in Pyodide essentially as-is. A JS port or a
+Rust rewrite would fork the engine (two implementations that must produce
+byte-identical output) and discard the existing test coverage — at odds
+with the "simple to maintain" goal. Rust→WASM stays the better long-term
+*end state* for bundle size / mobile, but is out of scope for this item.
+
+**What changes**
+
+- A small `vhsApi` front-end layer abstracts the four `/api/*` calls; in
+  **server mode** they stay `fetch` wrappers (local launcher / CLI), in
+  **static mode** they call a Pyodide-resident shim around the engine. The
+  same `index.html` UI runs in both — no second front-end.
+- Glyph loading moves from filesystem `glob` to a generated `manifest.json`
+  fetch for bundled fonts, and **browser storage (OPFS / IndexedDB)** for
+  user-captured fonts.
+- The capture→assemble round trip becomes fully client-side (the collector
+  writes glyphs to browser storage instead of `/api/save-glyph`); font
+  sharing becomes **export / import** of a font bundle.
+- PNG via `<canvas>`, PDF via a JS lib — `cairosvg` / `pypdf` / Flask are
+  dropped from the static bundle but remain in the local-server path.
+
+**Effort:** Phase 0 PoC **small**; static MVP, persistence, and offline
+polish each **medium** (see the plan).
+
+**Quality / risk:** medium. The main unknowns are Pyodide's ~6–10 MB
+bundle weight and cold-start time (mitigated by lazy-load + service-worker
+caching), and the glyph-persistence redesign. Engine output can't drift
+from the server because it's literally the same code — guarded by a
+golden-SVG parity test (CLI/server vs Pyodide).
+
+**Depends on:** nothing in the engine — it's an additive delivery target.
+The local launcher/server work is **not** superseded; the two share one
+engine.
+
+**Start with:** the Phase 0 proof of concept (load Pyodide, fetch `font1`
+via a manifest, run the unmodified `typeset_text` + `generate_svg_string`),
+which empirically settles feasibility, load time, and the glyph-fetch
+approach before any larger commitment.
+
+---
+
 ## Ordering & rough sizing
 
 ### Assembler
@@ -806,3 +864,15 @@ version of GC1 and GC5, so land it with or before them.
 | # | Item | Value | Effort | Risk | Order |
 |---|------|-------|--------|------|-------|
 | D1 | Illustrated user guides (3 × screenshots) | High | Medium | Low | **Done** |
+
+### Deployment & distribution
+
+| # | Item | Value | Effort | Risk | Order |
+|---|------|-------|--------|------|-------|
+| P1 | Static in-browser build (Pyodide) | High (accessibility) | Phase 0 Small, then Medium ×3 | Medium (bundle weight; glyph-persistence redesign) | Start with Phase 0 PoC |
+
+P1 is an additive **delivery target**, not an engine change — it reuses
+the existing Python engine under Pyodide so there's no second
+implementation to maintain. Gate the larger phases on the Phase 0 proof of
+concept (cold-start time, bundle size, glyph-fetch). Full plan in
+[`docs/PYODIDE_STATIC_BUILD_PLAN.md`](PYODIDE_STATIC_BUILD_PLAN.md).
