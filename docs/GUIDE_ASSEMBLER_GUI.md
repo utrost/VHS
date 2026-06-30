@@ -99,7 +99,10 @@ When the rendered text contains characters the font doesn't cover, a
   entry shows the original → replacement and the count.
 - **Missing** — codepoints neither the font nor the fallback map
   covered. Each entry shows a short snippet from the source text so you
-  can find the offending character.
+  can find the offending character. A **"✍ Capture these in the
+  collector"** button queues exactly those characters in the Capture tab,
+  targeting the current font — draw them, switch back, and they render
+  (see the GlyphCollector guide, *Add missing glyphs on the fly*).
 
 The panel stays hidden while the text is fully covered. Disable the
 fallback pass with the **Unicode Fallbacks** toggle in the Styling

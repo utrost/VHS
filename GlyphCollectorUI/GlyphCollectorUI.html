@@ -514,6 +514,26 @@
                 clearTimeout(existingCheckTimer);
                 existingCheckTimer = setTimeout(tryLoadExistingGlyph, 250);
             });
+
+            // Launch params from the Assembler: ?font=<dir>&queue=<a,b,c>.
+            // font  → target that font folder (so save/load hit the right one)
+            // queue → prime the capture queue (e.g. the Assembler's missing
+            //         glyphs — "add missing glyphs on the fly").
+            const params = new URLSearchParams(location.search);
+            const urlFont = params.get('font');
+            if (urlFont) {
+                FONT_FAMILY = urlFont;
+                const cfg = document.getElementById('cfgFontFamily');
+                if (cfg) cfg.value = urlFont;
+            }
+            const urlQueue = params.get('queue');
+            if (urlQueue && urlQueue.trim()) {
+                document.getElementById('queueInput').value = urlQueue;
+                startQueue();
+                // Loading the first queued char surfaces its "Load for
+                // editing" prompt if it already exists.
+                tryLoadExistingGlyph();
+            }
         }
 
         function toggleSettings() {
@@ -1394,25 +1414,34 @@
         let existingLoadedChar = null;
 
         async function tryLoadExistingGlyph() {
-            if (!fontDirHandle) return; // only works with a connected folder
             const raw = document.getElementById('charInput').value;
-            if (!raw) return;
+            if (!raw) { existingLoadedChar = null; updateExistingIndicator(null); return; }
             const filename = getSafeFilename(raw) + '.json';
-            let fileHandle;
-            try {
-                fileHandle = await fontDirHandle.getFileHandle(filename);
-            } catch (_) {
-                existingLoadedChar = null;
-                updateExistingIndicator(null);
+
+            // 1) A connected folder takes priority (static-file / file:// use).
+            if (fontDirHandle) {
+                try {
+                    const fileHandle = await fontDirHandle.getFileHandle(filename);
+                    const file = await fileHandle.getFile();
+                    updateExistingIndicator(JSON.parse(await file.text()));
+                } catch (_) {
+                    existingLoadedChar = null;
+                    updateExistingIndicator(null);
+                }
                 return;
             }
-            try {
-                const file = await fileHandle.getFile();
-                const data = JSON.parse(await file.text());
-                updateExistingIndicator(data);
-            } catch (e) {
-                console.warn('Could not read existing glyph', e);
+
+            // 2) Served by the Assembler → ask the server for the glyph.
+            if (location.protocol.startsWith('http') && FONT_FAMILY) {
+                try {
+                    const res = await fetch(
+                        `/api/glyph/${encodeURIComponent(FONT_FAMILY)}/${filename}`);
+                    if (res.ok) { updateExistingIndicator(await res.json()); return; }
+                } catch (_) { /* fall through */ }
             }
+
+            existingLoadedChar = null;
+            updateExistingIndicator(null);
         }
 
         function updateExistingIndicator(data) {

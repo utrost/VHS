@@ -1364,9 +1364,35 @@ Line breaks are preserved."></textarea>
                     })
                     .join('');
                 rows.push(`<div style="margin-top:4px"><strong style="color:#f88">Missing:</strong>${items}</div>`);
+                // "Add missing glyphs on the fly": jump to the collector with
+                // these characters queued, targeting the current font.
+                lastMissingChars = Object.keys(miss).filter(c => c && c.trim() && c !== ',');
+                if (lastMissingChars.length) {
+                    rows.push('<div style="margin-top:6px">' +
+                        '<button onclick="captureMissing()" style="padding:5px 10px;' +
+                        'font-size:12px;font-weight:600;border:1px solid #f59e0b;' +
+                        'background:rgba(245,158,11,0.15);color:#f59e0b;border-radius:6px;' +
+                        'cursor:pointer;">✍ Capture these in the collector</button></div>');
+                }
+            } else {
+                lastMissingChars = [];
             }
             body.innerHTML = rows.join('');
             panel.style.display = 'block';
+        }
+
+        // Open the collector on the Capture tab with the missing characters
+        // queued and the current font targeted, so newly captured glyphs land
+        // in the right font and the Assembler picks them up on return.
+        let lastMissingChars = [];
+        function captureMissing() {
+            if (!lastMissingChars.length) return;
+            const font = document.getElementById('fontSelect').value || '';
+            const queue = lastMissingChars.join(',');
+            const url = `/collector?font=${encodeURIComponent(font)}` +
+                        `&queue=${encodeURIComponent(queue)}`;
+            document.getElementById('collectorFrame').setAttribute('src', url);
+            switchView('capture');
         }
 
         function escapeHtml(s) {

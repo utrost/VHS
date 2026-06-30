@@ -69,6 +69,24 @@ downloads. Chrome, Edge, and Opera are the supported connect path.
 > static-file (`file://`) workflow. Save order is: server → connected
 > folder → download.
 
+### Edit an existing glyph
+
+Set the **Font** (⚙️ Settings) to the font you want to work on, then type
+a character that already exists in it. A **"Load for editing"** prompt
+appears — click it to pull the saved variants back onto the canvas, tweak
+or redraw, and **Save** to overwrite. This works straight from the server
+when launched from the Assembler (no folder connect needed); with a
+`file://` Collector it uses the connected folder instead.
+
+### Add missing glyphs on the fly
+
+When the Assembler can't render some characters, its **Glyph coverage**
+panel lists them with a **"✍ Capture these in the collector"** button.
+Clicking it opens the Capture tab with those characters **queued** and the
+current font **targeted**. Draw each one, press Enter to save & advance,
+then switch back to **✦ Assemble** — the font reloads and the previously
+missing glyphs now render.
+
 ---
 
 ## 3. Queue capture mode

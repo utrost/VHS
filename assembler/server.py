@@ -466,6 +466,52 @@ def api_save_glyph():
                     "path": f"glyphs/{font}/{filename}"})
 
 
+@app.route("/api/glyphs/<font>")
+def api_glyphs(font):
+    """List the glyphs already saved in a font: their filename, character,
+    and variant count. Lets the collector show what exists / what's missing.
+    """
+    if not _GLYPH_FONT_RE.fullmatch(font):
+        return jsonify({"error": "invalid font name"}), 400
+    base_real = os.path.realpath(BASE_GLYPHS_DIR)
+    font_dir = os.path.realpath(os.path.join(base_real, font))
+    if os.path.commonpath([base_real, font_dir]) != base_real:
+        return jsonify({"error": "path escapes glyphs directory"}), 400
+    if not os.path.isdir(font_dir):
+        return jsonify({"font": font, "glyphs": []})
+
+    glyphs = []
+    for name in sorted(os.listdir(font_dir)):
+        if not _GLYPH_FILE_RE.fullmatch(name):
+            continue  # skip kerning.json, presets, etc.
+        try:
+            with open(os.path.join(font_dir, name), encoding="utf-8") as f:
+                data = json.load(f)
+            glyphs.append({"filename": name, "char": data.get("char"),
+                           "variants": len(data.get("variants", []))})
+        except (OSError, ValueError):
+            continue
+    return jsonify({"font": font, "glyphs": glyphs})
+
+
+@app.route("/api/glyph/<font>/<filename>")
+def api_glyph(font, filename):
+    """Return one glyph's JSON, for loading into the collector to edit."""
+    if not _GLYPH_FONT_RE.fullmatch(font) or not _GLYPH_FILE_RE.fullmatch(filename):
+        return jsonify({"error": "invalid font or filename"}), 400
+    base_real = os.path.realpath(BASE_GLYPHS_DIR)
+    target = os.path.realpath(os.path.join(base_real, font, filename))
+    if os.path.commonpath([base_real, target]) != base_real:
+        return jsonify({"error": "path escapes glyphs directory"}), 400
+    if not os.path.isfile(target):
+        return jsonify({"error": "not found"}), 404
+    try:
+        with open(target, encoding="utf-8") as f:
+            return Response(f.read(), mimetype="application/json")
+    except OSError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+
 def main():
     """Launch the web UI. Safe defaults for end users: binds to localhost,
     debug off, and opens the browser automatically. Override via env:
