@@ -318,12 +318,17 @@ def api_generate():
         norm_frames = []
         for fr in frames_in:
             fx = fr.get("start_x", margin)
-            norm_frames.append({
+            nf = {
                 "text": fr.get("text", ""),
                 "start_x": fx,
                 "start_y": fr.get("start_y", margin),
                 "max_width": fr.get("max_width", page_w - margin - fx),
-            })
+            }
+            if fr.get("line_height"):
+                nf["line_height"] = fr["line_height"]
+            if fr.get("line_spacing"):
+                nf["line_spacing"] = fr["line_spacing"]
+            norm_frames.append(nf)
         frame_shapes = typesetter.typeset_frames(
             norm_frames, explicit_scale,
             auto_kern=auto_kern, line_spacing=line_spacing,

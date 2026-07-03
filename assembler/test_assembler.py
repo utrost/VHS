@@ -196,6 +196,28 @@ class TestAssembler(unittest.TestCase):
         self.assertAlmostEqual(frame_top_mm(0), 10.0, places=4)
         self.assertAlmostEqual(frame_top_mm(1), 40.0, places=4)
 
+    def test_typeset_frames_per_frame_line_height(self):
+        """A frame with a 2x line-height override renders 2x taller ink."""
+        scale = 0.1
+        global_lh = scale * self.typesetter.line_height  # mm the shared scale implies
+        frames = [
+            {'text': 'c', 'start_x': 10, 'start_y': 10, 'max_width': 50},
+            {'text': 'c', 'start_x': 10, 'start_y': 60, 'max_width': 50,
+             'line_height': global_lh * 2},
+        ]
+        shapes = self.typesetter.typeset_frames(frames, scale, seed=1)
+        fi = self.typesetter._shape_frame_idx
+
+        def ink_height(f):
+            ys = [p['y'] for si, sh in enumerate(shapes) if fi[si] == f
+                  for st in sh for p in st]
+            return max(ys) - min(ys)
+
+        self.assertAlmostEqual(ink_height(1) / ink_height(0), 2.0, delta=0.02)
+        # per-frame metadata records the override for the report
+        self.assertAlmostEqual(self.typesetter._frame_meta[1]['line_height'],
+                               global_lh * 2, places=4)
+
     def test_frames_render_data_frame_and_neutral_transform(self):
         """Prebaked render tags frames and uses a zero-origin transform."""
         scale = 0.1
