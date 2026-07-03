@@ -157,7 +157,10 @@ extra frame is drawn in green with its own:
 - draggable **box** (move + width handles) writing that frame's
   start-x / start-y / max-width,
 - transparent **textarea** (type on it; click-to-caret works per frame),
-- **label** (`Frame 2: x, y mm`) and a red **✕** to delete it.
+- **label** (`Frame 2: x, y mm`) and a red **✕** to delete it,
+- a small **`lh`** input at the bottom-right for this frame's own line
+  height in mm — leave it blank to use the document default, or set it so
+  the frame renders larger/smaller (e.g. a heading over body text).
 
 Frame 0 stays the sidebar-driven block. Overlap is allowed (later frames
 draw on top) but intersecting frames are flagged with an amber dashed

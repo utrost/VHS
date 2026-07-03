@@ -235,13 +235,31 @@ like the single-block flags). Every frame wraps to its own `max_width`
 column. A bare top-level JSON array works too (the `{"frames": [...]}`
 wrapper is optional).
 
+A frame may also override typography with `line_height` (mm) and
+`line_spacing`. Omit them and the frame uses the document globals
+(`--line-height-mm` / `--line-spacing`); set them and just that frame
+renders at its own size — e.g. a large heading frame above smaller body
+text on the same page:
+
+```json
+{
+  "frames": [
+    { "text": "Reisetagebuch",
+      "start_x": 20, "start_y": 20, "max_width": 120, "line_height": 14 },
+    { "text": "Heute war ein ruhiger Morgen.",
+      "start_x": 20, "start_y": 45, "max_width": 100, "line_height": 6 }
+  ]
+}
+```
+
 Notes:
 
 - `--frames` **requires `--paper-size`** (positions are mm) and is
   mutually exclusive with the positional text / `--file`.
 - Global options — font, line height, spacing, colour, realism, stroke —
-  apply to all frames. (Per-frame typography is a possible future
-  extension.)
+  apply to all frames, except that a frame's own `line_height` /
+  `line_spacing` (if given) override the globals for that frame. The
+  `--report` JSON echoes each frame's effective `line_height_mm`.
 - Works with `--format png` / `--format pdf`. Not combinable with
   `--paginate` (a frame layout is one positioned page).
 - `--report` gives a **per-frame** fit summary (words, lines, content vs
