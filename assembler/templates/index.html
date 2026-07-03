@@ -483,6 +483,16 @@
             cursor: pointer; pointer-events: auto;
             z-index: 7; box-shadow: 0 1px 5px rgba(0,0,0,0.45);
         }
+        .wys-frame-lh {
+            position: absolute;
+            width: 42px; height: 18px;
+            font-size: 10px; text-align: center;
+            padding: 0 2px;
+            border: 1px solid var(--success); border-radius: 4px;
+            background: rgba(255,255,255,0.95); color: #111;
+            pointer-events: auto; z-index: 7;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
         .wys-handle.frame { background: var(--success); }
         .wys-guides { position: absolute; inset: 0; pointer-events: none; }
         .wys-guideline {
@@ -583,6 +593,12 @@ Line breaks are preserved."></textarea>
                             <option value="">Loading fonts…</option>
                         </select>
                     </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                        <span id="fontGlyphCount" style="font-size: 11px; color: #888;"></span>
+                        <button class="btn btn-secondary" type="button" onclick="newFont()"
+                                title="Start a new font and capture glyphs for it"
+                                style="padding: 3px 10px; font-size: 11px;">＋ New font</button>
+                    </div>
                 </div>
 
                 <!-- Presets -->
@@ -601,7 +617,8 @@ Line breaks are preserved."></textarea>
                     </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
                         Loads bundled settings from <code>configs/presets/</code>. "Save…"
-                        downloads the current sidebar state as a YAML file.
+                        writes the current sidebar state there as a named preset
+                        (falls back to a download if the server is unavailable).
                     </div>
                 </div>
 
@@ -772,9 +789,14 @@ Line breaks are preserved."></textarea>
                         <span class="toggle-thumb"></span>
                     </label>
                 </div>
-                <button class="btn btn-primary" id="generateBtn" onclick="generate()">
-                    ✦ Generate
-                </button>
+                <div style="display: flex; gap: 8px;">
+                    <button class="btn btn-primary" id="generateBtn" onclick="generate()" style="flex: 1;">
+                        ✦ Generate
+                    </button>
+                    <button class="btn btn-secondary" type="button" onclick="resetSession()"
+                            title="Clear text and reset all settings to defaults"
+                            style="flex: 0 0 auto; padding: 10px 12px;">↺ Reset</button>
+                </div>
                 <div class="field-row" style="margin-top: 4px;">
                     <button class="btn btn-secondary" id="downloadBtn" onclick="downloadSvg()" disabled>
                         ↓ SVG
@@ -920,6 +942,54 @@ Line breaks are preserved."></textarea>
             return out;
         }
 
+        // ── Session persistence ("save settings") ──
+        // Autosave the full working state (settings + font + text + editor
+        // frames) to localStorage and restore it on reload, so the tool
+        // remembers where you left off. Nothing leaves the browser.
+        const SESSION_KEY = 'vhs_assembler_session';
+
+        function saveSession() {
+            try {
+                localStorage.setItem(SESSION_KEY, JSON.stringify({
+                    v: 1,
+                    settings: currentSettings(),
+                    font: document.getElementById('fontSelect').value,
+                    text: document.getElementById('textInput').value,
+                    extraFrames: extraFrames,
+                    actualSize: actualSize,
+                }));
+            } catch (_) { /* storage disabled/full — non-fatal */ }
+        }
+
+        function restoreSession() {
+            let data;
+            try { data = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }
+            catch (_) { return false; }
+            if (!data || data.v !== 1) return false;
+            applyPreset(data.settings || {});
+            if (data.font) {
+                const sel = document.getElementById('fontSelect');
+                if ([...sel.options].some(o => o.value === data.font)) sel.value = data.font;
+            }
+            if (typeof data.text === 'string') {
+                document.getElementById('textInput').value = data.text;
+            }
+            if (Array.isArray(data.extraFrames)) extraFrames = data.extraFrames;
+            if (data.actualSize) {
+                actualSize = true;
+                const btn = document.getElementById('actualSizeBtn');
+                btn.classList.add('active');
+                btn.textContent = '⊟ Fit to window';
+            }
+            return true;
+        }
+
+        function resetSession() {
+            if (!confirm('Reset all settings and clear your text? This cannot be undone.')) return;
+            try { localStorage.removeItem(SESSION_KEY); } catch (_) {}
+            location.reload();
+        }
+
         // Minimal YAML dumper — covers the key: value lines we need.
         function toYaml(obj) {
             const lines = ['# VHS Assembler preset — generated from the web GUI'];
@@ -933,10 +1003,32 @@ Line breaks are preserved."></textarea>
             return lines.join('\n') + '\n';
         }
 
-        function savePreset() {
-            const name = prompt('Preset filename (without extension):', 'my-preset');
+        async function savePreset() {
+            const name = prompt('Preset name (letters, digits, _ or -):', 'my-preset');
             if (!name) return;
             const yaml = toYaml(currentSettings());
+            // Save to the server so it appears in the dropdown immediately;
+            // fall back to a file download if the server rejects/unavailable.
+            try {
+                const res = await fetch('/api/save-preset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, yaml }),
+                });
+                if (res.ok) {
+                    await refreshPresetOptions();
+                    const sel = document.getElementById('presetSelect');
+                    if ([...sel.options].some(o => o.value === name)) sel.value = name;
+                    setStatus('ready', `Preset "${name}" saved to configs/presets/`);
+                    return;
+                }
+                const j = await res.json().catch(() => ({}));
+                setStatus('error', j.error || 'Preset save failed — downloading instead');
+            } catch (_) { /* offline — download instead */ }
+            downloadPresetYaml(name, yaml);
+        }
+
+        function downloadPresetYaml(name, yaml) {
             const blob = new Blob([yaml], { type: 'text/yaml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -946,19 +1038,25 @@ Line breaks are preserved."></textarea>
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            setStatus('ready', `Preset saved as ${name}.yaml`);
+            setStatus('ready', `Preset downloaded as ${name}.yaml`);
+        }
+
+        async function refreshPresetOptions() {
+            const res = await fetch('/api/presets');
+            const names = await res.json();
+            const sel = document.getElementById('presetSelect');
+            while (sel.options.length > 1) sel.remove(1);  // keep "(none)"
+            names.forEach(n => {
+                const o = document.createElement('option');
+                o.value = n; o.textContent = n;
+                sel.appendChild(o);
+            });
         }
 
         async function loadPresets() {
             try {
-                const res = await fetch('/api/presets');
-                const names = await res.json();
+                await refreshPresetOptions();
                 const sel = document.getElementById('presetSelect');
-                names.forEach(n => {
-                    const o = document.createElement('option');
-                    o.value = n; o.textContent = n;
-                    sel.appendChild(o);
-                });
                 sel.addEventListener('change', async (e) => {
                     const name = e.target.value;
                     if (!name) return;
@@ -986,7 +1084,12 @@ Line breaks are preserved."></textarea>
             await loadPaperSizes();
             await loadPresets();
 
+            // Restore the last session (settings + text + frames) if present.
+            const restored = restoreSession();
+
             document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+            document.getElementById('fontSelect').addEventListener('change', updateFontGlyphCount);
+            updateFontGlyphCount();
 
             // Update kern aggressiveness label on slider change
             document.getElementById('kernAggressiveness').addEventListener('input', (e) => {
@@ -1016,8 +1119,9 @@ Line breaks are preserved."></textarea>
             liveIds.forEach(id => {
                 const el = document.getElementById(id);
                 if (!el) return;
-                el.addEventListener('input', scheduleLive);
-                el.addEventListener('change', scheduleLive);
+                const handler = () => { saveSession(); scheduleLive(); };
+                el.addEventListener('input', handler);
+                el.addEventListener('change', handler);
             });
 
             // Keyboard shortcut: Ctrl/Cmd + Enter to generate
@@ -1033,6 +1137,11 @@ Line breaks are preserved."></textarea>
                 fitPreview();
                 if (editorEnabled && !editorDragging) buildEditorOverlay();
             });
+
+            // Render the restored session so you pick up where you left off.
+            if (restored && (document.getElementById('textInput').value.trim() || framesActive())) {
+                generate(true);
+            }
         }
 
         async function loadFonts() {
@@ -1149,6 +1258,8 @@ Line breaks are preserved."></textarea>
 
             // Multi-frame mode: send the frames list (server prefers it over text).
             if (framesActive()) payload.frames = buildFramesPayload();
+
+            saveSession();   // persist the state that produced this render
 
             try {
                 const res = await fetch('/api/generate', {
@@ -1312,6 +1423,36 @@ Line breaks are preserved."></textarea>
             } catch (err) {
                 console.warn('Font reload failed', err);
             }
+            updateFontGlyphCount();
+        }
+
+        // Show how many glyphs the selected font contains (uses /api/glyphs).
+        async function updateFontGlyphCount() {
+            const font = document.getElementById('fontSelect').value;
+            const el = document.getElementById('fontGlyphCount');
+            if (!font) { el.textContent = ''; return; }
+            try {
+                const res = await fetch(`/api/glyphs/${encodeURIComponent(font)}`);
+                if (!res.ok) { el.textContent = ''; return; }
+                const n = ((await res.json()).glyphs || []).length;
+                el.textContent = `${n} glyph${n === 1 ? '' : 's'}`;
+            } catch (_) { el.textContent = ''; }
+        }
+
+        // Start a new font: open the collector targeting it, so you capture
+        // glyphs into a fresh glyphs/<name>/ folder. It appears in the font
+        // list once it has at least one saved glyph.
+        function newFont() {
+            const name = prompt('New font name (letters, digits, _ or -):', 'MyFont');
+            if (!name) return;
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+                setStatus('error', 'Invalid font name — use letters, digits, _ or -');
+                return;
+            }
+            document.getElementById('collectorFrame').setAttribute('src',
+                `/collector?font=${encodeURIComponent(name)}`);
+            switchView('capture');
+            setStatus('ready', `Capturing into new font "${name}" — draw glyphs, then return to Assemble.`);
         }
 
         // ── Actual-size (1:1) preview ──
@@ -1905,13 +2046,23 @@ Line breaks are preserved."></textarea>
             const hMove = _el('div', 'wys-handle move frame');
             const hEw = _el('div', 'wys-handle ew frame');
             const del = _el('div', 'wys-frame-del'); del.textContent = '✕'; del.title = 'Delete frame';
-            const refs = { box, ta, label, hMove, hEw, del,
-                           nodes: [box, ta, label, hMove, hEw, del] };
-            container.append(box, ta, label, hMove, hEw, del);
+            const lh = _el('input', 'wys-frame-lh');
+            lh.type = 'number'; lh.min = '2'; lh.step = '0.5'; lh.placeholder = 'lh';
+            lh.title = 'Line height (mm) for this frame — blank = document default';
+            const refs = { box, ta, label, hMove, hEw, del, lh,
+                           nodes: [box, ta, label, hMove, hEw, del, lh] };
+            container.append(box, ta, label, hMove, hEw, del, lh);
 
             ta.addEventListener('input', () => {
                 const i = extraEls.indexOf(refs);
                 if (i >= 0) { extraFrames[i].text = ta.value; scheduleFramesRender(); }
+            });
+            lh.addEventListener('input', () => {
+                const i = extraEls.indexOf(refs);
+                if (i < 0) return;
+                const v = parseFloat(lh.value);
+                extraFrames[i].line_height = (lh.value !== '' && v > 0) ? v : null;
+                scheduleFramesRender();
             });
             // Select the placeholder on first focus so typing replaces it.
             ta.addEventListener('focus', () => {
@@ -1948,6 +2099,9 @@ Line breaks are preserved."></textarea>
             placeHandle(refs.hEw, t0.x + w, t0.y + h / 2);
             refs.del.style.left = (t0.x + w - 9) + 'px';
             refs.del.style.top = (t0.y - 9) + 'px';
+            refs.lh.style.left = (t0.x + w - 42) + 'px';
+            refs.lh.style.top = (t0.y + h + 3) + 'px';
+            if (document.activeElement !== refs.lh) refs.lh.value = fr.line_height || '';
             refs.box.classList.toggle('overflow', frameOverflow(n, g));
         }
 
@@ -2020,9 +2174,12 @@ Line breaks are preserved."></textarea>
                          start_y: _num('startY', margin) };
             const mw0 = document.getElementById('maxWidthMm').value;
             if (mw0 !== '') f0.max_width = parseFloat(mw0);
-            return [f0, ...extraFrames.map(f => ({
-                text: f.text, start_x: f.start_x,
-                start_y: f.start_y, max_width: f.max_width }))];
+            return [f0, ...extraFrames.map(f => {
+                const o = { text: f.text, start_x: f.start_x,
+                            start_y: f.start_y, max_width: f.max_width };
+                if (f.line_height) o.line_height = f.line_height;
+                return o;
+            })];
         }
 
         // Wire one drag handle. Each gesture clamps to the page and writes the

@@ -98,6 +98,25 @@ class SaveGlyphTest(unittest.TestCase):
         r = self.client.get("/api/glyph/f/passwd")  # not hex.json
         self.assertEqual(r.status_code, 400)
 
+    # ── preset save ──
+
+    def test_save_preset_writes_yaml(self):
+        presets = os.path.join(self.tmp, "presets")
+        orig = server.PRESETS_DIR
+        server.PRESETS_DIR = presets
+        try:
+            r = self.client.post("/api/save-preset",
+                                 json={"name": "my-preset", "yaml": "margin: 12\n"})
+            self.assertEqual(r.status_code, 200)
+            self.assertTrue(os.path.exists(os.path.join(presets, "my-preset.yaml")))
+        finally:
+            server.PRESETS_DIR = orig
+
+    def test_save_preset_rejects_bad_name(self):
+        r = self.client.post("/api/save-preset",
+                             json={"name": "../evil", "yaml": "x: 1\n"})
+        self.assertEqual(r.status_code, 400)
+
 
 if __name__ == "__main__":
     unittest.main()

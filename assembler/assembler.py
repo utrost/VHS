@@ -1114,18 +1114,30 @@ class Typesetter:
         combined_shapes, combined_bezier, combined_line_info = [], [], []
         combined_source_idx, combined_frame_idx, coverage = [], [], []
         frame_meta = []
+        # The global mm line height corresponding to the shared render scale.
+        global_lh_mm = scale * self.line_height
 
         for b, frame in enumerate(frames):
             sx = float(frame.get('start_x', 0.0))
             sy = float(frame.get('start_y', 0.0))
             mw_mm = frame.get('max_width')
-            max_width = (mw_mm / scale) if (mw_mm and mw_mm > 0) else None
             frame_seed = (seed + b) if seed is not None else None
+
+            # Per-frame typography overrides (U7). Default to the document
+            # globals, so a frame with no overrides is byte-identical to before.
+            lh_f = float(frame.get('line_height') or global_lh_mm)
+            sp_f = float(frame.get('line_spacing') or line_spacing)
+            # k pre-scales this frame's glyph coords so that the SHARED render
+            # scale still yields the frame's own line height:
+            #   rendered_lh = (native·sp_f)·k·scale = lh_f·sp_f  when k = lh_f/lh_g.
+            k = (lh_f / global_lh_mm) if global_lh_mm else 1.0
+            # The frame wraps to mw_mm at its OWN scale (lh_f/native).
+            max_width = (mw_mm * self.line_height / lh_f) if (mw_mm and mw_mm > 0) else None
 
             shapes = self.typeset_text(
                 frame.get('text', ''),
                 override_line_height=override_line_height, auto_kern=auto_kern,
-                line_spacing=line_spacing, max_width=max_width,
+                line_spacing=sp_f, max_width=max_width,
                 kern_aggressiveness=kern_aggressiveness, wrap_mode=wrap_mode,
                 space_width_override=space_width_override, space_jitter=space_jitter,
                 seed=frame_seed, fallbacks=fallbacks,
@@ -1136,9 +1148,29 @@ class Typesetter:
             coverage.append(self._coverage_report)
             frame_meta.append({
                 'start_x': sx, 'start_y': sy, 'max_width': mw_mm,
+                'line_height': lh_f, 'line_spacing': sp_f,
                 'lines': sum(1 for li in line_info if li.get('start_idx') is not None),
                 'words': len(self._word_info),
             })
+
+            # Pre-scale the frame by k so its glyphs render at lh_f under the
+            # shared scale (no-op when k == 1, i.e. no override).
+            if abs(k - 1.0) > 1e-9:
+                for shape in shapes:
+                    for stroke in shape:
+                        for p in stroke:
+                            p['x'] *= k
+                            p['y'] *= k
+                for bz in bezier:
+                    if bz:
+                        for bstroke in bz:
+                            for seg in bstroke:
+                                for key in ('p0', 'p1', 'p2', 'p3'):
+                                    seg[key]['x'] *= k
+                                    seg[key]['y'] *= k
+                for info in line_info:
+                    if info.get('baseline_y') is not None:
+                        info['baseline_y'] *= k
 
             # Content-min over every rendered point (strokes + bezier control
             # points), matching the renderer's bbox so the bake aligns exactly.
@@ -2080,12 +2112,18 @@ if __name__ == "__main__":
         norm_frames = []
         for fr in frame_list:
             fx = fr.get('start_x', args.margin)
-            norm_frames.append({
+            nf = {
                 'text': fr.get('text', ''),
                 'start_x': fx,
                 'start_y': fr.get('start_y', args.margin),
                 'max_width': fr.get('max_width', page_w - args.margin - fx),
-            })
+            }
+            # Optional per-frame typography overrides.
+            if fr.get('line_height'):
+                nf['line_height'] = fr['line_height']
+            if fr.get('line_spacing'):
+                nf['line_spacing'] = fr['line_spacing']
+            norm_frames.append(nf)
 
         frame_shapes = typesetter.typeset_frames(
             norm_frames, explicit_scale,
@@ -2103,7 +2141,9 @@ if __name__ == "__main__":
             frames_report = []
             any_overflow = False
             for idx, meta in enumerate(typesetter._frame_meta):
-                content_h = meta['lines'] * advance_mm
+                # Per-frame advance (honours per-frame line-height overrides).
+                frame_advance = meta.get('line_height', line_height_mm) * meta.get('line_spacing', args.line_spacing)
+                content_h = meta['lines'] * frame_advance
                 avail_h = page_h - meta['start_y'] - args.margin
                 overflow = content_h > avail_h + 0.01
                 any_overflow = any_overflow or overflow
@@ -2114,6 +2154,7 @@ if __name__ == "__main__":
                     'frame': idx,
                     'start_x_mm': meta['start_x'], 'start_y_mm': meta['start_y'],
                     'max_width_mm': meta['max_width'],
+                    'line_height_mm': meta.get('line_height'),
                     'words': meta['words'], 'lines': meta['lines'],
                     'content_h_mm': round(content_h, 2),
                     'avail_h_mm': round(avail_h, 2),

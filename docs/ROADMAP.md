@@ -331,7 +331,7 @@ pagination (easy — `_word_info` already has `line_break_after`).
 
 ---
 
-### U7. Lightweight WYSIWYG page editor — **In progress** (Phase 1 landed)
+### U7. Lightweight WYSIWYG page editor — **Done**
 
 > **Phase 1 status:** shipped in the web GUI as an additive "✎ Edit on page"
 > mode — page-as-canvas with a margin frame, a draggable text block
@@ -362,9 +362,15 @@ pagination (easy — `_word_info` already has `line_break_after`).
 > `/api/generate` support, with tests) **and** the multi-frame editor — an
 > additive "➕ Frame" layer giving each extra frame its own draggable box,
 > transparent textarea, width handle, label, delete button, per-frame
-> click-to-caret and overflow. Slice 3 mostly shipped (collision/overlap
-> warning between frames + per-frame `--report`); only optional per-frame
-> typography overrides remain proposed.
+> click-to-caret and overflow. Slice 3 shipped (collision/overlap
+> warning between frames + per-frame `--report`). **Per-frame typography
+> overrides shipped**: each frame can carry its own `line_height` (and
+> `line_spacing`) — the typesetter pre-scales the frame's glyph coords by
+> `k = lh_frame / lh_global` so the shared render scale still yields the
+> frame's own line height (a frame with no override is byte-identical to
+> before). Exposed end-to-end: `typeset_frames`, the `--frames` JSON, the
+> `/api/generate` frames payload, and a small per-frame "lh" input in the
+> multi-frame editor. With that, all planned U7 slices are complete.
 
 The web GUI today is a *control panel beside a preview*: you type in a
 sidebar textarea, tune ~20 numeric knobs, and watch a rendered image

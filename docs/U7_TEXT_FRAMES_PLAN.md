@@ -12,9 +12,17 @@ and `/api/generate` frames support, with tests). Slice 2 = the multi-frame
 editor — an additive "➕ Frame" layer over the single-frame editor: each extra
 frame gets its own draggable box, transparent textarea, width handle, label,
 and delete button, sends the `frames` payload, supports per-frame
-click-to-caret and overflow. Slice 3 mostly shipped (overlap/collision
-warning + per-frame `--report`); only optional per-frame typography
-overrides remain proposed.
+click-to-caret and overflow. Slice 3 shipped (overlap/collision warning +
+per-frame `--report`), **including per-frame typography overrides**: a
+frame may carry its own `line_height` (mm) and `line_spacing`. The
+typesetter pre-scales that frame's glyph coordinates by
+`k = line_height_frame / line_height_global` so the single shared render
+scale still yields the frame's own line height; wrapping uses the frame's
+own scale (`max_width * native / line_height_frame`). A frame with no
+override has `k == 1` and is byte-identical to the previous behaviour.
+Exposed via `typeset_frames`, the `--frames` JSON, the `/api/generate`
+frames payload, and a per-frame "lh" input in the editor. All slices
+complete.
 
 ---
 
@@ -166,8 +174,8 @@ call is just the `len(frames)==1`, `dx=dy` baked-to-origin case.
    `data-frame`, and `--frames` CLI with tests. Headless-testable; no UI.
 2. **Editor multi-frame** — per-frame overlay boxes, add/delete, active
    frame, per-frame click-to-caret and overflow.
-3. **Polish** — overlap warning, per-frame fit in `--report`, optional
-   per-frame typography overrides (only if a real need shows up).
+3. **Polish** — overlap warning, per-frame fit in `--report`, and
+   per-frame typography overrides (`line_height` / `line_spacing`). Shipped.
 
 Ship 1 first: it is the dependency for everything and stands alone behind
 the CLI, so the data model can be validated before any UI work.
