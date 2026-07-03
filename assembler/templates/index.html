@@ -583,6 +583,12 @@ Line breaks are preserved."></textarea>
                             <option value="">Loading fonts…</option>
                         </select>
                     </div>
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+                        <span id="fontGlyphCount" style="font-size: 11px; color: #888;"></span>
+                        <button class="btn btn-secondary" type="button" onclick="newFont()"
+                                title="Start a new font and capture glyphs for it"
+                                style="padding: 3px 10px; font-size: 11px;">＋ New font</button>
+                    </div>
                 </div>
 
                 <!-- Presets -->
@@ -1072,6 +1078,8 @@ Line breaks are preserved."></textarea>
             const restored = restoreSession();
 
             document.getElementById('fileUpload').addEventListener('change', handleFileUpload);
+            document.getElementById('fontSelect').addEventListener('change', updateFontGlyphCount);
+            updateFontGlyphCount();
 
             // Update kern aggressiveness label on slider change
             document.getElementById('kernAggressiveness').addEventListener('input', (e) => {
@@ -1405,6 +1413,36 @@ Line breaks are preserved."></textarea>
             } catch (err) {
                 console.warn('Font reload failed', err);
             }
+            updateFontGlyphCount();
+        }
+
+        // Show how many glyphs the selected font contains (uses /api/glyphs).
+        async function updateFontGlyphCount() {
+            const font = document.getElementById('fontSelect').value;
+            const el = document.getElementById('fontGlyphCount');
+            if (!font) { el.textContent = ''; return; }
+            try {
+                const res = await fetch(`/api/glyphs/${encodeURIComponent(font)}`);
+                if (!res.ok) { el.textContent = ''; return; }
+                const n = ((await res.json()).glyphs || []).length;
+                el.textContent = `${n} glyph${n === 1 ? '' : 's'}`;
+            } catch (_) { el.textContent = ''; }
+        }
+
+        // Start a new font: open the collector targeting it, so you capture
+        // glyphs into a fresh glyphs/<name>/ folder. It appears in the font
+        // list once it has at least one saved glyph.
+        function newFont() {
+            const name = prompt('New font name (letters, digits, _ or -):', 'MyFont');
+            if (!name) return;
+            if (!/^[A-Za-z0-9_-]{1,64}$/.test(name)) {
+                setStatus('error', 'Invalid font name — use letters, digits, _ or -');
+                return;
+            }
+            document.getElementById('collectorFrame').setAttribute('src',
+                `/collector?font=${encodeURIComponent(name)}`);
+            switchView('capture');
+            setStatus('ready', `Capturing into new font "${name}" — draw glyphs, then return to Assemble.`);
         }
 
         // ── Actual-size (1:1) preview ──
