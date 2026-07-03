@@ -601,7 +601,8 @@ Line breaks are preserved."></textarea>
                     </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
                         Loads bundled settings from <code>configs/presets/</code>. "Save…"
-                        downloads the current sidebar state as a YAML file.
+                        writes the current sidebar state there as a named preset
+                        (falls back to a download if the server is unavailable).
                     </div>
                 </div>
 
@@ -986,10 +987,32 @@ Line breaks are preserved."></textarea>
             return lines.join('\n') + '\n';
         }
 
-        function savePreset() {
-            const name = prompt('Preset filename (without extension):', 'my-preset');
+        async function savePreset() {
+            const name = prompt('Preset name (letters, digits, _ or -):', 'my-preset');
             if (!name) return;
             const yaml = toYaml(currentSettings());
+            // Save to the server so it appears in the dropdown immediately;
+            // fall back to a file download if the server rejects/unavailable.
+            try {
+                const res = await fetch('/api/save-preset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, yaml }),
+                });
+                if (res.ok) {
+                    await refreshPresetOptions();
+                    const sel = document.getElementById('presetSelect');
+                    if ([...sel.options].some(o => o.value === name)) sel.value = name;
+                    setStatus('ready', `Preset "${name}" saved to configs/presets/`);
+                    return;
+                }
+                const j = await res.json().catch(() => ({}));
+                setStatus('error', j.error || 'Preset save failed — downloading instead');
+            } catch (_) { /* offline — download instead */ }
+            downloadPresetYaml(name, yaml);
+        }
+
+        function downloadPresetYaml(name, yaml) {
             const blob = new Blob([yaml], { type: 'text/yaml' });
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -999,19 +1022,25 @@ Line breaks are preserved."></textarea>
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            setStatus('ready', `Preset saved as ${name}.yaml`);
+            setStatus('ready', `Preset downloaded as ${name}.yaml`);
+        }
+
+        async function refreshPresetOptions() {
+            const res = await fetch('/api/presets');
+            const names = await res.json();
+            const sel = document.getElementById('presetSelect');
+            while (sel.options.length > 1) sel.remove(1);  // keep "(none)"
+            names.forEach(n => {
+                const o = document.createElement('option');
+                o.value = n; o.textContent = n;
+                sel.appendChild(o);
+            });
         }
 
         async function loadPresets() {
             try {
-                const res = await fetch('/api/presets');
-                const names = await res.json();
+                await refreshPresetOptions();
                 const sel = document.getElementById('presetSelect');
-                names.forEach(n => {
-                    const o = document.createElement('option');
-                    o.value = n; o.textContent = n;
-                    sel.appendChild(o);
-                });
                 sel.addEventListener('change', async (e) => {
                     const name = e.target.value;
                     if (!name) return;

@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 BASE_GLYPHS_DIR = os.path.normpath(os.path.join(script_dir, "..", "glyphs"))
+PRESETS_DIR = os.path.normpath(os.path.join(script_dir, "..", "configs", "presets"))
 
 # Module-level cache of loaded GlyphLibrary instances keyed by glyphs_path.
 # The library is purely data derived from on-disk JSON, so caching across
@@ -156,6 +157,37 @@ def api_preset(name):
         return jsonify(_load_config_file(path))
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+_PRESET_NAME_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+@app.route("/api/save-preset", methods=["POST"])
+def api_save_preset():
+    """Write a preset YAML into configs/presets/ so it shows up in the
+    dropdown immediately (the GUI's Save… button). The client sends the
+    already-serialised YAML, so this works without PyYAML installed.
+    Body: {"name": "<preset>", "yaml": "<text>"}.
+    """
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    yaml_text = data.get("yaml")
+    if not _PRESET_NAME_RE.fullmatch(name):
+        return jsonify({"error": "invalid preset name (letters, digits, _ or -)"}), 400
+    if not isinstance(yaml_text, str) or not yaml_text.strip():
+        return jsonify({"error": "missing preset content"}), 400
+
+    presets_dir = os.path.realpath(PRESETS_DIR)
+    target = os.path.realpath(os.path.join(presets_dir, name + ".yaml"))
+    if os.path.commonpath([presets_dir, target]) != presets_dir:
+        return jsonify({"error": "path escapes presets directory"}), 400
+    try:
+        os.makedirs(presets_dir, exist_ok=True)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write(yaml_text)
+    except OSError as exc:
+        return jsonify({"error": f"write failed: {exc}"}), 500
+    return jsonify({"ok": True, "name": name})
 
 
 @app.route("/api/generate", methods=["POST"])
