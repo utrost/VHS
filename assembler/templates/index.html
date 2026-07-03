@@ -483,6 +483,16 @@
             cursor: pointer; pointer-events: auto;
             z-index: 7; box-shadow: 0 1px 5px rgba(0,0,0,0.45);
         }
+        .wys-frame-lh {
+            position: absolute;
+            width: 42px; height: 18px;
+            font-size: 10px; text-align: center;
+            padding: 0 2px;
+            border: 1px solid var(--success); border-radius: 4px;
+            background: rgba(255,255,255,0.95); color: #111;
+            pointer-events: auto; z-index: 7;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+        }
         .wys-handle.frame { background: var(--success); }
         .wys-guides { position: absolute; inset: 0; pointer-events: none; }
         .wys-guideline {
@@ -2036,13 +2046,23 @@ Line breaks are preserved."></textarea>
             const hMove = _el('div', 'wys-handle move frame');
             const hEw = _el('div', 'wys-handle ew frame');
             const del = _el('div', 'wys-frame-del'); del.textContent = '✕'; del.title = 'Delete frame';
-            const refs = { box, ta, label, hMove, hEw, del,
-                           nodes: [box, ta, label, hMove, hEw, del] };
-            container.append(box, ta, label, hMove, hEw, del);
+            const lh = _el('input', 'wys-frame-lh');
+            lh.type = 'number'; lh.min = '2'; lh.step = '0.5'; lh.placeholder = 'lh';
+            lh.title = 'Line height (mm) for this frame — blank = document default';
+            const refs = { box, ta, label, hMove, hEw, del, lh,
+                           nodes: [box, ta, label, hMove, hEw, del, lh] };
+            container.append(box, ta, label, hMove, hEw, del, lh);
 
             ta.addEventListener('input', () => {
                 const i = extraEls.indexOf(refs);
                 if (i >= 0) { extraFrames[i].text = ta.value; scheduleFramesRender(); }
+            });
+            lh.addEventListener('input', () => {
+                const i = extraEls.indexOf(refs);
+                if (i < 0) return;
+                const v = parseFloat(lh.value);
+                extraFrames[i].line_height = (lh.value !== '' && v > 0) ? v : null;
+                scheduleFramesRender();
             });
             // Select the placeholder on first focus so typing replaces it.
             ta.addEventListener('focus', () => {
@@ -2079,6 +2099,9 @@ Line breaks are preserved."></textarea>
             placeHandle(refs.hEw, t0.x + w, t0.y + h / 2);
             refs.del.style.left = (t0.x + w - 9) + 'px';
             refs.del.style.top = (t0.y - 9) + 'px';
+            refs.lh.style.left = (t0.x + w - 42) + 'px';
+            refs.lh.style.top = (t0.y + h + 3) + 'px';
+            if (document.activeElement !== refs.lh) refs.lh.value = fr.line_height || '';
             refs.box.classList.toggle('overflow', frameOverflow(n, g));
         }
 
@@ -2151,9 +2174,12 @@ Line breaks are preserved."></textarea>
                          start_y: _num('startY', margin) };
             const mw0 = document.getElementById('maxWidthMm').value;
             if (mw0 !== '') f0.max_width = parseFloat(mw0);
-            return [f0, ...extraFrames.map(f => ({
-                text: f.text, start_x: f.start_x,
-                start_y: f.start_y, max_width: f.max_width }))];
+            return [f0, ...extraFrames.map(f => {
+                const o = { text: f.text, start_x: f.start_x,
+                            start_y: f.start_y, max_width: f.max_width };
+                if (f.line_height) o.line_height = f.line_height;
+                return o;
+            })];
         }
 
         // Wire one drag handle. Each gesture clamps to the page and writes the
