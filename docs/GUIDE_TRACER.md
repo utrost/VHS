@@ -1,5 +1,8 @@
 # VHS Tracer — guide
 
+> Building on the tool or curious how it works internally? See the
+> [Tracer architecture document](ARCHITECTURE_TRACER.md).
+
 A pen-first tracing surface, spun off from the GlyphCollector. Load a
 reference image, drop its opacity, and trace over it with a pen-enabled
 device (Android tablet + stylus, iPad + Apple Pencil, or a mouse). Strokes

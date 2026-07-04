@@ -157,6 +157,7 @@ python3 -m unittest test_assembler test_cli -v
 - [Assembler GUI Guide](docs/GUIDE_ASSEMBLER_GUI.md) — Screenshot tour of the web UI
 - [GlyphCollector Guide](docs/GUIDE_GLYPHCOLLECTOR.md) — Capture workflow end-to-end
 - [Tracer Guide](docs/GUIDE_TRACER.md) — Pressure-aware image tracing → SVG/JSON
+- [Tracer Architecture](docs/ARCHITECTURE_TRACER.md) — How the Tracer is built (data model, transforms, pipeline)
 - [Roadmap](docs/ROADMAP.md) — Planned realism and UX enhancements
 - [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
 - [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
