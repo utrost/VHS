@@ -62,7 +62,9 @@ Module-level state (`TracerUI.html:208`) holds everything:
 - **`AW`, `AH`** — artboard width/height in *artboard units*. Set to the
   reference image's natural pixel size when an image loads; default
   `1000×1400`. This is the SVG `viewBox` on export.
-- **`bgImage`, `bgName`** — the loaded `Image` and its filename.
+- **`bgImage`, `bgName`** — the loaded `Image` and its filename. Images are
+  always loaded via `FileReader.readAsDataURL`, so `bgImage.src` is a
+  `data:` URL — which is what lets the project embed the image (§10).
 - **`view = { s, ox, oy }`** — the pan/zoom transform (see §4).
 - **`layers`** — the document: an ordered array of layer objects, drawn
   bottom-to-top (later in the array = higher in the stack):
@@ -304,12 +306,20 @@ flicker on noisy pressure sensors.
 
 ### JSON — `buildJSON` (`:596`) — lossless, re-openable (v2)
 
-Serialises artboard size, image name, current `settings`, and the full
+Serialises artboard size, image meta, current `settings`, and the full
 **`layers`** array — each layer's name/colour/visibility/opacity plus its
 strokes with **raw** points (coordinates rounded to 2 dp, pressure to 3 dp
 for size). Because raw points and the smoothing settings are both stored, a
 re-opened file reproduces the look *and* stays re-tunable. Written as
 `version: 2`; schema is in the [user guide](GUIDE_TRACER.md#export-formats).
+
+**Embedded image (portable project).** `buildImageMeta` writes
+`image: { name }` and, when the **Embed** toggle (`cfg.embedImage`, default
+on) is set and an image is loaded, also `image.data = bgImage.src` — the
+image's data-URL. That makes the JSON a self-contained project: it reopens
+with its reference image, and can be shared as a single file. Toggling Embed
+off keeps the JSON lean (filename only). No re-encoding is needed since the
+image already lives as a data-URL on `bgImage.src`.
 
 ### SVG — `buildSVG` (`:635`) — processed artwork
 
@@ -330,10 +340,13 @@ source (that's the JSON).
 Validates `type === "vhs-trace"`, restores artboard, and rebuilds `layers`
 (defensively defaulting missing fields). It accepts both schemas: a **v2**
 file rebuilds each layer; a **v1** file (a flat `strokes` array) is wrapped
-into a single layer, so old traces still open. Saved `settings` are
-re-applied to `cfg` and the toolbar; then `syncPenColor` + `renderLayerPanel`
-+ `fitView`. `readImageFile` (`:563`) and the drag-and-drop handlers cover
-image loading via `FileReader` → data-URL → `Image`.
+into a single layer, so old traces still open. If the file carries
+`image.data`, the embedded reference is restored via `loadImageFromSrc`
+(otherwise `bgImage` is cleared and only `bgName` kept). Saved `settings`
+are re-applied to `cfg` and the toolbar; then `syncPenColor` +
+`renderLayerPanel` + `fitView`. `readImageFile` (`:563`) and the
+drag-and-drop handlers cover fresh image loading via `FileReader` →
+data-URL → `Image`.
 
 ---
 
@@ -399,8 +412,6 @@ Ordered roughly by value; each is a localised change:
 - **Layer reordering.** `layers` is an ordered array (render/export already
   iterate it in order); expose drag-to-restack or up/down controls in
   `renderLayerPanel`, reordering the array.
-- **Portable JSON.** Store the reference image as a data-URL in the JSON
-  (`buildJSON`/`loadTraceJSON`) behind an "embed image" toggle.
 - **Direct-save.** Adopt the collector's File System Access API path to
   write files to a connected folder instead of downloading.
 - **Per-stroke edit.** Re-colour/re-width or delete an *individual* stroke

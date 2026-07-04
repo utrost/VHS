@@ -12,8 +12,9 @@
   opacity — e.g. a pencil underdrawing, an ink layer, a faint shadow.
 
   Save as JSON (lossless: artboard + layers + raw {x,y,p,t} points +
-  settings, so a trace can be re-opened and re-tuned) or export to SVG
-  (processed paths per layer <g>, pressure as true variable-width outlines).
+  settings, and optionally the reference image embedded as a data-URL, so
+  the file is a portable, self-contained project that reopens exactly) or
+  export to SVG (processed paths per layer <g>, pressure as variable width).
 
   Tablet gestures: the PEN draws; one finger PANS; two fingers PINCH-ZOOM.
   Single self-contained file — no build step, no CDN. Open it off disk.
@@ -172,6 +173,7 @@
     </div>
     <div class="sep"></div>
     <div class="grp">
+      <label class="chk" title="Store the reference image inside the JSON — makes it a portable, self-contained project file"><input type="checkbox" id="embedImg" checked> Embed</label>
       <button id="saveJson" title="Save lossless .json (re-openable)">💾 JSON</button>
       <button id="saveSvg" class="on" title="Export processed .svg">⬇︎ SVG</button>
     </div>
@@ -233,7 +235,7 @@ const LAYER_PALETTE = ['#111111', '#ef4444', '#2563eb', '#16a34a',
 
 // Settings (mirrored from the toolbar)
 const cfg = { imgOpacity: 0.45, penColor: '#111111', penWidth: 4,
-              stab: 0.35, smooth: true, varw: true };
+              stab: 0.35, smooth: true, varw: true, embedImage: true };
 
 function newLayer(color) {
   layerSeq++;
@@ -596,11 +598,22 @@ function download(name, mime, data) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+function buildImageMeta() {
+  if (!bgName && !bgImage) return null;
+  const meta = { name: bgName };
+  // Embed the reference as a data-URL so the JSON is a portable, self-
+  // contained project (reopens with its image). bgImage.src already holds
+  // the data-URL (images are always loaded via FileReader.readAsDataURL).
+  if (cfg.embedImage && bgImage && /^data:/.test(bgImage.src)) {
+    meta.data = bgImage.src;
+  }
+  return meta;
+}
 function buildJSON() {
   return JSON.stringify({
     type: 'vhs-trace', version: 2,
     artboard: { width: AW, height: AH },
-    image: bgName ? { name: bgName } : null,
+    image: buildImageMeta(),
     settings: { stabilizer: cfg.stab, smooth: cfg.smooth,
                 variable_width: cfg.varw },
     layers: layers.map(l => ({
@@ -658,6 +671,12 @@ function buildSVG() {
 function loadTraceJSON(obj) {
   if (!obj || obj.type !== 'vhs-trace') { alert('Not a VHS trace file.'); return; }
   if (obj.artboard) { AW = obj.artboard.width; AH = obj.artboard.height; }
+  // Restore an embedded reference image, if the project carried one.
+  if (obj.image && obj.image.data) {
+    loadImageFromSrc(obj.image.data, obj.image.name || null);
+  } else {
+    bgImage = null; bgName = (obj.image && obj.image.name) || null;
+  }
   const mkStroke = s => ({
     color: s.color || '#111111', width: s.width || 4,
     points: (s.points || []).map(p => ({ x: p.x, y: p.y,
@@ -727,6 +746,7 @@ document.getElementById('penColor').addEventListener('input', (e) => {
 });
 document.getElementById('smooth').addEventListener('change', (e) => { cfg.smooth = e.target.checked; render(); });
 document.getElementById('varw').addEventListener('change', (e) => { cfg.varw = e.target.checked; render(); });
+document.getElementById('embedImg').addEventListener('change', (e) => { cfg.embedImage = e.target.checked; });
 
 document.getElementById('fit').addEventListener('click', fitView);
 document.getElementById('clear').addEventListener('click', () => {
@@ -867,6 +887,9 @@ window.__tracer = {
   get view() { return view; },
   buildJSON, buildSVG, loadTraceJSON, processStroke,
   addLayer, renderLayerPanel, render, updateHud,
+  loadImageFromSrc, cfg,
+  get imageSrc() { return bgImage ? bgImage.src : null; },
+  get imageName() { return bgName; },
   addStroke(s) { activeLayer().strokes.push(s); }
 };
 </script>

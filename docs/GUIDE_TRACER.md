@@ -84,13 +84,20 @@ active layer's colour too. **Clear** empties the active layer only; **Undo**
 size, all layers (name, colour, visibility, opacity) with every raw
 `{x, y, p, t}` point and per-stroke colour/width, plus your stabiliser/smooth
 settings. Re-open it later with **📂 Open** to keep tracing or re-tune the
-smoothing. Schema:
+smoothing.
+
+With the **Embed** checkbox on (the default), the reference image is stored
+inside the JSON too, as a data-URL — so the file is a **portable,
+self-contained project**: reopen it and your image comes back with your
+strokes, no need to hunt for the original picture, and you can hand the one
+file to someone else. Turn **Embed** off to keep the JSON small (it then
+stores just the image's filename, and reopening restores strokes only).
 
 ```json
 {
   "type": "vhs-trace", "version": 2,
   "artboard": { "width": 1200, "height": 1600 },
-  "image": { "name": "reference.jpg" },
+  "image": { "name": "reference.jpg", "data": "data:image/jpeg;base64,…" },
   "settings": { "stabilizer": 35, "smooth": true, "variable_width": true },
   "layers": [
     { "name": "Pencil", "color": "#111111", "visible": true, "opacity": 1,
@@ -102,8 +109,9 @@ smoothing. Schema:
 }
 ```
 
-Version-1 files (a flat `strokes` array, no layers) still open — they load
-into a single layer.
+The `image.data` field is present only when **Embed** is on. Version-1 files
+(a flat `strokes` array, no layers) still open — they load into a single
+layer.
 
 **SVG** (`⬇︎ SVG`) is the **processed** result — stabilised, smoothed, with
 pressure baked into true variable-width ink outlines (`<path fill=…>`), on a
@@ -126,4 +134,3 @@ the Tracer captures *free-form artwork* over a reference image.
   round-capped, self-intersection-clean outline is a future refinement.
 - Layer reordering (drag to restack) and per-stroke re-colour within a layer.
 - Direct-save to a folder (File System Access API), like the collector.
-- Optionally embed the reference image in the JSON for a fully portable file.
