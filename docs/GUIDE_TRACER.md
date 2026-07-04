@@ -58,30 +58,59 @@ and exported, so you can re-tune them any time:
 - **Smooth** (checkbox) — Catmull-Rom interpolation that turns the point
   samples into a flowing curve.
 
+## Layers
+
+Draw across multiple **layers**, each with its own colour — e.g. a pencil
+underdrawing, an ink layer over it, and a faint shadow layer beneath. The
+panel on the left lists them (topmost layer at the top). Each row has:
+
+- an **eye** to toggle visibility,
+- a **colour swatch** — a layer is a single colour, so changing it recolours
+  that layer's strokes (and sets the colour for new strokes drawn on it),
+- the **name** — click to make the layer active (new strokes land here),
+  double-click to rename,
+- a **stroke count** and a **✕** to delete the layer.
+
+The active layer is highlighted; **＋** adds a new layer on top (in the next
+palette colour). The **Opacity** slider at the bottom sets the *active
+layer's* opacity — the whole layer is flattened and dimmed as a group, so
+overlapping strokes don't double-darken. The toolbar colour picker edits the
+active layer's colour too. **Clear** empties the active layer only; **Undo**
+(<kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd>) steps back across layers in draw order.
+
 ## Export formats
 
 **JSON** (`💾 JSON`) is **lossless and re-openable** — it stores the artboard
-size, every raw `{x, y, p, t}` point, per-stroke colour/width, and your
-stabiliser/smooth settings. Re-open it later with **📂 Open** to keep
-tracing or re-tune the smoothing. Schema:
+size, all layers (name, colour, visibility, opacity) with every raw
+`{x, y, p, t}` point and per-stroke colour/width, plus your stabiliser/smooth
+settings. Re-open it later with **📂 Open** to keep tracing or re-tune the
+smoothing. Schema:
 
 ```json
 {
-  "type": "vhs-trace", "version": 1,
+  "type": "vhs-trace", "version": 2,
   "artboard": { "width": 1200, "height": 1600 },
   "image": { "name": "reference.jpg" },
   "settings": { "stabilizer": 35, "smooth": true, "variable_width": true },
-  "strokes": [
-    { "color": "#111111", "width": 4,
-      "points": [ { "x": 210.4, "y": 88.1, "p": 0.62, "t": 1720000000000 } ] }
+  "layers": [
+    { "name": "Pencil", "color": "#111111", "visible": true, "opacity": 1,
+      "strokes": [
+        { "color": "#111111", "width": 4,
+          "points": [ { "x": 210.4, "y": 88.1, "p": 0.62, "t": 1720000000000 } ] }
+      ] }
   ]
 }
 ```
 
+Version-1 files (a flat `strokes` array, no layers) still open — they load
+into a single layer.
+
 **SVG** (`⬇︎ SVG`) is the **processed** result — stabilised, smoothed, with
 pressure baked into true variable-width ink outlines (`<path fill=…>`), on a
-`viewBox` matching the artboard. This is the shareable/printable artwork.
-With **Pressure** off you get plain constant-width `stroke` paths instead.
+`viewBox` matching the artboard. Each visible layer becomes a `<g
+data-layer="…">` group (carrying its opacity), so the layer structure
+survives into the SVG. This is the shareable/printable artwork. With
+**Pressure** off you get plain constant-width `stroke` paths instead.
 
 ## Relationship to the rest of VHS
 
@@ -95,6 +124,6 @@ the Tracer captures *free-form artwork* over a reference image.
 
 - Variable-width in SVG uses a simple centerline-offset outline; a
   round-capped, self-intersection-clean outline is a future refinement.
-- Layers (per-layer colour/visibility), per-stroke re-colour after the fact.
+- Layer reordering (drag to restack) and per-stroke re-colour within a layer.
 - Direct-save to a folder (File System Access API), like the collector.
 - Optionally embed the reference image in the JSON for a fully portable file.

@@ -21,7 +21,7 @@ GlyphCollector and are deliberate, not incidental.
 | **Pen-first** | The pen is the primary instrument; touch drives the *view*, not the ink. |
 | **Non-destructive** | Raw captured points are never mutated; smoothing is applied downstream and stays re-tunable. |
 
-The whole program is ~625 lines: a `<style>` block, static DOM, and one
+The whole program is ~870 lines: a `<style>` block, static DOM, and one
 `<script>`. There is no framework and no global build of DOM — the toolbar
 is hand-wired in section 12 of the script.
 
@@ -33,22 +33,23 @@ The script is organised into labelled sections (each fenced by a `// ───`
 banner comment). Reading top to bottom:
 
 ```
-State                    (169)  AW/AH, bgImage, view, dpr, strokes, cfg, touches, gesture
-Canvas sizing (HiDPI)    (189)  resize()
-Coordinate transforms    (202)  toArtboard(), fitView(), zoomAbout()
-Stabilisation            (230)  stabilize(), catmullRom(), processStroke(), halfWidth()
-Rendering                (284)  render(), drawStroke(), outlinePoints(), outlinePath()
-Pointer input            (351)  pointerdown/move/up routing, addPoint()
-Touch gestures           (396)  startGesture(), updateGesture(), wheel zoom
-HUD                      (442)  updateHud(), showPressure()
-Image loading            (456)  loadImageFromSrc(), readImageFile(), drag & drop
-Save / load              (491)  download(), buildJSON(), buildSVG(), loadTraceJSON()
-Toolbar wiring           (566)  bindRange(), setStab(), event bindings
-Boot                     (618)  resize + fitView + window.__tracer test hooks
+State                    (208)  AW/AH, bgImage, view, dpr, layers, activeId, undo/redo,
+                                 cfg, LAYER_PALETTE, newLayer(), activeLayer(), allStrokes()
+Canvas sizing (HiDPI)    (250)  resize()
+Coordinate transforms    (263)  toArtboard(), fitView(), zoomAbout()
+Stabilisation            (289)  stabilize(), catmullRom(), processStroke(), halfWidth()
+Rendering                (343)  worldTransform(), ensureOff(), render(), drawStroke(), outline*()
+Pointer input            (444)  pointerdown/move/up routing, addPoint()
+Touch gestures           (491)  startGesture(), updateGesture(), wheel zoom
+HUD                      (537)  updateHud(), showPressure()
+Image loading            (551)  loadImageFromSrc(), readImageFile(), drag & drop
+Save / load              (586)  buildJSON(), svgStroke(), buildSVG(), loadTraceJSON()
+Toolbar + layers         (698)  bindRange(), setStab(), layer panel, undo(), redo()
+Boot                     (853)  first layer + resize + fitView + window.__tracer hooks
 ```
 
 There is no central event loop or state store. The model is a plain
-mutable-state + explicit-`render()` design: input handlers mutate `strokes`
+mutable-state + explicit-`render()` design: input handlers mutate `layers`
 / `view` and call `render()`. Every visual is recomputed from state on each
 `render()` — there is no incremental/dirty-rect drawing.
 
@@ -56,28 +57,36 @@ mutable-state + explicit-`render()` design: input handlers mutate `strokes`
 
 ## 3. Data model
 
-Five pieces of module-level state (`TracerUI.html:169`) hold everything:
+Module-level state (`TracerUI.html:208`) holds everything:
 
 - **`AW`, `AH`** — artboard width/height in *artboard units*. Set to the
   reference image's natural pixel size when an image loads; default
   `1000×1400`. This is the SVG `viewBox` on export.
 - **`bgImage`, `bgName`** — the loaded `Image` and its filename.
 - **`view = { s, ox, oy }`** — the pan/zoom transform (see §4).
-- **`strokes`** — the document. An array of stroke objects:
+- **`layers`** — the document: an ordered array of layer objects, drawn
+  bottom-to-top (later in the array = higher in the stack):
   ```js
-  { color: "#111111", width: 4, points: [ {x, y, p, t}, … ] }
+  { id, name, color, visible, opacity,
+    strokes: [ { color, width, points: [ {x, y, p, t}, … ] } ] }
   ```
-  Coordinates are in **artboard space** (zoom-independent). `p` is pen
-  pressure 0–1; `t` is a capture timestamp (`Date.now()`).
-- **`cfg`** — the live settings mirror of the toolbar (`imgOpacity`,
-  `penColor`, `penWidth`, `stab`, `smooth`, `varw`).
+  A **stroke's** coordinates are in **artboard space** (zoom-independent);
+  `p` is pen pressure 0–1; `t` is a capture timestamp. `newLayer()` mints
+  ids and cycles default names/colours from `LAYER_PALETTE`; `activeLayer()`
+  resolves `activeId`; `allStrokes()` flattens for counting/iteration.
+- **`activeId`** — the layer new strokes are drawn into.
+- **`cfg`** — the live settings mirror of the toolbar. `cfg.penColor`
+  tracks the *active layer's* colour (a layer is one colour, §10).
 
-`redoStack` holds popped strokes for redo; `current` is the in-progress
-stroke (a reference also pushed into `strokes`, so appending points is live).
+`undoStack`/`redoStack` hold `{layerId, stroke}` records in draw order (§6.1);
+`current` is the in-progress stroke, already pushed into its layer so
+appending points is live.
 
 **Key invariant:** points are stored **raw** in artboard space. Nothing in
 the pipeline writes back into `stroke.points`. Stabilisation and smoothing
-are pure functions applied at render/export time (§5).
+are pure functions applied at render/export time (§5). Colour *is* mutated
+in place when a layer is recoloured — that is a document edit, not the
+smoothing pipeline.
 
 ---
 
@@ -169,11 +178,11 @@ what you see is what you get.
 ## 6. Input pipeline
 
 Pointer Events unify pen, touch, and mouse. Routing is by `pointerType`
-(`pointerdown`, `:353`):
+(`pointerdown`, `:447`):
 
 ```
 pointerdown ─┬─ type 'touch'          ─▶ touches.set(id); startGesture()   (view)
-             └─ type 'pen' | 'mouse'  ─▶ new stroke; setPointerCapture; addPoint()  (ink)
+             └─ type 'pen' | 'mouse'  ─▶ new stroke in active layer; addPoint()  (ink)
 ```
 
 Drawing and view gestures live in separate channels and never conflict —
@@ -181,12 +190,15 @@ which is exactly the tablet ergonomic you want (pen inks, fingers pan/zoom)
 and gives **palm rejection for free** (a resting palm registers as `touch`
 and only ever moves the view, never draws).
 
-**`addPoint(e)`** (`:386`):
+A new stroke is pushed into `activeLayer().strokes` (taking the layer's
+colour) and recorded on `undoStack` as `{layerId, stroke}`.
+
+**`addPoint(e)`** (`:482`):
 1. `toArtboard(e.clientX, e.clientY)` → artboard coordinates.
 2. Pen pressure from `e.pressure`; mouse (no pressure) falls back to `0.5`.
 3. Push `{x, y, p, t}` onto `current.points`; update the pressure meter.
 
-**Coalesced events:** on `pointermove` (`:365`), `e.getCoalescedEvents()`
+**Coalesced events:** on `pointermove` (`:461`), `e.getCoalescedEvents()`
 replays the sub-frame samples the OS batched, so fast strokes keep their
 fidelity instead of being decimated to the animation-frame rate. Same trick
 as the collector.
@@ -194,12 +206,22 @@ as the collector.
 `setPointerCapture` keeps the stroke attached to the canvas even if the pen
 strays outside it mid-stroke.
 
+### 6.1 Undo / redo
+
+`undo`/`redo` (`:830`) are layer-aware and preserve true **draw order** across
+layers. Each completed stroke pushes `{layerId, stroke}` onto `undoStack`
+(and clears `redoStack`). `undo` pops the record, splices the stroke out of
+its layer, and pushes to `redoStack`; `redo` re-appends it. Because a new
+stroke clears `redoStack`, redo only runs with no intervening draws, so
+z-order is never scrambled. Deleting or clearing a layer prunes both stacks
+of that layer's records.
+
 ---
 
 ## 7. Gesture system
 
 Touch pointers accumulate in the `touches` map; `startGesture`/
-`updateGesture` (`:396`) interpret them:
+`updateGesture` (`:492`) interpret them:
 
 - **1 touch → pan.** Record `view.ox/oy` and the start position; on move,
   translate by the finger delta.
@@ -211,7 +233,7 @@ Touch pointers accumulate in the `touches` map; `startGesture`/
 - Adding/removing a finger re-seeds the gesture (`startGesture` is called on
   every touch down/up), so 1↔2 finger transitions don't jump.
 
-**Wheel** (`:432`) calls `zoomAbout` at the cursor with a 1.1× step.
+**Wheel** (`:528`) calls `zoomAbout` at the cursor with a 1.1× step.
 `preventDefault` + `touch-action: none` on the canvas stop the browser from
 hijacking scroll/zoom.
 
@@ -219,21 +241,34 @@ hijacking scroll/zoom.
 
 ## 8. Rendering
 
-`render()` (`:284`) is the single draw entry point, called after any state
+`render()` (`:362`) is the single draw entry point, called after any state
 change. It:
 1. Resets and clears the device-pixel canvas.
-2. Installs the combined artboard→device matrix (§4).
+2. Installs the combined artboard→device matrix via `worldTransform` (§4).
 3. Paints the white artboard sheet, then the reference image at
    `cfg.imgOpacity`.
-4. Draws every stroke via `drawStroke`.
+4. Iterates `layers` bottom-to-top, skipping hidden/empty ones, and draws
+   each layer's strokes via `drawStroke`.
 
-**`drawStroke(st)`** (`:304`) runs `processStroke` then renders per mode:
+### Layer group opacity — offscreen compositing
+
+A layer at `opacity < 1` must be **flattened first**, or overlapping strokes
+within it would double-darken at the seams. So `render` special-cases it:
+draw the layer's strokes into a reusable offscreen canvas (`ensureOff`,
+`:355`, same size + world transform as the main canvas), then blit that
+buffer once onto the main context with `globalAlpha = layer.opacity`.
+Opaque layers (`opacity ≈ 1`) skip the buffer and draw direct — the fast,
+common path. The offscreen canvas is allocated once and only resized when
+the viewport changes.
+
+**`drawStroke(c, st)`** (`:398`) takes an explicit context (main *or*
+offscreen), runs `processStroke`, then renders per mode:
 
 - **1 point** → a filled dot (`arc`, radius from pressure).
 - **Pressure on (`cfg.varw`)** → a filled **outline** (variable width).
 - **Pressure off** → a plain centreline `stroke` at constant `st.width`.
 
-### Variable-width outline — `outlinePoints` (`:328`)
+### Variable-width outline — `outlinePoints` (`:422`)
 
 Pressure can't be expressed by SVG/canvas `stroke-width` along a path, so
 width is turned into geometry. For each centreline point:
@@ -245,7 +280,7 @@ left  = point + normal·w
 right = point − normal·w
 ```
 The polygon walks `left[]` forward then `right[]` reversed and closes — a
-filled ribbon whose thickness tracks pressure. `halfWidth` (`:279`) is the
+filled ribbon whose thickness tracks pressure. `halfWidth` (`:341`) is the
 one place the pressure→width curve lives, shared by canvas dots, canvas
 outlines, and SVG export, so all three agree.
 
@@ -255,7 +290,7 @@ outlines, and SVG export, so all three agree.
 
 - **Capture:** `e.pressure` per point (incl. coalesced sub-samples), stored
   as `p`. Absent/again-`0.5` mouse input defaults to `0.5`.
-- **Live feedback:** `showPressure` (`:448`) drives the bottom-right meter.
+- **Live feedback:** `showPressure` (`:545`) drives the bottom-right meter.
 - **Rendering:** variable-width outline (§8), toggle `cfg.varw`.
 - **Persistence:** `p` is written per point in JSON (lossless) and baked
   into outline geometry in SVG.
@@ -267,32 +302,38 @@ flicker on noisy pressure sensors.
 
 ## 10. Export & round-trip
 
-### JSON — `buildJSON` (`:499`) — lossless, re-openable
+### JSON — `buildJSON` (`:596`) — lossless, re-openable (v2)
 
-Serialises artboard size, image name, current `settings`, and every stroke
-with **raw** points (coordinates rounded to 2 dp, pressure to 3 dp for
-size). Because raw points and the smoothing settings are both stored, a
-re-opened file reproduces the look *and* stays re-tunable. Schema is in the
-[user guide](GUIDE_TRACER.md#export-formats).
+Serialises artboard size, image name, current `settings`, and the full
+**`layers`** array — each layer's name/colour/visibility/opacity plus its
+strokes with **raw** points (coordinates rounded to 2 dp, pressure to 3 dp
+for size). Because raw points and the smoothing settings are both stored, a
+re-opened file reproduces the look *and* stays re-tunable. Written as
+`version: 2`; schema is in the [user guide](GUIDE_TRACER.md#export-formats).
 
-### SVG — `buildSVG` (`:515`) — processed artwork
+### SVG — `buildSVG` (`:635`) — processed artwork
 
-Emits a `viewBox="0 0 AW AH"` document. Each stroke runs through
-`processStroke`, then:
+Emits a `viewBox="0 0 AW AH"` document. Each **visible** layer becomes a
+`<g data-layer="…">` (carrying `opacity` when < 1), preserving the layer
+structure in the output. Within a group, `svgStroke(st)` (`:619`) renders one
+element per stroke after `processStroke`:
 - 1 point → `<circle>`;
 - pressure on → `<path fill=…>` from `outlinePoints` (variable-width ribbon);
 - pressure off → `<path fill="none" stroke=… stroke-width=…>` centreline.
 
-SVG is a one-way render of the current settings — it is the shareable /
-printable output, not the editable source (that's the JSON).
+Layer names are attribute-escaped (`escapeAttr`). SVG is a one-way render of
+the current settings — the shareable/printable output, not the editable
+source (that's the JSON).
 
-### Load — `loadTraceJSON` (`:540`)
+### Load — `loadTraceJSON` (`:655`)
 
-Validates `type === "vhs-trace"`, restores artboard, rebuilds `strokes`
-(defensively defaulting missing fields), and re-applies saved settings to
-`cfg` and the toolbar controls, then `fitView()`. `readImageFile` (`:466`)
-and the drag-and-drop handlers cover image loading via `FileReader` →
-data-URL → `Image`.
+Validates `type === "vhs-trace"`, restores artboard, and rebuilds `layers`
+(defensively defaulting missing fields). It accepts both schemas: a **v2**
+file rebuilds each layer; a **v1** file (a flat `strokes` array) is wrapped
+into a single layer, so old traces still open. Saved `settings` are
+re-applied to `cfg` and the toolbar; then `syncPenColor` + `renderLayerPanel`
++ `fitView`. `readImageFile` (`:563`) and the drag-and-drop handlers cover
+image loading via `FileReader` → data-URL → `Image`.
 
 ---
 
@@ -309,7 +350,7 @@ It is intentionally a **separate tool**, not a mode of the collector:
 | | GlyphCollector | Tracer |
 |--|----------------|--------|
 | Captures | *characters* into a font library | *free-form artwork* over a reference |
-| Organised by | a keyed glyph grid (char → variants) | a single artboard + stroke list |
+| Organised by | a keyed glyph grid (char → variants) | a layered artboard (layers → strokes) |
 | Reference | a font template glyph | an arbitrary raster image |
 | Normalises to | glyph em/baseline (for typesetting) | the image/artboard viewBox |
 | Output | glyph JSON for the assembler | trace JSON + standalone SVG |
@@ -323,16 +364,22 @@ file, no build, pen-first, raw-preserving) keeps them maintainable together.
 ## 12. Testing
 
 There is no build, so tests drive the file directly in a headless browser
-(Playwright/Chromium). The boot block exposes `window.__tracer` (`:622`)
-with `strokes`, `addStroke`, `processStroke`, `buildJSON`, `buildSVG`,
-`loadTraceJSON`, `render`, `updateHud`, and the `view` — enough to:
+(Playwright/Chromium). The boot block exposes `window.__tracer` (`:860`)
+with `layers`, `activeId`, `strokes` (flattened), `addLayer`, `addStroke`
+(into the active layer), `processStroke`, `buildJSON`, `buildSVG`,
+`loadTraceJSON`, `renderLayerPanel`, `render`, `updateHud`, and the `view` —
+enough to:
 
 - push synthetic pressured/jittery strokes and assert
   `processStroke` expands raw → smoothed points;
-- assert `buildJSON` yields `type:"vhs-trace"` with per-point pressure;
-- assert `buildSVG` yields a correct `viewBox` and `<path>` output;
-- round-trip `buildJSON` → `loadTraceJSON` and compare;
-- screenshot the canvas to confirm pressure renders as visible taper.
+- add layers and assert `buildJSON` yields `version:2` with per-layer,
+  per-point pressure;
+- assert `buildSVG` yields a correct `viewBox` and one `<g>` per *visible*
+  layer (with `opacity` when dimmed);
+- round-trip `buildJSON` → `loadTraceJSON` (v2) and a v1 flat-`strokes`
+  file, and compare;
+- screenshot the canvas to confirm pressure renders as visible taper and
+  layer colours/opacity composite correctly.
 
 `pageerror`/`console.error` are collected and fail the run. This mirrors how
 the assembler's browser features are verified (abort external CDN requests,
@@ -348,16 +395,16 @@ Ordered roughly by value; each is a localised change:
 - **Outline quality.** `outlinePoints` is a simple centreline offset —
   sharp corners can pinch and tight curves can self-intersect. A round-join
   / miter-clipped outline (or per-segment quad ribbons) would refine it.
-  Localised to `outlinePoints` + `drawStroke`/`buildSVG`.
-- **Layers.** `strokes` is a flat list. A layer is a labelled stroke
-  group with visibility/opacity/colour — add a `layerId` to strokes and a
-  layer panel; `render`/export iterate groups.
+  Localised to `outlinePoints` + `drawStroke`/`svgStroke`.
+- **Layer reordering.** `layers` is an ordered array (render/export already
+  iterate it in order); expose drag-to-restack or up/down controls in
+  `renderLayerPanel`, reordering the array.
 - **Portable JSON.** Store the reference image as a data-URL in the JSON
   (`buildJSON`/`loadTraceJSON`) behind an "embed image" toggle.
 - **Direct-save.** Adopt the collector's File System Access API path to
   write files to a connected folder instead of downloading.
-- **Per-stroke edit.** Re-colour/re-width or delete an existing stroke
-  (hit-test against `outlinePoints`), beyond the current global undo/redo.
+- **Per-stroke edit.** Re-colour/re-width or delete an *individual* stroke
+  (hit-test against `outlinePoints`), beyond per-layer colour and undo/redo.
 - **Smoothing on capture.** The stabiliser currently runs at render time
   over the whole stroke; a per-sample real-time predictor would reduce the
   slight lag at high strength.

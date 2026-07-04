@@ -7,7 +7,7 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 ## Project Structure
 
 - **`GlyphCollectorUI/`**: A browser-based tool for capturing handwriting glyph variants.
-- **`TracerUI/`**: A pen-first tracing surface — trace over a reference image and export to SVG/JSON (pressure-aware).
+- **`TracerUI/`**: A pen-first tracing surface — trace over a reference image with pressure and layers, export to SVG/JSON.
 - **`assembler/`**: Python tools to assemble captured glyphs into handwritten SVG text.
 - **`glyphs/`**: Storage for captured glyph data (JSON format). Personal glyph data is gitignored.
 - **`vhs-cli.*` / `vhs-gui.*`**: Platform-specific scripts to run the CLI and Web UI from the root.
