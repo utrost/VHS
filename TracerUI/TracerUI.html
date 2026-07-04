@@ -1,0 +1,625 @@
+<!--
+  VHS Tracer — a pen-first tracing surface, spin-off of the GlyphCollector.
+
+  Load a reference image, drop its opacity, and trace over it with a
+  pen-enabled device (Android tablet + stylus, iPad + Apple Pencil, or a
+  mouse). Strokes capture pen PRESSURE per point and are visualised with
+  variable line width. Two stabilisation mechanics are ported from the
+  collector — a pen STABILIZER (EMA over the point positions) and
+  Catmull-Rom SMOOTH curves — both non-destructive (raw points are kept).
+
+  Save as JSON (lossless: artboard + raw {x,y,p,t} points + settings, so a
+  trace can be re-opened and re-tuned) or export to SVG (processed paths,
+  with pressure rendered as true variable-width ink outlines).
+
+  Tablet gestures: the PEN draws; one finger PANS; two fingers PINCH-ZOOM.
+  Single self-contained file — no build step, no CDN. Open it off disk.
+-->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>VHS Tracer</title>
+<style>
+  :root {
+    --bg: #1e232b; --panel: #2a303a; --panel2: #333b47;
+    --line: #3d4552; --ink: #e8ecf1; --muted: #9aa5b3;
+    --accent: #6366f1; --accent2: #22c55e; --danger: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    background: var(--bg); color: var(--ink);
+    -webkit-user-select: none; user-select: none; }
+  #stage { position: fixed; inset: 0; }
+  /* touch-action:none keeps the browser from stealing pen/touch gestures
+     (same trick the collector uses) — we implement pan/zoom ourselves. */
+  #board { position: absolute; inset: 0; touch-action: none; display: block;
+    background:
+      repeating-conic-gradient(#262b33 0% 25%, #21262d 0% 50%) 50% / 24px 24px; }
+
+  /* Toolbar */
+  #bar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    max-width: calc(100vw - 20px);
+    background: rgba(42,48,58,0.92); backdrop-filter: blur(6px);
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 12px;
+    padding: 8px 10px; box-shadow: 0 6px 24px rgba(0,0,0,0.35); z-index: 5; }
+  .grp { display: flex; gap: 6px; align-items: center; }
+  .sep { width: 1px; align-self: stretch; background: rgba(255,255,255,0.10); margin: 2px 2px; }
+  button, label.file { appearance: none; border: 1px solid rgba(255,255,255,0.10);
+    background: var(--panel2); color: var(--ink); border-radius: 9px;
+    padding: 9px 12px; font-size: 13px; font-weight: 600; cursor: pointer;
+    min-height: 40px; display: inline-flex; align-items: center; gap: 6px; }
+  button:hover, label.file:hover { background: #3c4552; }
+  button.on { background: var(--accent2); border-color: transparent; color: #06210f; }
+  button.ghost { background: transparent; }
+  button.danger:hover { background: var(--danger); border-color: transparent; }
+  input[type=file] { display: none; }
+  .field { display: flex; flex-direction: column; gap: 2px; font-size: 10px;
+    color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .field input[type=range] { width: 108px; accent-color: var(--accent); }
+  .field .row { display: flex; align-items: center; gap: 6px; }
+  input[type=color] { width: 34px; height: 34px; padding: 0; border: none;
+    border-radius: 8px; background: none; cursor: pointer; }
+  .val { font-variant-numeric: tabular-nums; color: var(--ink); min-width: 30px; text-align: right; }
+  .chk { display: flex; align-items: center; gap: 6px; font-size: 12px;
+    color: var(--muted); font-weight: 600; }
+  .chk input { width: 16px; height: 16px; accent-color: var(--accent2); }
+
+  /* Status readouts */
+  #hud { position: absolute; left: 12px; bottom: 12px; z-index: 5;
+    display: flex; gap: 14px; font-size: 12px; color: var(--muted);
+    background: rgba(42,48,58,0.85); padding: 8px 12px; border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06); }
+  #hud b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #press { position: absolute; right: 12px; bottom: 12px; z-index: 5;
+    width: 150px; background: rgba(42,48,58,0.85); border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.06); padding: 8px 10px; }
+  #press .cap { font-size: 10px; color: var(--muted); font-weight: 700;
+    text-transform: uppercase; letter-spacing: .05em; display: flex;
+    justify-content: space-between; }
+  #pbar { height: 8px; margin-top: 6px; border-radius: 5px; overflow: hidden;
+    background: rgba(255,255,255,0.08); }
+  #pfill { height: 100%; width: 0%; background: linear-gradient(90deg,#22c55e,#6366f1); }
+  #drop { position: absolute; inset: 0; z-index: 8; display: none;
+    align-items: center; justify-content: center; pointer-events: none;
+    background: rgba(99,102,241,0.18); border: 3px dashed var(--accent);
+    font-size: 22px; font-weight: 700; color: #fff; }
+  #hint { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    text-align: center; color: var(--muted); font-size: 15px; line-height: 1.7;
+    z-index: 1; pointer-events: none; }
+  #hint b { color: var(--ink); }
+  kbd { background: #3c4552; border-radius: 5px; padding: 1px 6px; font-size: 12px;
+    border: 1px solid rgba(255,255,255,0.12); }
+</style>
+
+<div id="stage">
+  <canvas id="board"></canvas>
+
+  <div id="bar">
+    <div class="grp">
+      <label class="file" title="Load a reference image to trace">
+        🖼️ Image<input type="file" id="imgFile" accept="image/*">
+      </label>
+      <label class="file" title="Open a saved .json trace">
+        📂 Open<input type="file" id="jsonFile" accept="application/json,.json">
+      </label>
+    </div>
+    <div class="field" title="Reference image opacity">
+      <span>Image</span>
+      <div class="row"><input type="range" id="imgOpacity" min="0" max="100" value="45">
+        <span class="val" id="imgOpacityV">45%</span></div>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <input type="color" id="penColor" value="#111111" title="Ink colour">
+      <div class="field" title="Base pen width (artboard units)">
+        <span>Width</span>
+        <div class="row"><input type="range" id="penWidth" min="1" max="18" step="0.5" value="4">
+          <span class="val" id="penWidthV">4</span></div>
+      </div>
+    </div>
+    <div class="sep"></div>
+    <div class="field" title="Pen stabiliser — smooths hand jitter (EMA over points)">
+      <span>Stabilizer</span>
+      <div class="row"><input type="range" id="stab" min="0" max="100" value="35">
+        <span class="val" id="stabV">35</span></div>
+    </div>
+    <label class="chk" title="Catmull-Rom smoothing for flowing curves"><input type="checkbox" id="smooth" checked> Smooth</label>
+    <label class="chk" title="Render pressure as variable line width"><input type="checkbox" id="varw" checked> Pressure</label>
+    <div class="sep"></div>
+    <div class="grp">
+      <button id="undo" class="ghost" title="Undo (Ctrl/Cmd+Z)">↶</button>
+      <button id="redo" class="ghost" title="Redo (Ctrl/Cmd+Shift+Z)">↷</button>
+      <button id="fit" class="ghost" title="Fit view to image">⤢ Fit</button>
+      <button id="clear" class="ghost danger" title="Clear all strokes">Clear</button>
+    </div>
+    <div class="sep"></div>
+    <div class="grp">
+      <button id="saveJson" title="Save lossless .json (re-openable)">💾 JSON</button>
+      <button id="saveSvg" class="on" title="Export processed .svg">⬇︎ SVG</button>
+    </div>
+  </div>
+
+  <div id="hint">
+    <b>Load an image</b> and trace over it with your pen.<br>
+    Pen draws · one finger pans · two fingers pinch-zoom · wheel zooms.<br>
+    Pressure is captured and drawn as variable-width ink.
+  </div>
+
+  <div id="hud">
+    <span>Zoom <b id="zoomV">100%</b></span>
+    <span>Strokes <b id="strokeV">0</b></span>
+    <span>Points <b id="pointV">0</b></span>
+  </div>
+  <div id="press">
+    <div class="cap"><span>Pen pressure</span><span id="pval">0.00</span></div>
+    <div id="pbar"><div id="pfill"></div></div>
+  </div>
+  <div id="drop">Drop image to trace</div>
+</div>
+
+<script>
+"use strict";
+// ─────────────────────────────────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────────────────────────────────
+const board = document.getElementById('board');
+const ctx = board.getContext('2d');
+
+let AW = 1000, AH = 1400;          // artboard size (matches image when loaded)
+let bgImage = null, bgName = null; // reference image + filename
+let view = { s: 1, ox: 0, oy: 0 }; // artboard→CSS: css = o + s*artboard
+let dpr = Math.max(1, window.devicePixelRatio || 1);
+
+let strokes = [];                  // [{color,width,points:[{x,y,p,t}]}]
+let redoStack = [];
+let current = null;                // stroke being drawn
+
+// Settings (mirrored from the toolbar)
+const cfg = { imgOpacity: 0.45, penColor: '#111111', penWidth: 4,
+              stab: 0.35, smooth: true, varw: true };
+
+// Active pointers, split by role (pen/mouse draw; touches drive the view).
+const touches = new Map();
+let gesture = null;                // pan / pinch state
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Canvas sizing (HiDPI)
+// ─────────────────────────────────────────────────────────────────────────
+function resize() {
+  dpr = Math.max(1, window.devicePixelRatio || 1);
+  board.width = Math.round(innerWidth * dpr);
+  board.height = Math.round(innerHeight * dpr);
+  board.style.width = innerWidth + 'px';
+  board.style.height = innerHeight + 'px';
+  render();
+}
+window.addEventListener('resize', resize);
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Coordinate transforms
+// ─────────────────────────────────────────────────────────────────────────
+function toArtboard(clientX, clientY) {
+  const r = board.getBoundingClientRect();
+  return { x: (clientX - r.left - view.ox) / view.s,
+           y: (clientY - r.top  - view.oy) / view.s };
+}
+function fitView() {
+  const pad = 60;
+  const sw = innerWidth - pad * 2, sh = innerHeight - pad * 2;
+  view.s = Math.min(sw / AW, sh / AH);
+  view.ox = (innerWidth - AW * view.s) / 2;
+  view.oy = (innerHeight - AH * view.s) / 2;
+  render();
+}
+function zoomAbout(cx, cy, factor) {
+  const s2 = Math.min(40, Math.max(0.05, view.s * factor));
+  // keep the artboard point under (cx,cy) fixed
+  const ax = (cx - view.ox) / view.s, ay = (cy - view.oy) / view.s;
+  view.s = s2;
+  view.ox = cx - ax * s2;
+  view.oy = cy - ay * s2;
+  render();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Stabilisation (ported + extended from the collector)
+// ─────────────────────────────────────────────────────────────────────────
+// EMA "pull" over point positions — the pen stabiliser. Non-destructive:
+// raw points are untouched; this runs at render/export time.
+function stabilize(points, strength) {
+  if (strength <= 0 || points.length < 2) return points;
+  const a = 1 - strength;                 // blend of the new raw point
+  const out = [{ ...points[0] }];
+  let sx = points[0].x, sy = points[0].y, sp = points[0].p;
+  for (let i = 1; i < points.length; i++) {
+    sx += (points[i].x - sx) * a;
+    sy += (points[i].y - sy) * a;
+    sp += (points[i].p - sp) * a;
+    out.push({ x: sx, y: sy, p: sp, t: points[i].t });
+  }
+  return out;
+}
+
+// Catmull-Rom interpolation for flowing curves (verbatim mechanic from
+// GlyphCollectorUI: raw preserved, this is a resample for display/export).
+function catmullRom(stroke) {
+  if (stroke.length < 3) return stroke;
+  const result = [stroke[0]];
+  for (let i = 0; i < stroke.length - 1; i++) {
+    const p0 = stroke[Math.max(0, i - 1)];
+    const p1 = stroke[i];
+    const p2 = stroke[Math.min(stroke.length - 1, i + 1)];
+    const p3 = stroke[Math.min(stroke.length - 1, i + 2)];
+    const segLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const steps = Math.max(2, Math.min(12, Math.floor(segLen / 4)));
+    for (let s = 1; s <= steps; s++) {
+      const t = s / steps, t2 = t * t, t3 = t2 * t;
+      const x = 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t +
+        (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+        (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3);
+      const y = 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t +
+        (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+        (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3);
+      const p = p1.p + (p2.p - p1.p) * t;
+      result.push({ x, y, p });
+    }
+  }
+  return result;
+}
+
+// Full processing pipeline: stabilise, then optional curve smoothing.
+function processStroke(stroke) {
+  let pts = stabilize(stroke.points, cfg.stab);
+  if (cfg.smooth) pts = catmullRom(pts);
+  return pts;
+}
+
+// Map pen pressure → half-width in artboard units.
+function halfWidth(baseW, p) { return baseW * (0.35 + 1.15 * p) / 2; }
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Rendering
+// ─────────────────────────────────────────────────────────────────────────
+function render() {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, board.width, board.height);
+  // Combined device transform: css = o + s*artboard, device = dpr*css.
+  ctx.setTransform(dpr * view.s, 0, 0, dpr * view.s, dpr * view.ox, dpr * view.oy);
+
+  // Artboard sheet
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, AW, AH);
+  // Reference image
+  if (bgImage) {
+    ctx.globalAlpha = cfg.imgOpacity;
+    ctx.drawImage(bgImage, 0, 0, AW, AH);
+    ctx.globalAlpha = 1;
+  }
+  // Strokes
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  for (const st of strokes) drawStroke(st);
+}
+
+function drawStroke(st) {
+  const pts = processStroke(st);
+  if (pts.length === 0) return;
+  if (pts.length === 1) {                       // a tap → a dot
+    ctx.beginPath();
+    ctx.arc(pts[0].x, pts[0].y, halfWidth(st.width, pts[0].p), 0, Math.PI * 2);
+    ctx.fillStyle = st.color; ctx.fill();
+    return;
+  }
+  if (cfg.varw) {
+    // Pressure as variable width — filled outline around the centerline.
+    ctx.beginPath();
+    outlinePath(ctx, pts, st.width);
+    ctx.fillStyle = st.color; ctx.fill();
+  } else {
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, pts[0].y);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+    ctx.strokeStyle = st.color; ctx.lineWidth = st.width; ctx.stroke();
+  }
+}
+
+// Build a closed outline polygon: offset each point ±halfWidth along the
+// local normal, forward down one side and back up the other.
+function outlinePoints(pts, baseW) {
+  const left = [], right = [];
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+    let tx = b.x - a.x, ty = b.y - a.y;
+    const len = Math.hypot(tx, ty) || 1; tx /= len; ty /= len;
+    const nx = -ty, ny = tx;                    // left normal
+    const w = halfWidth(baseW, pts[i].p);
+    left.push({ x: pts[i].x + nx * w, y: pts[i].y + ny * w });
+    right.push({ x: pts[i].x - nx * w, y: pts[i].y - ny * w });
+  }
+  return left.concat(right.reverse());
+}
+function outlinePath(c, pts, baseW) {
+  const poly = outlinePoints(pts, baseW);
+  c.moveTo(poly[0].x, poly[0].y);
+  for (let i = 1; i < poly.length; i++) c.lineTo(poly[i].x, poly[i].y);
+  c.closePath();
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Pointer input
+// ─────────────────────────────────────────────────────────────────────────
+function isDrawPointer(e) { return e.pointerType === 'pen' || e.pointerType === 'mouse'; }
+
+board.addEventListener('pointerdown', (e) => {
+  if (e.pointerType === 'touch') { touches.set(e.pointerId, ptOf(e)); startGesture(); return; }
+  // pen / mouse → draw
+  board.setPointerCapture(e.pointerId);
+  document.getElementById('hint').style.display = 'none';
+  current = { color: cfg.penColor, width: cfg.penWidth, points: [] };
+  strokes.push(current);
+  redoStack = [];
+  addPoint(e);
+  render(); updateHud();
+});
+
+board.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') {
+    if (!touches.has(e.pointerId)) return;
+    touches.set(e.pointerId, ptOf(e)); updateGesture(); return;
+  }
+  if (!current) return;
+  if (e.getCoalescedEvents) e.getCoalescedEvents().forEach(addPoint);
+  else addPoint(e);
+  render(); updateHud();
+});
+
+function endPointer(e) {
+  if (e.pointerType === 'touch') { touches.delete(e.pointerId); startGesture(); return; }
+  if (current) { current = null; updateHud(); }
+}
+board.addEventListener('pointerup', endPointer);
+board.addEventListener('pointercancel', endPointer);
+board.addEventListener('contextmenu', (e) => e.preventDefault());
+
+function ptOf(e) { return { x: e.clientX, y: e.clientY }; }
+
+function addPoint(e) {
+  const a = toArtboard(e.clientX, e.clientY);
+  const p = (e.pressure > 0 && e.pressure !== 0.5) ? e.pressure
+            : (e.pointerType === 'pen' ? e.pressure : 0.5); // mouse has no pressure
+  const pv = (typeof p === 'number' && p > 0) ? p : 0.5;
+  current.points.push({ x: a.x, y: a.y, p: pv, t: Date.now() });
+  showPressure(pv);
+}
+
+// ── Touch gestures: 1 finger pan, 2 finger pinch-zoom ──
+function startGesture() {
+  const list = [...touches.values()];
+  if (list.length === 1) {
+    gesture = { mode: 'pan', start: list[0], ox: view.ox, oy: view.oy };
+  } else if (list.length >= 2) {
+    const [a, b] = list;
+    gesture = { mode: 'pinch',
+      dist: Math.hypot(a.x - b.x, a.y - b.y),
+      mid: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 },
+      s: view.s, ox: view.ox, oy: view.oy };
+  } else gesture = null;
+}
+function updateGesture() {
+  const list = [...touches.values()];
+  if (!gesture) return;
+  if (gesture.mode === 'pan' && list.length === 1) {
+    view.ox = gesture.ox + (list[0].x - gesture.start.x);
+    view.oy = gesture.oy + (list[0].y - gesture.start.y);
+    render();
+  } else if (gesture.mode === 'pinch' && list.length >= 2) {
+    const [a, b] = list;
+    const dist = Math.hypot(a.x - b.x, a.y - b.y);
+    const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+    const s2 = Math.min(40, Math.max(0.05, gesture.s * (dist / gesture.dist)));
+    // artboard point under the gesture's start midpoint, using start transform
+    const ax = (gesture.mid.x - gesture.ox) / gesture.s;
+    const ay = (gesture.mid.y - gesture.oy) / gesture.s;
+    view.s = s2;
+    view.ox = mid.x - ax * s2;   // follow the current midpoint (pan+zoom)
+    view.oy = mid.y - ay * s2;
+    render();
+  } else startGesture();
+  updateHud();
+}
+
+// Wheel zoom (desktop), centred on the cursor.
+board.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const r = board.getBoundingClientRect();
+  zoomAbout(e.clientX - r.left, e.clientY - r.top, e.deltaY < 0 ? 1.1 : 1 / 1.1);
+  updateHud();
+}, { passive: false });
+
+// ─────────────────────────────────────────────────────────────────────────
+//  HUD
+// ─────────────────────────────────────────────────────────────────────────
+function updateHud() {
+  document.getElementById('zoomV').textContent = Math.round(view.s * 100) + '%';
+  document.getElementById('strokeV').textContent = strokes.length;
+  document.getElementById('pointV').textContent =
+    strokes.reduce((n, s) => n + s.points.length, 0);
+}
+function showPressure(p) {
+  document.getElementById('pval').textContent = p.toFixed(2);
+  document.getElementById('pfill').style.width = Math.round(p * 100) + '%';
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Image loading
+// ─────────────────────────────────────────────────────────────────────────
+function loadImageFromSrc(src, name) {
+  const img = new Image();
+  img.onload = () => {
+    bgImage = img; bgName = name || null;
+    AW = img.naturalWidth || 1000; AH = img.naturalHeight || 1400;
+    document.getElementById('hint').style.display = 'none';
+    fitView(); updateHud();
+  };
+  img.src = src;
+}
+function readImageFile(file) {
+  if (!file) return;
+  const fr = new FileReader();
+  fr.onload = () => loadImageFromSrc(fr.result, file.name);
+  fr.readAsDataURL(file);
+}
+document.getElementById('imgFile').addEventListener('change', (e) => readImageFile(e.target.files[0]));
+
+// Drag & drop an image
+const drop = document.getElementById('drop');
+['dragenter', 'dragover'].forEach(ev => window.addEventListener(ev, (e) => {
+  e.preventDefault(); drop.style.display = 'flex';
+}));
+['dragleave', 'drop'].forEach(ev => window.addEventListener(ev, (e) => {
+  e.preventDefault(); if (ev === 'dragleave' && e.relatedTarget) return;
+  drop.style.display = 'none';
+}));
+window.addEventListener('drop', (e) => {
+  const f = e.dataTransfer && e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) readImageFile(f);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Save / load
+// ─────────────────────────────────────────────────────────────────────────
+function download(name, mime, data) {
+  const blob = new Blob([data], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function buildJSON() {
+  return JSON.stringify({
+    type: 'vhs-trace', version: 1,
+    artboard: { width: AW, height: AH },
+    image: bgName ? { name: bgName } : null,
+    settings: { stabilizer: cfg.stab, smooth: cfg.smooth,
+                variable_width: cfg.varw },
+    strokes: strokes.map(s => ({
+      color: s.color, width: s.width,
+      points: s.points.map(p => ({ x: round(p.x), y: round(p.y),
+                                   p: round(p.p, 3), t: p.t }))
+    }))
+  }, null, 1);
+}
+function round(v, d = 2) { const m = 10 ** d; return Math.round(v * m) / m; }
+
+function buildSVG() {
+  const parts = [];
+  parts.push(`<?xml version="1.0" encoding="utf-8"?>`);
+  parts.push(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${AW} ${AH}" ` +
+             `width="${AW}" height="${AH}">`);
+  for (const st of strokes) {
+    const pts = processStroke(st);
+    if (pts.length === 0) continue;
+    if (pts.length === 1) {
+      parts.push(`  <circle cx="${round(pts[0].x)}" cy="${round(pts[0].y)}" ` +
+        `r="${round(halfWidth(st.width, pts[0].p))}" fill="${st.color}"/>`);
+    } else if (cfg.varw) {
+      const poly = outlinePoints(pts, st.width);
+      const d = 'M ' + poly.map(q => `${round(q.x)} ${round(q.y)}`).join(' L ') + ' Z';
+      parts.push(`  <path d="${d}" fill="${st.color}"/>`);
+    } else {
+      const d = 'M ' + pts.map(q => `${round(q.x)} ${round(q.y)}`).join(' L ');
+      parts.push(`  <path d="${d}" fill="none" stroke="${st.color}" ` +
+        `stroke-width="${st.width}" stroke-linecap="round" stroke-linejoin="round"/>`);
+    }
+  }
+  parts.push('</svg>');
+  return parts.join('\n');
+}
+
+function loadTraceJSON(obj) {
+  if (!obj || obj.type !== 'vhs-trace') { alert('Not a VHS trace file.'); return; }
+  if (obj.artboard) { AW = obj.artboard.width; AH = obj.artboard.height; }
+  strokes = (obj.strokes || []).map(s => ({
+    color: s.color || '#111111', width: s.width || 4,
+    points: (s.points || []).map(p => ({ x: p.x, y: p.y, p: p.p != null ? p.p : 0.5, t: p.t || 0 }))
+  }));
+  redoStack = [];
+  if (obj.settings) {
+    if (obj.settings.stabilizer != null) setStab(obj.settings.stabilizer);
+    if (obj.settings.smooth != null) { cfg.smooth = obj.settings.smooth; document.getElementById('smooth').checked = cfg.smooth; }
+    if (obj.settings.variable_width != null) { cfg.varw = obj.settings.variable_width; document.getElementById('varw').checked = cfg.varw; }
+  }
+  document.getElementById('hint').style.display = 'none';
+  fitView(); updateHud();
+}
+document.getElementById('jsonFile').addEventListener('change', (e) => {
+  const f = e.target.files[0]; if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => { try { loadTraceJSON(JSON.parse(fr.result)); } catch (err) { alert('Bad JSON: ' + err); } };
+  fr.readAsText(f);
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Toolbar wiring
+// ─────────────────────────────────────────────────────────────────────────
+function bindRange(id, apply, fmt) {
+  const el = document.getElementById(id), out = document.getElementById(id + 'V');
+  el.addEventListener('input', () => { apply(parseFloat(el.value)); if (out) out.textContent = fmt(parseFloat(el.value)); });
+}
+bindRange('imgOpacity', v => { cfg.imgOpacity = v / 100; render(); }, v => v + '%');
+bindRange('penWidth', v => { cfg.penWidth = v; }, v => v);
+function setStab(v) {
+  const el = document.getElementById('stab');
+  el.value = Math.round(v * 100);
+  cfg.stab = v * 0.85;               // slider 0..100 → strength 0..0.85
+  document.getElementById('stabV').textContent = Math.round(v * 100);
+  render();
+}
+document.getElementById('stab').addEventListener('input', (e) => {
+  const raw = parseFloat(e.target.value) / 100;
+  cfg.stab = raw * 0.85;
+  document.getElementById('stabV').textContent = Math.round(raw * 100);
+  render();
+});
+document.getElementById('penColor').addEventListener('input', (e) => cfg.penColor = e.target.value);
+document.getElementById('smooth').addEventListener('change', (e) => { cfg.smooth = e.target.checked; render(); });
+document.getElementById('varw').addEventListener('change', (e) => { cfg.varw = e.target.checked; render(); });
+
+document.getElementById('fit').addEventListener('click', fitView);
+document.getElementById('clear').addEventListener('click', () => {
+  if (strokes.length && !confirm('Clear all strokes?')) return;
+  strokes = []; redoStack = []; render(); updateHud();
+});
+document.getElementById('undo').addEventListener('click', undo);
+document.getElementById('redo').addEventListener('click', redo);
+document.getElementById('saveJson').addEventListener('click', () =>
+  download((bgName ? bgName.replace(/\.[^.]+$/, '') : 'trace') + '.json', 'application/json', buildJSON()));
+document.getElementById('saveSvg').addEventListener('click', () =>
+  download((bgName ? bgName.replace(/\.[^.]+$/, '') : 'trace') + '.svg', 'image/svg+xml', buildSVG()));
+
+function undo() {
+  if (!strokes.length) return;
+  redoStack.push(strokes.pop()); render(); updateHud();
+}
+function redo() {
+  if (!redoStack.length) return;
+  strokes.push(redoStack.pop()); render(); updateHud();
+}
+window.addEventListener('keydown', (e) => {
+  const z = e.key === 'z' || e.key === 'Z';
+  if ((e.metaKey || e.ctrlKey) && z && !e.shiftKey) { e.preventDefault(); undo(); }
+  else if ((e.metaKey || e.ctrlKey) && z && e.shiftKey) { e.preventDefault(); redo(); }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+//  Boot
+// ─────────────────────────────────────────────────────────────────────────
+resize();
+fitView();
+updateHud();
+// Expose a few internals for headless testing.
+window.__tracer = { strokes, buildJSON, buildSVG, loadTraceJSON,
+                    processStroke, get view() { return view; },
+                    addStroke(s) { strokes.push(s); }, render, updateHud };
+</script>
