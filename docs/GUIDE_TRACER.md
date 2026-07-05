@@ -72,11 +72,13 @@ panel on the left lists them (topmost layer at the top). Each row has:
 - a **stroke count** and a **✕** to delete the layer.
 
 The active layer is highlighted; **＋** adds a new layer on top (in the next
-palette colour). The **Opacity** slider at the bottom sets the *active
-layer's* opacity — the whole layer is flattened and dimmed as a group, so
-overlapping strokes don't double-darken. The toolbar colour picker edits the
-active layer's colour too. **Clear** empties the active layer only; **Undo**
-(<kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd>) steps back across layers in draw order.
+palette colour). Drag the **⠿ grip** on the left of a row to **restack**
+layers (works with pen, mouse, or finger). The **Opacity** slider at the
+bottom sets the *active layer's* opacity — the whole layer is flattened and
+dimmed as a group, so overlapping strokes don't double-darken. The toolbar
+colour picker edits the active layer's colour too. **Clear** empties the
+active layer only; **Undo** (<kbd>Ctrl/Cmd</kbd>+<kbd>Z</kbd>) steps back
+across layers in draw order.
 
 ## Export formats
 
@@ -120,6 +122,16 @@ data-layer="…">` group (carrying its opacity), so the layer structure
 survives into the SVG. This is the shareable/printable artwork. With
 **Pressure** off you get plain constant-width `stroke` paths instead.
 
+### Save into a folder
+
+By default the save buttons **download** files. Click **📁 Folder** to
+connect a folder instead (it asks once for permission) — after that, **JSON**
+and **SVG** write straight into that folder, no download dialog, and a toast
+confirms each save. Click the button again to switch folders. This needs a
+Chromium-family browser (Chrome, Edge, Opera); on Safari/Firefox the button
+is hidden and saves fall back to downloads. The connection lasts for the
+session — reconnect the folder next time you open the tool.
+
 ## Relationship to the rest of VHS
 
 The tracer shares the collector's capture DNA — coalesced pointer events,
@@ -132,5 +144,5 @@ the Tracer captures *free-form artwork* over a reference image.
 
 - Variable-width in SVG uses a simple centerline-offset outline; a
   round-capped, self-intersection-clean outline is a future refinement.
-- Layer reordering (drag to restack) and per-stroke re-colour within a layer.
-- Direct-save to a folder (File System Access API), like the collector.
+- Per-stroke re-colour/delete within a layer (beyond per-layer colour).
+- Remembering the connected folder across sessions (persist the handle).
