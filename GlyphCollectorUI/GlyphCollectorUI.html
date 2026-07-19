@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VHS — Glyph Collector</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -41,19 +41,10 @@
 
         /* GC11: mobile / tablet layout. Below 900 px wide, switch to a
            single-column, one-variant-at-a-time flow. The toolbar wraps
-           aggressively and the settings / coverage panels become
-           full-width sheets pinned to the bottom of the viewport. */
-        @media (max-width: 900px) {
-            header { padding: 0.75rem !important; gap: 0.5rem !important; }
-            header h1 { font-size: 1rem !important; }
-            header button { height: 2.5rem !important; padding: 0.25rem 0.5rem !important; }
-           full-width sheets pinned to the bottom of the viewport.
-
-           Also: allow the body AND the main drawing area to scroll
-           vertically so a stack of 10 slots remains reachable on a
-           touch screen. Tailwind's h-screen / overflow-hidden on
-           <body> and overflow-y-hidden on <main> would otherwise
-           clamp the viewport to one screenful. */
+           without forcing horizontal page overflow and all flyout panels
+           become full-width bottom sheets. Body/main scrolling is restored
+           so a stack of slots remains reachable on touch screens despite
+           Tailwind's desktop h-screen / overflow-hidden classes. */
         @media (max-width: 900px) {
             html, body {
                 height: auto !important;
@@ -62,12 +53,17 @@
                 overflow-x: hidden !important;
                 -webkit-overflow-scrolling: touch;
             }
+            body {
+                width: 100% !important;
+            }
             main {
                 overflow-y: visible !important;
                 overflow-x: hidden !important;
                 flex: none !important;
+                align-items: stretch !important;
+                padding: 0.5rem !important;
             }
-            header { padding: 0.75rem !important; gap: 0.5rem !important; }
+            header { padding: 0.75rem !important; gap: 0.5rem !important; align-items: stretch !important; }
             header h1 { font-size: 1rem !important; }
             header button { height: 2.5rem !important; padding: 0.25rem 0.5rem !important; }
             /* Force every inner flex row in the header to wrap so the
@@ -77,15 +73,40 @@
                line as needed. */
             header > div { flex-wrap: wrap !important; }
             header > div > * { flex-shrink: 0; }
+            header > div:nth-of-type(2) {
+                width: 100% !important;
+                gap: 0.5rem !important;
+                overflow-x: auto !important;
+                padding-bottom: 0.25rem !important;
+                -webkit-overflow-scrolling: touch;
+            }
+            header > div:nth-of-type(3) {
+                gap: 0.5rem !important;
+                align-items: stretch !important;
+            }
+            #queueInput { font-size: 0.85rem !important; }
+            #queueStartBtn, #queueStatus {
+                width: 100% !important;
+                min-width: 0 !important;
+            }
             #canvasContainer {
                 display: flex !important;
                 flex-direction: column !important;
                 align-items: center !important;
                 gap: 0.75rem !important;
                 padding: 0.5rem !important;
+                width: 100% !important;
             }
-            #canvasContainer > * { width: auto !important; }
-            #settingsPanel, #coveragePanel {
+            #canvasContainer > * {
+                width: min(100%, calc(100vw - 2rem), 420px) !important;
+            }
+            .canvas-slot {
+                width: min(100%, calc(100vw - 2rem), 420px) !important;
+                max-width: 420px !important;
+                height: auto !important;
+                display: block !important;
+            }
+            #settingsPanel, #coveragePanel, #previewPanel {
                 position: fixed !important;
                 top: auto !important;
                 bottom: 0 !important;
@@ -93,9 +114,14 @@
                 left: 0 !important;
                 width: 100% !important;
                 max-height: 70vh !important;
+                overflow-y: auto !important;
                 border-radius: 1rem 1rem 0 0 !important;
+                padding: 1rem !important;
             }
-            #queueInput { font-size: 0.85rem !important; }
+            footer {
+                flex-wrap: wrap !important;
+                gap: 0.25rem 0.75rem !important;
+            }
         }
     </style>
 </head>
@@ -562,6 +588,7 @@
                 // Set explicit style size to ensure CSS respects it if needed, 
                 // though width/height attrs should suffice for raw pixels.
                 canvas.style.width = `${CANVAS_WIDTH * DISPLAY_SCALE}px`;
+                canvas.style.maxWidth = '100%';
                 canvas.style.height = `${CANVAS_HEIGHT * DISPLAY_SCALE}px`;
 
 
