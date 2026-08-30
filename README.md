@@ -20,6 +20,10 @@ VHS is a deterministic pipeline for generating realistic handwriting for pen plo
 
 *Generated SVG output — single-stroke paths ready for pen plotting.*
 
+![Example: a full-page VHS handwriting sample](docs/example-long-page.jpg)
+
+*A longer page-length sample. The useful test here is not whether one word looks convincing, but whether spacing, repeated letters, line rhythm, and the page as a whole still avoid the cloned-font look.*
+
 ## Quick Start
 
 ### 0. Install & run (one command)
