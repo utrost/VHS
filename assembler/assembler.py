@@ -5,6 +5,7 @@ import glob
 import argparse
 import logging
 import math
+import re
 import xml.etree.ElementTree as ET
 from typing import Dict, List, Optional, Tuple, Any
 
@@ -24,6 +25,19 @@ _BEZIER_BBOX_SAMPLES = 16
 # next letter can't slide underneath it and collide. See
 # Typesetter.calculate_optical_kerning.
 _KERN_VCLEARANCE_FRACTION = 0.2
+_SAFE_FONT_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
+
+
+def _safe_font_path(base_glyphs_dir: str, font_name: Optional[str]) -> str:
+    base_abs = os.path.abspath(base_glyphs_dir)
+    if not font_name:
+        return base_abs
+    if not _SAFE_FONT_RE.fullmatch(font_name):
+        raise ValueError("invalid font name (use letters, digits, _ or -)")
+    font_path = os.path.abspath(os.path.join(base_abs, font_name))
+    if os.path.commonpath([base_abs, font_path]) != base_abs:
+        raise ValueError("font path escapes glyphs directory")
+    return font_path
 
 # Paper size presets in mm (width, height) — portrait orientation
 PAPER_SIZES = {
@@ -1724,10 +1738,15 @@ class Renderer:
             except AttributeError:
                 pass
 
+            if isinstance(output_file, (str, bytes, os.PathLike)):
+                parent_dir = os.path.dirname(os.fspath(output_file))
+                if parent_dir:
+                    os.makedirs(parent_dir, exist_ok=True)
             tree.write(output_file, encoding="utf-8", xml_declaration=True)
             logger.info(f"SVG saved to {output_file}")
         except Exception as e:
             logger.error(f"Failed to write SVG: {e}")
+            raise
 
     def generate_pdf(self, svg_paths: List[str], pdf_path: str):
         """Combine one or more on-disk SVGs into a single multi-page PDF.
@@ -1930,9 +1949,14 @@ if __name__ == "__main__":
     _script_dir = os.path.dirname(os.path.abspath(__file__))
     _glyphs_root = os.path.join(_script_dir, "..", "glyphs")
     if _pre_known.font and not _pre_known.no_preset:
+        try:
+            _font_preset_root = _safe_font_path(_glyphs_root, _pre_known.font)
+        except ValueError as e:
+            logger.error(str(e))
+            exit(1)
         for ext in ('.yaml', '.yml', '.json'):
             cand = os.path.normpath(
-                os.path.join(_glyphs_root, _pre_known.font, 'preset' + ext))
+                os.path.join(_font_preset_root, 'preset' + ext))
             if os.path.exists(cand):
                 try:
                     merged_defaults.update(_load_config_file(cand))
@@ -1997,10 +2021,13 @@ if __name__ == "__main__":
     base_glyphs_dir = os.path.join(script_dir, "../glyphs")
 
     kerning_path = os.path.join(script_dir, "kerning.json")
-    glyphs_path = base_glyphs_dir
+    try:
+        glyphs_path = _safe_font_path(base_glyphs_dir, args.font)
+    except ValueError as e:
+        logger.error(str(e))
+        exit(1)
 
     if args.font:
-        glyphs_path = os.path.join(base_glyphs_dir, args.font)
         font_kerning = os.path.join(glyphs_path, "kerning.json")
         if os.path.exists(font_kerning):
             kerning_path = font_kerning

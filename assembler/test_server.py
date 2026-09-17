@@ -37,6 +37,65 @@ class SaveGlyphTest(unittest.TestCase):
         self.assertTrue(r.get_json()["ok"])
         self.assertTrue(os.path.exists(os.path.join(self.tmp, "myfont", "0061.json")))
 
+    def test_generate_rejects_invalid_numeric_field_as_json_400(self):
+        r = self.client.post("/api/generate", json={
+            "text": "Hi", "font": "font1", "jitter": "abc"
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("jitter", r.get_json()["error"])
+
+    def test_generate_rejects_malformed_json_as_json_400(self):
+        r = self.client.post("/api/generate", data="not json",
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("json", r.get_json()["error"].lower())
+
+    def test_png_rejects_invalid_dpi_as_json_400_before_optional_renderer(self):
+        r = self.client.post("/api/png", json={"svg": "<svg></svg>", "dpi": "abc"})
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("dpi", r.get_json()["error"])
+
+    def test_generate_rejects_non_finite_numeric_field_as_json_400(self):
+        os.makedirs(os.path.join(self.tmp, "font1"), exist_ok=True)
+        r = self.client.post("/api/generate", json={
+            "text": "Hi", "font": "font1", "jitter": "nan"
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("jitter", r.get_json()["error"])
+
+    def test_generate_rejects_invalid_frame_numeric_field_as_json_400(self):
+        os.makedirs(os.path.join(self.tmp, "font1"), exist_ok=True)
+        r = self.client.post("/api/generate", json={
+            "font": "font1",
+            "paper_size": "A4",
+            "line_height_mm": 10,
+            "frames": [{"text": "Hi", "start_x": "abc", "start_y": 20, "max_width": 50}],
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("frames[0].start_x", r.get_json()["error"])
+
+    def test_generate_rejects_non_finite_integer_field_as_json_400(self):
+        os.makedirs(os.path.join(self.tmp, "font1"), exist_ok=True)
+        r = self.client.post("/api/generate",
+                             data='{"text":"Hi","font":"font1","seed":Infinity}',
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("seed", r.get_json()["error"])
+
+    def test_png_rejects_non_finite_dpi_as_json_400(self):
+        r = self.client.post("/api/png",
+                             data='{"svg":"<svg></svg>","dpi":Infinity}',
+                             content_type="application/json")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("dpi", r.get_json()["error"])
+
     def test_rejects_font_traversal(self):
         r = self._post({"font": "../evil", "filename": "0061.json",
                         "glyph": {"variants": []}})

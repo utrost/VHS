@@ -445,11 +445,30 @@ class TestFullLetterScenario(CLITestBase):
 # VS-10: Error handling
 # ═══════════════════════════════════════════════════════════════════
 class TestErrorHandling(CLITestBase):
-    """VS-10: Graceful error messages for invalid input."""
+    """Invalid inputs and write failures should fail clearly."""
 
     def test_no_input(self):
         rc, _, stderr = self._run([self._out("err.svg")], expect_fail=True)
-        self.assertNotEqual(rc, 0) 
+        self.assertNotEqual(rc, 0)
+
+    def test_creates_parent_directory_for_svg_output(self):
+        out = os.path.join(self.output_dir, "nested", "page.svg")
+        self._run_with_font(["ab"], out, [])
+        self.assertTrue(os.path.exists(out))
+        self.assertGreater(os.path.getsize(out), 0)
+
+    def test_rejects_font_path_traversal(self):
+        outside = tempfile.mkdtemp(prefix="vhs_outside_font_")
+        try:
+            with open(os.path.join(outside, "0061.json"), "w", encoding="utf-8") as f:
+                json.dump({"char": "a", "variants": [{"strokes": [[{"x": 0, "y": 0}, {"x": 1, "y": 1}]]}]}, f)
+            rc, _, stderr = self._run(
+                ["a", self._out("traversal.svg"), "--font", "../../../../" + outside.lstrip(os.sep)],
+                expect_fail=True)
+            self.assertNotEqual(rc, 0)
+            self.assertIn("invalid font", stderr.lower())
+        finally:
+            shutil.rmtree(outside, ignore_errors=True)
 
     def test_nonexistent_font(self):
         rc, _, stderr = self._run(
