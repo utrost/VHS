@@ -166,6 +166,55 @@ class CLITestBase(unittest.TestCase):
         return path
 
 
+class TestCLIInputValidation(CLITestBase):
+    """CLI should reject invalid numeric inputs before rendering."""
+
+    def _with_mock_font_args(self, args):
+        real_glyphs_dir = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "glyphs"))
+        mock_link = os.path.join(real_glyphs_dir, "MockFont")
+        link_created = False
+        if not os.path.exists(mock_link):
+            os.symlink(self.font_dir, mock_link)
+            link_created = True
+        try:
+            return self._run(args + ["--font", "MockFont"], expect_fail=True)
+        finally:
+            if link_created and os.path.islink(mock_link):
+                os.unlink(mock_link)
+
+    def test_rejects_non_finite_jitter_without_writing_invalid_svg(self):
+        out = self._out("invalid_jitter.svg")
+        rc, stdout, stderr = self._with_mock_font_args(["a", out, "--jitter", "inf"])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("jitter", stderr.lower())
+        self.assertNotIn("Traceback", stderr)
+        self.assertFalse(os.path.exists(out))
+
+    def test_rejects_zero_lines_per_page_without_traceback(self):
+        out = self._out("zero_lines_per_page.svg")
+        rc, stdout, stderr = self._with_mock_font_args([
+            "a", out, "--paper-size", "A4", "--lines-per-page", "0"
+        ])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("lines-per-page", stderr.lower())
+        self.assertNotIn("Traceback", stderr)
+        self.assertFalse(os.path.exists(out))
+
+    def test_rejects_bad_frame_numeric_field_without_traceback(self):
+        out = self._out("bad_frame.svg")
+        frames = self._write_text_file(
+            "bad_frames.json",
+            '[{"text":"a","start_x":"bad","start_y":20,"max_width":100}]',
+        )
+        rc, stdout, stderr = self._with_mock_font_args([
+            out, "--frames", frames, "--paper-size", "A4", "--line-height-mm", "10"
+        ])
+        self.assertNotEqual(rc, 0)
+        self.assertIn("frames[0].start_x", stderr)
+        self.assertNotIn("Traceback", stderr)
+        self.assertFalse(os.path.exists(out))
+
+
 # ═══════════════════════════════════════════════════════════════════
 # VS-01: Basic text rendering
 # ═══════════════════════════════════════════════════════════════════

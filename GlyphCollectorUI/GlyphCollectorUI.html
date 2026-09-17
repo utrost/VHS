@@ -1326,6 +1326,10 @@
             document.getElementById('charInput').focus();
         }
 
+        function hasUnsavedStrokes() {
+            return slots.some(slot => slot.strokes && slot.strokes.length > 0);
+        }
+
         // --- File Naming & Sanitization ---
         function getSafeFilename(inputName) {
             // Convert to Unicode Hex (e.g., 'A' -> '0041', 'a' -> '0061')
@@ -1907,6 +1911,18 @@
                 alert('Queue is empty — type the characters you want to capture, '
                     + 'one per comma / whitespace-separated token.');
                 return;
+            }
+            if (hasUnsavedStrokes()) {
+                const ok = confirm(
+                    'Start queue and discard the unsaved strokes currently on the canvas?'
+                    + '\n\nSave the current glyph first if you want to keep it.'
+                );
+                if (!ok) {
+                    document.getElementById('status').innerText =
+                        'Queue not started — unsaved strokes kept.';
+                    return;
+                }
+                clearAll();
             }
             queueChars = tokens;
             queueTotal = tokens.length;

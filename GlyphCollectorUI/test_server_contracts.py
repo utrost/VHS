@@ -24,3 +24,21 @@ def test_existing_glyph_indicator_does_not_interpolate_char_into_inner_html():
     assert "${data.char}" not in body
     assert "createElement('button')" in body or 'createElement("button")' in body
     assert ".textContent" in body
+
+
+def test_queue_start_guards_unsaved_strokes_before_retargeting_character():
+    """Starting a queue must not silently relabel existing unsaved strokes."""
+    assert "function hasUnsavedStrokes()" in HTML
+    assert "Start queue and discard the unsaved strokes" in HTML
+    start_queue = re.search(
+        r"function\s+startQueue\s*\([^)]*\)\s*\{(?P<body>.*?)\n\s*function\s+advanceQueue",
+        HTML,
+        re.S,
+    )
+    assert start_queue, "startQueue() must exist"
+    body = start_queue.group("body")
+    guard_pos = body.find("hasUnsavedStrokes()")
+    retarget_pos = body.find("charInput').value = queueChars[0]")
+    assert guard_pos != -1, "startQueue must check unsaved strokes"
+    assert retarget_pos != -1, "startQueue must preload the first queued character"
+    assert guard_pos < retarget_pos, "unsaved-strokes guard must run before retargeting charInput"
