@@ -137,7 +137,7 @@
         </div>
 
         <div class="flex gap-4 items-end">
-            <button onclick="toggleSettings()"
+            <button onclick="toggleSettings()" aria-label="Open settings"
                 class="px-3 h-12 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg border border-slate-300 transition"
                 title="Einstellungen">
                 ⚙️
@@ -145,7 +145,7 @@
             <div>
                 <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Zeichen</label>
                 <input type="text" id="charInput" placeholder="a" autofocus
-                    class="w-24 text-center text-2xl font-mono p-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:ring-0 outline-none transition placeholder-slate-200">
+                    class="w-24 text-center text-2xl font-mono p-2 border-2 border-slate-300 rounded-lg focus:border-blue-500 focus:ring-0 outline-none transition placeholder-slate-200" aria-label="Zeichen">
             </div>
 
             <button onclick="saveAndReset()"
@@ -167,25 +167,25 @@
 
             <button id="smoothToggle" onclick="toggleSmooth()"
                 class="h-12 px-3 bg-green-100 hover:bg-green-200 text-green-700 font-medium rounded-lg transition"
-                title="Glättungsvorschau ein/aus">
+                title="Glättungsvorschau ein/aus" aria-label="Toggle smooth preview" aria-pressed="true">
                 Smooth ✓
             </button>
 
             <button id="bezierToggle" onclick="toggleBezier()"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
-                title="Bezier-Kurven ein/aus (B)">
+                title="Bezier-Kurven ein/aus (B)" aria-label="Toggle Bezier curve fitting" aria-pressed="false">
                 Bezier ✗
             </button>
 
             <button id="normalizeToggle" onclick="toggleNormalize()"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
-                title="Stroke Normalization ein/aus (N)">
+                title="Stroke Normalization ein/aus (N)" aria-label="Toggle stroke normalization" aria-pressed="false">
                 Normalize ✗
             </button>
 
             <button id="templateToggle" onclick="toggleTemplate()"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-500 font-medium rounded-lg transition"
-                title="Template Overlay ein/aus (T)">
+                title="Template Overlay ein/aus (T)" aria-label="Toggle template overlay" aria-pressed="false">
                 Template ✗
             </button>
 
@@ -197,19 +197,19 @@
             <!-- GC7: Direct-save folder connection -->
             <button id="folderBtn" onclick="connectFolder()"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
-                title="Connect a font folder to save JSON files directly">
+                title="Connect a font folder to save JSON files directly" aria-label="Connect font folder">
                 📁 <span id="folderLabel">Connect</span>
             </button>
 
             <!-- GC1: Coverage dashboard toggle -->
-            <button onclick="toggleCoverage()"
+            <button onclick="toggleCoverage()" aria-label="Open font coverage dashboard"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
                 title="Font coverage dashboard">
                 📊
             </button>
 
             <!-- GC8: Assembler preview toggle -->
-            <button onclick="togglePreview()"
+            <button onclick="togglePreview()" aria-label="Open live Assembler preview"
                 class="h-12 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 font-medium rounded-lg transition"
                 title="Live Assembler preview (requires Assembler server)">
                 👁
@@ -224,7 +224,7 @@
                 </label>
                 <input type="text" id="queueInput"
                     placeholder="e.g. abcdefghijklmnopqrstuvwxyz  —  blank = queue off"
-                    class="w-full p-2 border-2 border-slate-200 rounded-lg text-sm font-mono focus:border-blue-500 focus:ring-0 outline-none transition">
+                    class="w-full p-2 border-2 border-slate-200 rounded-lg text-sm font-mono focus:border-blue-500 focus:ring-0 outline-none transition" aria-label="Queue characters to capture in order">
             </div>
             <div id="queueStatus" class="hidden min-w-[14rem] text-sm text-slate-600 pb-2">
                 <span id="queueProgress" class="font-semibold text-slate-700">0 / 0</span>
@@ -246,13 +246,13 @@
         class="hidden absolute top-36 right-4 bg-white p-5 rounded-xl shadow-2xl border border-slate-200 z-50 w-96 max-h-[70vh] overflow-y-auto">
         <div class="flex items-center justify-between mb-3 border-b pb-2">
             <h3 class="font-bold text-base text-slate-800">Font coverage</h3>
-            <button onclick="toggleCoverage()"
+            <button onclick="toggleCoverage()" aria-label="Close font coverage dashboard"
                 class="text-slate-400 hover:text-slate-700 text-lg leading-none">×</button>
         </div>
         <div class="flex items-center gap-2 mb-2 text-xs">
             <label class="text-slate-500 font-semibold uppercase">Target set</label>
             <select id="coveragePreset"
-                class="flex-1 p-1 border border-slate-300 rounded text-sm">
+                class="flex-1 p-1 border border-slate-300 rounded text-sm" aria-label="Target coverage set">
                 <option value="basic-latin">Basic Latin (a–z, A–Z)</option>
                 <option value="numbers">Numbers (0–9)</option>
                 <option value="basic-punctuation">Basic punctuation</option>
@@ -263,7 +263,7 @@
         <div class="flex items-center gap-2 mb-3 text-xs">
             <label class="text-slate-500 font-semibold uppercase shrink-0">+ Custom</label>
             <input type="text" id="coverageCustom" placeholder="extra chars e.g. äöü 1/4 sch"
-                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono">
+                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono" aria-label="Custom coverage characters">
         </div>
         <div class="flex items-center gap-3 mb-3">
             <div class="flex-1 h-2 bg-slate-200 rounded overflow-hidden">
@@ -287,17 +287,17 @@
         class="hidden absolute top-36 left-4 bg-white p-5 rounded-xl shadow-2xl border border-slate-200 z-50 w-[28rem]">
         <div class="flex items-center justify-between mb-3 border-b pb-2">
             <h3 class="font-bold text-base text-slate-800">Assembler preview</h3>
-            <button onclick="togglePreview()"
+            <button onclick="togglePreview()" aria-label="Close live Assembler preview"
                 class="text-slate-400 hover:text-slate-700 text-lg leading-none">×</button>
         </div>
         <div class="flex items-center gap-2 mb-2 text-xs">
             <label class="text-slate-500 font-semibold uppercase shrink-0">Server</label>
             <input type="text" id="previewServer" value="http://localhost:5001"
-                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono">
+                class="flex-1 p-1 border border-slate-300 rounded text-sm font-mono" aria-label="Assembler server URL">
         </div>
         <div class="flex items-center gap-2 mb-2 text-xs">
             <label class="text-slate-500 font-semibold uppercase shrink-0">Font</label>
-            <select id="previewFont" class="flex-1 p-1 border border-slate-300 rounded text-sm"></select>
+            <select id="previewFont" class="flex-1 p-1 border border-slate-300 rounded text-sm" aria-label="Preview font"></select>
         </div>
         <div class="mb-2">
             <label class="block text-[11px] text-slate-500 font-semibold uppercase mb-1">Sample</label>
@@ -323,46 +323,46 @@
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Font Name</label>
                 <input type="text" id="cfgFontFamily" class="w-32 p-1 border rounded text-right text-xs"
-                    value="MyHandwriting">
+                    value="MyHandwriting" aria-label="Font Name">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Anzahl Varianten</label>
-                <input type="number" id="cfgCount" class="w-20 p-1 border rounded text-right" value="10">
+                <input type="number" id="cfgCount" class="w-20 p-1 border rounded text-right" value="10" aria-label="Anzahl Varianten">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Breite (px)</label>
-                <input type="number" id="cfgWidth" class="w-20 p-1 border rounded text-right" value="100">
+                <input type="number" id="cfgWidth" class="w-20 p-1 border rounded text-right" value="100" aria-label="Breite in Pixeln">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Höhe (px)</label>
-                <input type="number" id="cfgHeight" class="w-20 p-1 border rounded text-right" value="140">
+                <input type="number" id="cfgHeight" class="w-20 p-1 border rounded text-right" value="140" aria-label="Höhe in Pixeln">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Baseline Y</label>
-                <input type="number" id="cfgBaseline" class="w-20 p-1 border rounded text-right" value="100">
+                <input type="number" id="cfgBaseline" class="w-20 p-1 border rounded text-right" value="100" aria-label="Baseline Y">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">x-Height Y</label>
-                <input type="number" id="cfgXHeight" class="w-20 p-1 border rounded text-right" value="60">
+                <input type="number" id="cfgXHeight" class="w-20 p-1 border rounded text-right" value="60" aria-label="x-Height Y">
             </div>
 
             <div class="flex justify-between items-center">
                 <label class="text-sm font-bold text-slate-600">Anzeige-Zoom</label>
-                <input type="number" id="cfgDisplayScale" class="w-20 p-1 border rounded text-right" value="3" min="1" max="5" step="1">
+                <input type="number" id="cfgDisplayScale" class="w-20 p-1 border rounded text-right" value="3" min="1" max="5" step="1" aria-label="Anzeige-Zoom">
             </div>
 
             <div class="pt-4 border-t mt-4">
                 <h4 class="text-sm font-bold text-slate-700 mb-3">Template Overlay</h4>
 
                 <div class="flex justify-between items-center mb-3">
-                    <label class="text-sm font-bold text-slate-600">Template Font</label>
+                    <label for="cfgTemplateFont" class="text-sm font-bold text-slate-600">Template Font</label>
                     <select id="cfgTemplateFont" class="w-40 p-1 border rounded text-xs"
-                        onchange="TEMPLATE_FONT=this.value; slots.forEach(redraw);">
+                        onchange="TEMPLATE_FONT=this.value; slots.forEach(slot => { redraw(slot); updateCanvasAccessibility(slot); });" aria-label="Template Font">
                         <optgroup label="Casual Handwriting">
                             <option value="Caveat">Caveat</option>
                             <option value="Indie Flower">Indie Flower</option>
@@ -390,7 +390,7 @@
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-bold text-slate-600">Opacity: <span id="opacityLabel">15</span>%</label>
                     <input type="range" id="cfgTemplateOpacity" min="0" max="100" value="15" class="w-32"
-                        oninput="document.getElementById('opacityLabel').textContent=this.value; TEMPLATE_OPACITY=this.value/100; slots.forEach(redraw);">
+                        oninput="document.getElementById('opacityLabel').textContent=this.value; TEMPLATE_OPACITY=this.value/100; slots.forEach(redraw);" aria-label="Template opacity">
                 </div>
 
                 <div class="flex justify-between items-center mb-3">
@@ -422,7 +422,7 @@
                 <div class="flex justify-between items-center mb-3">
                     <label class="text-sm font-bold text-slate-600">Strength: <span id="strengthLabel">50</span>%</label>
                     <input type="range" id="cfgNormStrength" min="0" max="100" step="1" value="25" class="w-32"
-                        oninput="document.getElementById('strengthLabel').textContent=this.value; NORMALIZE_STRENGTH=this.value/100; slots.forEach(redraw);">
+                        oninput="document.getElementById('strengthLabel').textContent=this.value; NORMALIZE_STRENGTH=this.value/100; slots.forEach(redraw);" aria-label="Normalize strength">
                 </div>
 
                 <div class="flex justify-between items-center mb-3">
@@ -536,7 +536,7 @@
             let existingCheckTimer = null;
             charEl.addEventListener('input', () => {
                 autoSave();
-                slots.forEach(redraw);
+                slots.forEach(slot => { redraw(slot); updateCanvasAccessibility(slot); });
                 clearTimeout(existingCheckTimer);
                 existingCheckTimer = setTimeout(tryLoadExistingGlyph, 250);
             });
@@ -605,6 +605,8 @@
                 canvas.height = CANVAS_HEIGHT;
                 canvas.className = 'canvas-slot rounded-lg shadow-sm border-2 border-white';
                 canvas.id = `slot-${i}`;
+                canvas.tabIndex = 0;
+                canvas.setAttribute('role', 'img');
                 // Set explicit style size to ensure CSS respects it if needed, 
                 // though width/height attrs should suffice for raw pixels.
                 canvas.style.width = `${CANVAS_WIDTH * DISPLAY_SCALE}px`;
@@ -623,8 +625,9 @@
                 clearBtn.innerText = '×';
                 clearBtn.className = 'absolute top-1 right-1 w-6 h-6 text-sm text-slate-400 bg-white/70 '
                     + 'hover:bg-red-100 hover:text-red-600 rounded-full border border-slate-200 '
-                    + 'opacity-0 group-hover:opacity-100 transition';
+                    + 'opacity-100 sm:opacity-0 group-hover:opacity-100 focus:opacity-100 transition';
                 clearBtn.title = 'Clear this variant only';
+                clearBtn.setAttribute('aria-label', `Clear variant ${i + 1}`);
                 const slotIndex = i;
                 clearBtn.addEventListener('click', (ev) => {
                     ev.stopPropagation();
@@ -647,10 +650,23 @@
                 };
 
                 slots.push(slotData);
+                updateCanvasAccessibility(slotData);
                 attachEvents(slotData);
                 drawGuides(slotData);
             }
             updateTotalCount();
+        }
+
+
+        function updateCanvasAccessibility(slot) {
+            const ch = document.getElementById('charInput').value || 'current character';
+            const strokeCount = slot.strokes.length;
+            slot.canvas.setAttribute(
+                'aria-label',
+                `Variant ${slot.id + 1} drawing area for character ${ch}. `
+                + `${strokeCount} stroke${strokeCount === 1 ? '' : 's'} captured. `
+                + 'Freehand drawing uses pointer or stylus input; use the clear button for this slot to manage it without drawing.'
+            );
         }
 
         // --- Drawing Logic ---
@@ -698,6 +714,7 @@
                 slot.currentStroke = null;
                 document.getElementById('status').innerText = "Bereit";
                 updateTotalCount();
+                updateCanvasAccessibility(slot);
                 autoSave();
             });
 
@@ -1165,6 +1182,7 @@
         function toggleNormalize() {
             NORMALIZE_ENABLED = !NORMALIZE_ENABLED;
             const btn = document.getElementById('normalizeToggle');
+            btn.setAttribute('aria-pressed', String(NORMALIZE_ENABLED));
             if (NORMALIZE_ENABLED) {
                 btn.textContent = 'Normalize ✓';
                 btn.className = 'h-12 px-3 bg-cyan-100 hover:bg-cyan-200 text-cyan-700 font-medium rounded-lg transition';
@@ -1224,6 +1242,7 @@
             const removed = lastActiveSlot.strokes.pop();
             lastActiveSlot.undoStack.push(removed);
             redraw(lastActiveSlot);
+            updateCanvasAccessibility(lastActiveSlot);
             updateTotalCount();
             autoSave();
             document.getElementById('status').innerText =
@@ -1235,6 +1254,7 @@
             const restored = lastActiveSlot.undoStack.pop();
             lastActiveSlot.strokes.push(restored);
             redraw(lastActiveSlot);
+            updateCanvasAccessibility(lastActiveSlot);
             updateTotalCount();
             autoSave();
             document.getElementById('status').innerText =
@@ -1244,6 +1264,7 @@
         function toggleSmooth() {
             SMOOTH_PREVIEW = !SMOOTH_PREVIEW;
             const btn = document.getElementById('smoothToggle');
+            btn.setAttribute('aria-pressed', String(SMOOTH_PREVIEW));
             if (SMOOTH_PREVIEW) {
                 btn.textContent = 'Smooth ✓';
                 btn.className = 'h-12 px-3 bg-green-100 hover:bg-green-200 text-green-700 font-medium rounded-lg transition';
@@ -1258,6 +1279,7 @@
         function toggleBezier() {
             BEZIER_ENABLED = !BEZIER_ENABLED;
             const btn = document.getElementById('bezierToggle');
+            btn.setAttribute('aria-pressed', String(BEZIER_ENABLED));
             if (BEZIER_ENABLED) {
                 btn.textContent = 'Bezier ✓';
                 btn.className = 'h-12 px-3 bg-amber-100 hover:bg-amber-200 text-amber-700 font-medium rounded-lg transition';
@@ -1270,6 +1292,8 @@
 
         function toggleTemplate() {
             TEMPLATE_VISIBLE = !TEMPLATE_VISIBLE;
+            const btn = document.getElementById('templateToggle');
+            btn.setAttribute('aria-pressed', String(TEMPLATE_VISIBLE));
             // Sync settings panel checkbox
             document.getElementById('cfgTemplateShow').checked = TEMPLATE_VISIBLE;
             updateTemplateButton();
@@ -1278,6 +1302,7 @@
 
         function updateTemplateButton() {
             const btn = document.getElementById('templateToggle');
+            btn.setAttribute('aria-pressed', String(TEMPLATE_VISIBLE));
             if (TEMPLATE_VISIBLE) {
                 btn.textContent = 'Template ✓';
                 btn.className = 'h-12 px-3 bg-purple-100 hover:bg-purple-200 text-purple-700 font-medium rounded-lg transition';
@@ -1293,6 +1318,7 @@
                 slot.undoStack = [];
                 slot.currentStroke = null;
                 drawGuides(slot);
+                updateCanvasAccessibility(slot);
             });
             lastActiveSlot = null;
             updateTotalCount();
@@ -1344,6 +1370,12 @@
                     DISPLAY_SCALE = data.config.DISPLAY_SCALE || DISPLAY_SCALE;
                 }
 
+                // Restore character input before rebuilding the grid so the
+                // generated canvas labels announce the right target glyph.
+                if (data.char) {
+                    document.getElementById('charInput').value = data.char;
+                }
+
                 // Rebuild grid with restored config
                 generateGrid();
 
@@ -1352,13 +1384,11 @@
                     if (saved.id < slots.length && saved.strokes && saved.strokes.length > 0) {
                         slots[saved.id].strokes = saved.strokes;
                         redraw(slots[saved.id]);
+                        updateCanvasAccessibility(slots[saved.id]);
                     }
                 }
 
-                // Restore character input
-                if (data.char) {
-                    document.getElementById('charInput').value = data.char;
-                }
+                slots.forEach(updateCanvasAccessibility);
 
                 updateTotalCount();
                 document.getElementById('status').innerText = "Sitzung wiederhergestellt";
@@ -1382,6 +1412,7 @@
             slot.undoStack = [];
             slot.currentStroke = null;
             drawGuides(slot);
+            updateCanvasAccessibility(slot);
             if (lastActiveSlot && lastActiveSlot.id === slotIndex) {
                 lastActiveSlot = null;
             }
@@ -1516,6 +1547,7 @@
                             : Array.isArray(v.normalized_strokes) ? v.normalized_strokes : [];
                 slots[idx].strokes = src.map(stroke => stroke.map(p => ({ ...p })));
                 redraw(slots[idx]);
+                updateCanvasAccessibility(slots[idx]);
             });
             updateTotalCount();
             document.getElementById('status').innerText =
