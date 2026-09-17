@@ -1,7 +1,10 @@
 # VHS Tracer — architecture
 
+> [!NOTE]
+> **Repository Migration:** Tracer is now maintained in its own dedicated repository: [utrost/Tracer](https://github.com/utrost/Tracer) (where the single file lives as `index.html`). This document is kept for architectural reference.
+
 Technical companion to the [Tracer user guide](GUIDE_TRACER.md). This
-document describes how `TracerUI/TracerUI.html` is built: its design
+document describes how the Tracer SPA (historically `TracerUI/TracerUI.html`, now `index.html` in [utrost/Tracer](https://github.com/utrost/Tracer)) is built: its design
 constraints, data model, coordinate math, input pipeline, stabilisation,
 rendering, and export. Line references point into that single file.
 
