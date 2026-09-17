@@ -1,13 +1,14 @@
 # Vector Handwriting System (VHS)
 
-**🌐 Live Demo:** [utrost.github.io/VHS](https://utrost.github.io/VHS/) · [simiono.com/vhs](https://simiono.com/vhs/)
+**🌐 Hosted collector demo:** [utrost.github.io/VHS](https://utrost.github.io/VHS/) · [simiono.com/vhs](https://simiono.com/vhs/) — collector-only static pages for capturing glyph JSON.
+
+For server-backed assembly, live SVG preview, and the one-window Assemble + Capture workflow, run the **Local Assembler GUI** with `./vhs-gui.sh` or `vhs-gui.bat`.
 
 VHS is a deterministic pipeline for generating realistic handwriting for pen plotters. It replaces neural-network-based generation with a stochastic "Shaping Engine" utilizing a custom-captured library of single-stroke vector glyphs.
 
 ## Project Structure
 
 - **`GlyphCollectorUI/`**: A browser-based tool for capturing handwriting glyph variants.
-- **`TracerUI/`**: A pen-first tracing surface — trace over a reference image with pressure and layers, export to SVG/JSON.
 - **`assembler/`**: Python tools to assemble captured glyphs into handwritten SVG text.
 - **`glyphs/`**: Storage for captured glyph data (JSON format). Personal glyph data is gitignored.
 - **`vhs-cli.*` / `vhs-gui.*`**: Platform-specific scripts to run the CLI and Web UI from the root.
@@ -55,7 +56,7 @@ round trip. The CLI uses the same engine — see §2.
 > library.)
 
 ### 1. Capture Glyphs
-1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser (or use the [live version](https://simiono.com/vhs/)).
+1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser, use the [hosted collector-only demo](https://simiono.com/vhs/), or use the **Capture glyphs** tab inside the local Assembler GUI.
 2. Enter a character in the input field.
 3. Draw 10 variants across the canvas slots. Use a stylus/tablet for pressure sensitivity.
 4. Press **Enter** or click **Save JSON** to export.
@@ -162,8 +163,7 @@ renders from `assembler/`.
 - [Assembler CLI Guide](docs/GUIDE_ASSEMBLER_CLI.md) — Illustrated walkthrough with rendered samples
 - [Assembler GUI Guide](docs/GUIDE_ASSEMBLER_GUI.md) — Screenshot tour of the web UI
 - [GlyphCollector Guide](docs/GUIDE_GLYPHCOLLECTOR.md) — Capture workflow end-to-end
-- [Tracer Guide](docs/GUIDE_TRACER.md) — Pressure-aware image tracing → SVG/JSON
-- [Tracer Architecture](docs/ARCHITECTURE_TRACER.md) — How the Tracer is built (data model, transforms, pipeline)
+- Tracer has moved to the dedicated [utrost/Tracer](https://github.com/utrost/Tracer) repository; the in-repo VHS docs are migration notes only.
 - [Roadmap](docs/ROADMAP.md) — Planned realism and UX enhancements
 - [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
 - [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
