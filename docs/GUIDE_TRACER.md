@@ -1,5 +1,8 @@
 # VHS Tracer — guide
 
+> [!NOTE]
+> **Repository Migration:** The Tracer tool is no longer hosted in this repository; it has been moved to its own dedicated repository at [utrost/Tracer](https://github.com/utrost/Tracer) with a live deployment at [utrost.github.io/Tracer](https://utrost.github.io/Tracer/).
+
 > Building on the tool or curious how it works internally? See the
 > [Tracer architecture document](ARCHITECTURE_TRACER.md).
 
@@ -9,12 +12,12 @@ device (Android tablet + stylus, iPad + Apple Pencil, or a mouse). Strokes
 capture **pen pressure** per point and are drawn with variable line width.
 
 It is a single self-contained HTML file — no build step, no CDN, no server.
-Open `TracerUI/TracerUI.html` straight off disk (or host the file
-anywhere) and it works, including offline on a tablet.
+Open `index.html` from the [utrost/Tracer](https://github.com/utrost/Tracer) repository (or host the file
+anywhere, e.g. [utrost.github.io/Tracer](https://utrost.github.io/Tracer/)) and it works, including offline on a tablet.
 
 ## Quick start
 
-1. Open `TracerUI/TracerUI.html`.
+1. Open `index.html` from [utrost/Tracer](https://github.com/utrost/Tracer) or visit [utrost.github.io/Tracer](https://utrost.github.io/Tracer/).
 2. Click **🖼️ Image** (or drag an image onto the window) to load a
    reference. The artboard resizes to the image and fits to the view.
 3. Turn the **Image** opacity down so you can see your ink over it.
