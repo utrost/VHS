@@ -59,6 +59,20 @@ class SaveGlyphTest(unittest.TestCase):
                         "glyph": {"nope": 1}})
         self.assertEqual(r.status_code, 400)
 
+    def test_allows_punctuation_glyph_chars(self):
+        for ch, filename in [("&", "0026.json"), ("<", "003C.json"), (">", "003E.json")]:
+            with self.subTest(ch=ch):
+                r = self._post({"font": "ok", "filename": filename,
+                                "glyph": {"char": ch, "variants": []}})
+                self.assertEqual(r.status_code, 200)
+
+    def test_rejects_html_like_glyph_char(self):
+        r = self._post({"font": "ok", "filename": "0061.json",
+                        "glyph": {"char": "<img src=x onerror=alert(1)>",
+                                  "variants": []}})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("char", r.get_json()["error"])
+
     def test_new_font_appears_in_fonts_list(self):
         self._post({"font": "freshfont", "filename": "0062.json",
                     "glyph": {"variants": [{"strokes": []}]}})

@@ -1486,10 +1486,21 @@
             }
             const n = Array.isArray(data.variants) ? data.variants.length : 0;
             indicator.classList.remove('hidden');
-            indicator.innerHTML =
-                `<span class="font-semibold text-amber-700">Existing glyph found:</span> `
-                + `${n} variant(s) for "${data.char}". `
-                + `<button onclick="loadExistingGlyph()" class="ml-1 px-2 py-0.5 text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 rounded transition">Load for editing</button>`;
+            indicator.textContent = '';
+
+            const label = document.createElement('span');
+            label.className = 'font-semibold text-amber-700';
+            label.textContent = 'Existing glyph found:';
+            indicator.appendChild(label);
+            indicator.appendChild(document.createTextNode(
+                ` ${n} variant(s) for "${data.char || ''}". `));
+
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'ml-1 px-2 py-0.5 text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 rounded transition';
+            button.textContent = 'Load for editing';
+            button.addEventListener('click', loadExistingGlyph);
+            indicator.appendChild(button);
             existingLoadedChar = data;
         }
 
@@ -1602,6 +1613,13 @@
         function previewServerUrl() {
             return (document.getElementById('previewServer').value || '')
                 .replace(/\/$/, '');
+        }
+
+        function serverSaveUrl() {
+            const configured = previewServerUrl();
+            if (configured) return configured;
+            if (location.protocol.startsWith('http')) return location.origin;
+            return '';
         }
 
         async function populatePreviewFonts() {
@@ -1988,9 +2006,10 @@
                 let savedDirect = false;
                 let where = '';
 
-                if (location.protocol.startsWith('http')) {
+                const saveUrl = serverSaveUrl();
+                if (saveUrl) {
                     try {
-                        const res = await fetch('/api/save-glyph', {
+                        const res = await fetch(saveUrl + '/api/save-glyph', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({

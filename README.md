@@ -144,15 +144,17 @@ Use `--no-bezier` to skip Bezier curves and fall back to normalized/raw strokes.
 
 ## Testing
 
-The system includes a comprehensive automated test suite:
-- **Unit Tests**: 24 tests covering the core engine logic (kerning, zone-aware kerning, ligatures, metrics, Bezier path generation, normalized strokes, fallback chains, backward compatibility).
-- **CLI Tests**: 30 tests verifying the command-line interface, including paper sizes, margins, kerning aggressiveness, deterministic jitter, and error handling.
+The system includes an automated test suite covering the core assembler,
+CLI behavior, Flask server endpoints, and the browser-only Glyph Collector
+contracts.
 
-Run all tests:
+Run all tests from the repository root:
 ```bash
-cd assembler
-python3 -m unittest test_assembler test_cli -v
+python3 -m pytest -q
 ```
+
+The CI workflow also runs the historical focused assembler checks and smoke
+renders from `assembler/`.
 
 ## Documentation
 
