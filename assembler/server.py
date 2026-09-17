@@ -15,9 +15,11 @@ import os
 import sys
 import re
 import json
+import math
 import logging
 from typing import Dict, Tuple
 from flask import Flask, render_template, request, jsonify, Response
+from werkzeug.exceptions import BadRequest
 
 # Ensure the assembler module is importable
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +94,45 @@ def list_fonts():
             if os.path.isdir(full) and not entry.startswith('.'):
                 fonts.append(entry)
     return fonts
+
+
+def _json_payload():
+    try:
+        data = request.get_json(force=True)
+    except BadRequest:
+        return None, (jsonify({"error": "invalid JSON payload"}), 400)
+    if not isinstance(data, dict):
+        return None, (jsonify({"error": "JSON payload must be an object"}), 400)
+    return data, None
+
+
+def _float_field(data, key, default=None, optional=False):
+    value = data.get(key, default)
+    if optional and value in (None, ""):
+        return None, None
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None, f"invalid numeric field: {key}"
+    if not math.isfinite(parsed):
+        return None, f"invalid numeric field: {key}"
+    return parsed, None
+
+
+def _int_field(data, key, default=None, optional=False):
+    value = data.get(key, default)
+    if optional and value in (None, ""):
+        return None, None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None, f"invalid integer field: {key}"
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        return None, f"invalid integer field: {key}"
+    try:
+        return int(numeric), None
+    except (OverflowError, TypeError, ValueError):
+        return None, f"invalid integer field: {key}"
 
 
 @app.after_request
@@ -169,7 +210,9 @@ def api_save_preset():
     already-serialised YAML, so this works without PyYAML installed.
     Body: {"name": "<preset>", "yaml": "<text>"}.
     """
-    data = request.get_json(force=True)
+    data, error = _json_payload()
+    if error:
+        return error
     name = (data.get("name") or "").strip()
     yaml_text = data.get("yaml")
     if not _PRESET_NAME_RE.fullmatch(name):
@@ -192,7 +235,9 @@ def api_save_preset():
 
 @app.route("/api/generate", methods=["POST"])
 def api_generate():
-    data = request.get_json(force=True)
+    data, error = _json_payload()
+    if error:
+        return error
 
     text = data.get("text", "")
     has_frames = isinstance(data.get("frames"), list) and bool(data.get("frames"))
@@ -201,43 +246,57 @@ def api_generate():
 
     font_name = data.get("font", "")
     smooth = data.get("smooth", True)
-    jitter = float(data.get("jitter", 0.0))
+    numeric_fields = [
+        ("jitter", 0.0, float),
+        ("kern_aggressiveness", 0.5, float),
+        ("line_spacing", 1.0, float),
+        ("margin", 20.0, float),
+        ("stroke_width", 0.4, float),
+    ]
+    parsed = {}
+    for key, default, _ in numeric_fields:
+        parsed[key], field_error = _float_field(data, key, default)
+        if field_error:
+            return jsonify({"error": field_error}), 400
+    jitter = parsed["jitter"]
     auto_kern = data.get("auto_kern", False)
-    kern_aggressiveness = float(data.get("kern_aggressiveness", 0.5))
+    kern_aggressiveness = parsed["kern_aggressiveness"]
     color = data.get("color", "black")
-    line_spacing = float(data.get("line_spacing", 1.0))
+    line_spacing = parsed["line_spacing"]
     paper_size = data.get("paper_size")
     orientation = data.get("orientation", "portrait")
-    margin = float(data.get("margin", 20.0))
-    stroke_width = float(data.get("stroke_width", 0.4))
-    seed_val = data.get("seed")
-    seed = int(seed_val) if seed_val is not None else None
+    margin = parsed["margin"]
+    stroke_width = parsed["stroke_width"]
+    seed, field_error = _int_field(data, "seed", optional=True)
+    if field_error:
+        return jsonify({"error": field_error}), 400
 
     # mm layout controls (used when a paper size is selected)
     def _opt_float(key):
-        v = data.get(key)
-        if v is None or v == "":
-            return None
-        try:
-            return float(v)
-        except (TypeError, ValueError):
-            return None
+        value, field_error = _float_field(data, key, optional=True)
+        if field_error:
+            raise ValueError(field_error)
+        return value
 
-    line_height_mm = _opt_float("line_height_mm")
-    lines_per_page = data.get("lines_per_page")
-    lines_per_page = int(lines_per_page) if lines_per_page not in (None, "") else None
-    start_x_in = _opt_float("start_x")
-    start_y_in = _opt_float("start_y")
-    max_width_mm_in = _opt_float("max_width_mm")
+    try:
+        line_height_mm = _opt_float("line_height_mm")
+        lines_per_page, field_error = _int_field(data, "lines_per_page", optional=True)
+        if field_error:
+            raise ValueError(field_error)
+        start_x_in = _opt_float("start_x")
+        start_y_in = _opt_float("start_y")
+        max_width_mm_in = _opt_float("max_width_mm")
+        space_width_mm_in = _opt_float("space_width_mm")
+        space_jitter_mm = _opt_float("space_jitter_mm") or 0.0
+        line_drift_angle = _opt_float("line_drift_angle") or 0.0
+        line_drift_y_mm = _opt_float("line_drift_y") or 0.0
+        glyph_slant_jitter = _opt_float("glyph_slant_jitter") or 0.0
+        glyph_y_jitter_mm = _opt_float("glyph_y_jitter") or 0.0
+    except ValueError as exc:
+        return jsonify({"error": str(exc)}), 400
     wrap_mode = data.get("wrap_mode", "balanced")
     if wrap_mode not in ("greedy", "balanced"):
         wrap_mode = "balanced"
-    space_width_mm_in = _opt_float("space_width_mm")
-    space_jitter_mm = _opt_float("space_jitter_mm") or 0.0
-    line_drift_angle = _opt_float("line_drift_angle") or 0.0
-    line_drift_y_mm = _opt_float("line_drift_y") or 0.0
-    glyph_slant_jitter = _opt_float("glyph_slant_jitter") or 0.0
-    glyph_y_jitter_mm = _opt_float("glyph_y_jitter") or 0.0
     fallbacks_enabled = bool(data.get("fallbacks", True))
 
     # Resolve glyphs path
@@ -316,18 +375,34 @@ def api_generate():
         if explicit_scale is None:
             return jsonify({"error": "frames require a paper size (positions are mm)"}), 400
         norm_frames = []
-        for fr in frames_in:
-            fx = fr.get("start_x", margin)
-            nf = {
-                "text": fr.get("text", ""),
-                "start_x": fx,
-                "start_y": fr.get("start_y", margin),
-                "max_width": fr.get("max_width", page_w - margin - fx),
-            }
-            if fr.get("line_height"):
-                nf["line_height"] = fr["line_height"]
-            if fr.get("line_spacing"):
-                nf["line_spacing"] = fr["line_spacing"]
+        for idx, fr in enumerate(frames_in):
+            if not isinstance(fr, dict):
+                return jsonify({"error": f"frames[{idx}] must be an object"}), 400
+
+            def _frame_float(key, default):
+                value = fr.get(key, default)
+                parsed, field_error = _float_field({f"frames[{idx}].{key}": value},
+                                                    f"frames[{idx}].{key}")
+                if field_error:
+                    raise ValueError(field_error)
+                return parsed
+
+            try:
+                fx = _frame_float("start_x", margin)
+                start_y = _frame_float("start_y", margin)
+                max_width_frame = _frame_float("max_width", page_w - margin - fx)
+                nf = {
+                    "text": fr.get("text", ""),
+                    "start_x": fx,
+                    "start_y": start_y,
+                    "max_width": max_width_frame,
+                }
+                if fr.get("line_height") not in (None, ""):
+                    nf["line_height"] = _frame_float("line_height", None)
+                if fr.get("line_spacing") not in (None, ""):
+                    nf["line_spacing"] = _frame_float("line_spacing", None)
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
             norm_frames.append(nf)
         frame_shapes = typesetter.typeset_frames(
             norm_frames, explicit_scale,
@@ -392,18 +467,22 @@ def api_png():
 
     Body: {"svg": "<svg ...>...</svg>", "dpi": 300, "transparent": false}
     """
+    data, error = _json_payload()
+    if error:
+        return error
+    svg_text = data.get("svg", "")
+    if not svg_text.strip():
+        return jsonify({"error": "No SVG provided"}), 400
+    dpi, field_error = _int_field(data, "dpi", 300)
+    if field_error:
+        return jsonify({"error": field_error}), 400
+    transparent = bool(data.get("transparent", False))
+
     try:
         import cairosvg  # type: ignore
     except ImportError:
         return jsonify({"error": "PNG output requires cairosvg. "
                                    "Install with: pip install cairosvg"}), 503
-
-    data = request.get_json(force=True)
-    svg_text = data.get("svg", "")
-    if not svg_text.strip():
-        return jsonify({"error": "No SVG provided"}), 400
-    dpi = int(data.get("dpi", 300))
-    transparent = bool(data.get("transparent", False))
 
     kwargs = {"bytestring": svg_text.encode("utf-8"), "dpi": dpi}
     if not transparent:
@@ -418,16 +497,19 @@ def api_pdf():
 
     Body: {"svg": "<svg ...>...</svg>"}
     """
+    data, error = _json_payload()
+    if error:
+        return error
+    svg_text = data.get("svg", "")
+    if not svg_text.strip():
+        return jsonify({"error": "No SVG provided"}), 400
+
     try:
         import cairosvg  # type: ignore
     except ImportError:
         return jsonify({"error": "PDF output requires cairosvg. "
                                    "Install with: pip install cairosvg"}), 503
 
-    data = request.get_json(force=True)
-    svg_text = data.get("svg", "")
-    if not svg_text.strip():
-        return jsonify({"error": "No SVG provided"}), 400
     pdf_bytes = cairosvg.svg2pdf(bytestring=svg_text.encode("utf-8"))
     return Response(pdf_bytes, mimetype="application/pdf")
 
@@ -441,7 +523,9 @@ def api_coverage():
     """
     from assembler import scan_text_coverage
 
-    data = request.get_json(force=True)
+    data, error = _json_payload()
+    if error:
+        return error
     text = data.get("text", "")
     font_name = data.get("font", "")
     fallbacks_enabled = bool(data.get("fallbacks", True))
@@ -493,7 +577,9 @@ def api_save_glyph():
     The GlyphLibrary cache is mtime-based, so the next render picks up the
     new glyph automatically.
     """
-    data = request.get_json(force=True)
+    data, error = _json_payload()
+    if error:
+        return error
     font = (data.get("font") or "").strip()
     filename = (data.get("filename") or "").strip()
     glyph = data.get("glyph")
