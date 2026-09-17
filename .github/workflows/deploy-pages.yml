@@ -25,6 +25,8 @@ jobs:
 
       - name: Prepare pages content
         run: |
+          # GitHub Pages intentionally deploys the collector-only static demo.
+          # The server-backed Assembler GUI requires the local Flask server.
           mkdir -p _site
           cp GlyphCollectorUI/GlyphCollectorUI.html _site/index.html
 
