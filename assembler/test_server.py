@@ -9,6 +9,7 @@ import sys
 import shutil
 import tempfile
 import unittest
+import json
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, script_dir)
@@ -29,6 +30,17 @@ class SaveGlyphTest(unittest.TestCase):
 
     def _post(self, body):
         return self.client.post("/api/save-glyph", json=body)
+
+    def _write_minimal_glyph(self, root, font="font1", char="x"):
+        font_dir = os.path.join(root, font)
+        os.makedirs(font_dir, exist_ok=True)
+        filename = "".join(f"{ord(c):04X}" for c in char) + ".json"
+        with open(os.path.join(font_dir, filename), "w", encoding="utf-8") as f:
+            json.dump({
+                "char": char,
+                "metadata": {"baseline_y": 100, "x_height": 60, "canvas_size": [100, 140]},
+                "variants": [{"strokes": [[{"x": 0, "y": 80}, {"x": 10, "y": 80}]]}],
+            }, f)
 
     def test_valid_save_writes_file(self):
         r = self._post({"font": "myfont", "filename": "0061.json",
@@ -78,6 +90,115 @@ class SaveGlyphTest(unittest.TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertEqual(r.content_type, "application/json")
         self.assertIn("frames[0].start_x", r.get_json()["error"])
+
+    def test_generate_rejects_font_traversal_before_loading_external_glyphs(self):
+        external = tempfile.mkdtemp(prefix="vhs_external_font_")
+        try:
+            self._write_minimal_glyph(external, font="", char="x")
+            traversal = os.path.relpath(external, self.tmp)
+            self.assertIn("..", traversal)
+            r = self.client.post("/api/generate", json={"text": "x", "font": traversal})
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.content_type, "application/json")
+            self.assertIn("font", r.get_json()["error"])
+        finally:
+            shutil.rmtree(external, ignore_errors=True)
+
+    def test_generate_rejects_non_string_font_as_json_400(self):
+        for font in (["font1"], {"name": "font1"}, 123):
+            with self.subTest(font=font):
+                r = self.client.post("/api/generate", json={"text": "x", "font": font})
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.content_type, "application/json")
+                self.assertIn("font", r.get_json()["error"])
+
+    def test_coverage_rejects_font_traversal_before_loading_external_glyphs(self):
+        external = tempfile.mkdtemp(prefix="vhs_external_font_")
+        try:
+            self._write_minimal_glyph(external, font="", char="x")
+            traversal = os.path.relpath(external, self.tmp)
+            self.assertIn("..", traversal)
+            r = self.client.post("/api/coverage", json={"text": "x", "font": traversal})
+            self.assertEqual(r.status_code, 400)
+            self.assertEqual(r.content_type, "application/json")
+            self.assertIn("font", r.get_json()["error"])
+        finally:
+            shutil.rmtree(external, ignore_errors=True)
+
+    def test_coverage_rejects_non_string_font_as_json_400(self):
+        for font in (["font1"], {"name": "font1"}, 123):
+            with self.subTest(font=font):
+                r = self.client.post("/api/coverage", json={"text": "x", "font": font})
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.content_type, "application/json")
+                self.assertIn("font", r.get_json()["error"])
+
+    def test_generate_rejects_zero_line_spacing_with_lines_per_page_as_json_400(self):
+        self._write_minimal_glyph(self.tmp, font="font1", char="a")
+        r = self.client.post("/api/generate", json={
+            "text": "a",
+            "font": "font1",
+            "paper_size": "A4",
+            "lines_per_page": 10,
+            "line_spacing": 0,
+        })
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("line_spacing", r.get_json()["error"])
+
+    def test_generate_rejects_non_positive_lines_per_page_even_with_explicit_line_height(self):
+        self._write_minimal_glyph(self.tmp, font="font1", char="a")
+        for lines_per_page in (0, -5):
+            with self.subTest(lines_per_page=lines_per_page):
+                r = self.client.post("/api/generate", json={
+                    "text": "a",
+                    "font": "font1",
+                    "paper_size": "A4",
+                    "line_height_mm": 10,
+                    "lines_per_page": lines_per_page,
+                })
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.content_type, "application/json")
+                self.assertIn("lines_per_page", r.get_json()["error"])
+
+    def test_png_rejects_non_positive_dpi_as_json_400(self):
+        for dpi in (0, -1):
+            with self.subTest(dpi=dpi):
+                r = self.client.post("/api/png", json={"svg": "<svg></svg>", "dpi": dpi})
+                self.assertEqual(r.status_code, 400)
+                self.assertEqual(r.content_type, "application/json")
+                self.assertIn("dpi", r.get_json()["error"])
+
+    def test_mutating_endpoints_do_not_advertise_wildcard_cors(self):
+        presets = os.path.join(self.tmp, "presets")
+        orig_presets = server.PRESETS_DIR
+        server.PRESETS_DIR = presets
+        try:
+            for path, body in [
+                ("/api/save-preset", {"name": "cross-origin-write", "yaml": "margin: 12\n"}),
+                ("/api/save-glyph", {"font": "corsfont", "filename": "0061.json",
+                                      "glyph": {"char": "a", "variants": [{"strokes": []}]}}),
+            ]:
+                with self.subTest(path=path):
+                    preflight = self.client.open(
+                        path,
+                        method="OPTIONS",
+                        headers={
+                            "Origin": "https://example.invalid",
+                            "Access-Control-Request-Method": "POST",
+                            "Access-Control-Request-Headers": "Content-Type",
+                        },
+                    )
+                    self.assertNotEqual(preflight.headers.get("Access-Control-Allow-Origin"), "*")
+
+                    r = self.client.post(
+                        path,
+                        json=body,
+                        headers={"Origin": "https://example.invalid"},
+                    )
+                    self.assertNotEqual(r.headers.get("Access-Control-Allow-Origin"), "*")
+        finally:
+            server.PRESETS_DIR = orig_presets
 
     def test_generate_rejects_non_finite_integer_field_as_json_400(self):
         os.makedirs(os.path.join(self.tmp, "font1"), exist_ok=True)

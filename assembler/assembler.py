@@ -28,6 +28,57 @@ _KERN_VCLEARANCE_FRACTION = 0.2
 _SAFE_FONT_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 
 
+def _finite_float_arg(value: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a finite number")
+    if not math.isfinite(parsed):
+        raise argparse.ArgumentTypeError("must be a finite number")
+    return parsed
+
+
+def _finite_int_arg(value: str) -> int:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        raise argparse.ArgumentTypeError("must be a finite integer")
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        raise argparse.ArgumentTypeError("must be a finite integer")
+    return int(numeric)
+
+
+def _positive_int_arg(value: str) -> int:
+    parsed = _finite_int_arg(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
+
+def _coerce_finite_float(value, name: str) -> float:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a finite number")
+    if not math.isfinite(parsed):
+        raise ValueError(f"{name} must be a finite number")
+    return parsed
+
+
+def _coerce_positive_int(value, name: str) -> int:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{name} must be a positive integer")
+    if not math.isfinite(numeric) or not numeric.is_integer() or numeric <= 0:
+        raise ValueError(f"{name} must be a positive integer")
+    return int(numeric)
+
+
+def _frame_float(frame, key: str, default, idx: int) -> float:
+    return _coerce_finite_float(frame.get(key, default), f"frames[{idx}].{key}")
+
+
 def _safe_font_path(base_glyphs_dir: str, font_name: Optional[str]) -> str:
     base_abs = os.path.abspath(base_glyphs_dir)
     if not font_name:
@@ -1829,62 +1880,62 @@ if __name__ == "__main__":
                         "of {text, start_x, start_y, max_width} blocks in mm. Renders several "
                         "independently-positioned text frames on one page. Requires --paper-size; "
                         "mutually exclusive with the positional text / --file.")
-    parser.add_argument("--jitter", type=float, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
+    parser.add_argument("--jitter", type=_finite_float_arg, default=0.0, help="Amount of gaussian jitter to apply (default: 0.0)")
     parser.add_argument("--font", help="Name of the font subdirectory in glyphs/ folder", default=None)
     parser.add_argument("--no-smooth", action="store_true", help="Disable spline smoothing (smoothing is on by default)")
     parser.add_argument("--no-bezier", action="store_true",
                         help="Ignore bezier_curves from glyph JSON even if present")
     parser.add_argument("--no-normalize", action="store_true",
                         help="Ignore normalized_strokes from glyph JSON even if present")
-    parser.add_argument("--line-spacing", type=float, default=1.0,
+    parser.add_argument("--line-spacing", type=_finite_float_arg, default=1.0,
                         help="Multiplier applied to line height (e.g. 1.5 = 150%% spacing). Default: 1.0")
     parser.add_argument("--auto-kern", action="store_true", help="Enable automatic optical kerning to reduce whitespace")
-    parser.add_argument("--kern-aggressiveness", type=float, default=0.5,
+    parser.add_argument("--kern-aggressiveness", type=_finite_float_arg, default=0.5,
                         help="How aggressively zone-aware kerning tightens non-overlapping zones (0.0–1.0). "
                              "0.0 = no extra tightening, 1.0 = fully ignore non-shared zones. Default: 0.5")
-    parser.add_argument("--seed", type=int, default=None,
+    parser.add_argument("--seed", type=_finite_int_arg, default=None,
                         help="Random seed for deterministic jitter. If omitted, seed is derived from content.")
     parser.add_argument("--color", default="black", help="Hex code or color name for the stroke (default: black)")
-    parser.add_argument("--stroke-width", type=float, default=2.0,
+    parser.add_argument("--stroke-width", type=_finite_float_arg, default=2.0,
                         help="Stroke width in SVG units (default: 2.0). Automatically scaled in fixed-page mode.")
     parser.add_argument("--paper-size", choices=paper_choices, default=None,
                         help=f"Fixed paper size for the output SVG. Choices: {', '.join(paper_choices)}")
     parser.add_argument("--orientation", choices=["portrait", "landscape"], default="portrait",
                         help="Page orientation when --paper-size is set (default: portrait)")
-    parser.add_argument("--margin", type=float, default=20.0,
+    parser.add_argument("--margin", type=_finite_float_arg, default=20.0,
                         help="Page margin in mm on all sides when --paper-size is set (default: 20.0)")
-    parser.add_argument("--line-height-mm", type=float, default=None,
+    parser.add_argument("--line-height-mm", type=_finite_float_arg, default=None,
                         help="Baseline-to-baseline line height in mm. One of "
                              "--line-height-mm or --lines-per-page is required "
                              "with --paper-size.")
-    parser.add_argument("--lines-per-page", type=int, default=None,
+    parser.add_argument("--lines-per-page", type=_positive_int_arg, default=None,
                         help="Derive --line-height-mm so this many lines "
                              "(multiplied by --line-spacing) fit in the writable "
                              "page area. Requires --paper-size.")
-    parser.add_argument("--start-x", type=float, default=None,
+    parser.add_argument("--start-x", type=_finite_float_arg, default=None,
                         help="X coordinate of the top-left of the text block in mm "
                              "(default: --margin).")
-    parser.add_argument("--start-y", type=float, default=None,
+    parser.add_argument("--start-y", type=_finite_float_arg, default=None,
                         help="Y coordinate of the top-left of the text block in mm "
                              "(default: --margin).")
     parser.add_argument("--wrap-mode", choices=["greedy", "balanced"], default="balanced",
                         help="Line-break algorithm. 'balanced' (default) runs a minimum-"
                              "raggedness DP across the whole paragraph for uniform line "
                              "lengths; 'greedy' is the older first-fit wrap.")
-    parser.add_argument("--space-width-mm", type=float, default=None,
+    parser.add_argument("--space-width-mm", type=_finite_float_arg, default=None,
                         help="Width of a space in mm. Overrides the font's kerning config.")
-    parser.add_argument("--space-jitter-mm", type=float, default=0.0,
+    parser.add_argument("--space-jitter-mm", type=_finite_float_arg, default=0.0,
                         help="Max ± random variation applied to each space (mm). "
                              "Default: 0 (uniform). Deterministic when --seed is set.")
-    parser.add_argument("--line-drift-angle", type=float, default=0.0,
+    parser.add_argument("--line-drift-angle", type=_finite_float_arg, default=0.0,
                         help="Max ± per-line rotation in degrees to simulate a drifting "
                              "hand. Default: 0 (perfectly straight). Try 0.2–0.5.")
-    parser.add_argument("--line-drift-y", type=float, default=0.0,
+    parser.add_argument("--line-drift-y", type=_finite_float_arg, default=0.0,
                         help="Max ± per-line baseline wobble in mm. Default: 0. Try 0.2–0.6.")
-    parser.add_argument("--glyph-slant-jitter", type=float, default=0.0,
+    parser.add_argument("--glyph-slant-jitter", type=_finite_float_arg, default=0.0,
                         help="Max ± per-glyph rotation in degrees. Default: 0. Try 0.5–1.5 "
                              "for a subtly uneven hand feel.")
-    parser.add_argument("--glyph-y-jitter", type=float, default=0.0,
+    parser.add_argument("--glyph-y-jitter", type=_finite_float_arg, default=0.0,
                         help="Max ± per-glyph baseline offset in mm. Default: 0. Try "
                              "0.1–0.3 mm.")
     parser.add_argument("--paginate", action="store_true",
@@ -1905,13 +1956,13 @@ if __name__ == "__main__":
     parser.add_argument("--format", choices=["svg", "png", "pdf"], default="svg",
                         help="Output format. 'png' requires cairosvg; 'pdf' requires "
                              "cairosvg + pypdf (pip install cairosvg pypdf).")
-    parser.add_argument("--min-orphan-lines", type=int, default=2,
+    parser.add_argument("--min-orphan-lines", type=_positive_int_arg, default=2,
                         help="During pagination, don't strand fewer than this many "
                              "lines of a paragraph at the bottom of a page (default: 2).")
-    parser.add_argument("--min-widow-lines", type=int, default=2,
+    parser.add_argument("--min-widow-lines", type=_positive_int_arg, default=2,
                         help="During pagination, don't strand fewer than this many "
                              "lines of a paragraph at the top of a page (default: 2).")
-    parser.add_argument("--dpi", type=int, default=300,
+    parser.add_argument("--dpi", type=_positive_int_arg, default=300,
                         help="Raster resolution for PNG output in dots per inch "
                              "(default: 300).")
     parser.add_argument("--transparent", action="store_true",
@@ -1924,7 +1975,7 @@ if __name__ == "__main__":
                         help="Path to a YAML or JSON config file. Keys match CLI "
                              "flag names (dashes or underscores). CLI flags override "
                              "config; config overrides preset.")
-    parser.add_argument("--max-width-mm", type=float, default=None,
+    parser.add_argument("--max-width-mm", type=_finite_float_arg, default=None,
                         help="Word-wrap width in mm "
                              "(default: page_width - margin - start-x).")
 
@@ -2000,6 +2051,29 @@ if __name__ == "__main__":
         parser.set_defaults(**normalised)
 
     args = parser.parse_args()
+
+    for _name in (
+        "jitter", "line_spacing", "kern_aggressiveness", "stroke_width", "margin",
+        "space_jitter_mm", "line_drift_angle", "line_drift_y",
+        "glyph_slant_jitter", "glyph_y_jitter",
+    ):
+        try:
+            setattr(args, _name, _coerce_finite_float(getattr(args, _name), "--" + _name.replace("_", "-")))
+        except ValueError as exc:
+            parser.error(str(exc))
+    for _name in ("line_height_mm", "start_x", "start_y", "space_width_mm", "max_width_mm"):
+        if getattr(args, _name) is not None:
+            try:
+                setattr(args, _name, _coerce_finite_float(getattr(args, _name), "--" + _name.replace("_", "-")))
+            except ValueError as exc:
+                parser.error(str(exc))
+    if args.line_spacing <= 0:
+        parser.error("--line-spacing must be positive")
+    if args.lines_per_page is not None:
+        try:
+            args.lines_per_page = _coerce_positive_int(args.lines_per_page, "--lines-per-page")
+        except ValueError as exc:
+            parser.error(str(exc))
 
     input_text = ""
     if args.file:
@@ -2137,19 +2211,30 @@ if __name__ == "__main__":
             exit(1)
 
         norm_frames = []
-        for fr in frame_list:
-            fx = fr.get('start_x', args.margin)
-            nf = {
-                'text': fr.get('text', ''),
-                'start_x': fx,
-                'start_y': fr.get('start_y', args.margin),
-                'max_width': fr.get('max_width', page_w - args.margin - fx),
-            }
-            # Optional per-frame typography overrides.
-            if fr.get('line_height'):
-                nf['line_height'] = fr['line_height']
-            if fr.get('line_spacing'):
-                nf['line_spacing'] = fr['line_spacing']
+        for idx, fr in enumerate(frame_list):
+            if not isinstance(fr, dict):
+                logger.error(f"frames[{idx}] must be an object")
+                exit(1)
+            try:
+                fx = _frame_float(fr, 'start_x', args.margin, idx)
+                start_y = _frame_float(fr, 'start_y', args.margin, idx)
+                max_width_frame = _frame_float(fr, 'max_width', page_w - args.margin - fx, idx)
+                nf = {
+                    'text': fr.get('text', ''),
+                    'start_x': fx,
+                    'start_y': start_y,
+                    'max_width': max_width_frame,
+                }
+                # Optional per-frame typography overrides.
+                if fr.get('line_height') not in (None, ''):
+                    nf['line_height'] = _frame_float(fr, 'line_height', None, idx)
+                if fr.get('line_spacing') not in (None, ''):
+                    nf['line_spacing'] = _frame_float(fr, 'line_spacing', None, idx)
+                    if nf['line_spacing'] <= 0:
+                        raise ValueError(f"frames[{idx}].line_spacing must be positive")
+            except ValueError as exc:
+                logger.error(str(exc))
+                exit(1)
             norm_frames.append(nf)
 
         frame_shapes = typesetter.typeset_frames(

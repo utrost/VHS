@@ -27,7 +27,8 @@ sys.path.insert(0, script_dir)
 
 from assembler import (GlyphLibrary, Typesetter, Renderer, PAPER_SIZES,
                        DEFAULT_UNICODE_FALLBACKS, format_coverage_banner,
-                       _list_presets, _preset_path, _load_config_file)
+                       _list_presets, _preset_path, _load_config_file,
+                       _safe_font_path)
 
 logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 logger = logging.getLogger(__name__)
@@ -135,16 +136,63 @@ def _int_field(data, key, default=None, optional=False):
         return None, f"invalid integer field: {key}"
 
 
+def _positive_int_field(data, key, default=None, optional=False):
+    parsed, field_error = _int_field(data, key, default, optional)
+    if field_error or parsed is None:
+        return parsed, field_error
+    if parsed <= 0:
+        return None, f"invalid positive integer field: {key}"
+    return parsed, None
+
+
+_CORS_READ_PATHS = (
+    "/api/fonts",
+    "/api/paper-sizes",
+    "/api/presets",
+    "/api/generate",
+    "/api/png",
+    "/api/pdf",
+    "/api/coverage",
+)
+
+
+def _cors_allowed_for_path(path: str) -> bool:
+    """Return whether wildcard CORS is safe for this request path."""
+    if any(path == p or path.startswith(p + "/") for p in _CORS_READ_PATHS):
+        return True
+    if (path.startswith("/api/preset/") or path.startswith("/api/glyphs/")
+            or path.startswith("/api/glyph/")):
+        return True
+    return False
+
+
+def _resolve_font_path(font_name):
+    if font_name in (None, ""):
+        safe_name = None
+    elif isinstance(font_name, str):
+        safe_name = font_name
+    else:
+        return None, "invalid font name (use letters, digits, _ or -)"
+    try:
+        return _safe_font_path(BASE_GLYPHS_DIR, safe_name), None
+    except ValueError as exc:
+        return None, str(exc)
+
+
 @app.after_request
 def add_cors_headers(response):
-    """Permissive CORS for the companion GlyphCollector tool, which may
-    be opened from file:// or a different origin during development.
-    The server is local-only (localhost:5001) so opening CORS is fine."""
-    response.headers.setdefault('Access-Control-Allow-Origin', '*')
-    response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type')
-    response.headers.setdefault('Access-Control-Allow-Methods',
-                                'GET, POST, OPTIONS')
+    """CORS for local read/preview APIs only.
+
+    Filesystem-mutating endpoints intentionally do not advertise wildcard CORS;
+    use the served /collector UI for same-origin glyph writes.
+    """
+    if _cors_allowed_for_path(request.path):
+        response.headers.setdefault('Access-Control-Allow-Origin', '*')
+        response.headers.setdefault('Access-Control-Allow-Headers', 'Content-Type')
+        response.headers.setdefault('Access-Control-Allow-Methods',
+                                    'GET, POST, OPTIONS')
     return response
+
 
 
 @app.route("/api/<path:_>", methods=["OPTIONS"])
@@ -280,7 +328,7 @@ def api_generate():
 
     try:
         line_height_mm = _opt_float("line_height_mm")
-        lines_per_page, field_error = _int_field(data, "lines_per_page", optional=True)
+        lines_per_page, field_error = _positive_int_field(data, "lines_per_page", optional=True)
         if field_error:
             raise ValueError(field_error)
         start_x_in = _opt_float("start_x")
@@ -299,11 +347,13 @@ def api_generate():
         wrap_mode = "balanced"
     fallbacks_enabled = bool(data.get("fallbacks", True))
 
+    if line_spacing <= 0:
+        return jsonify({"error": "line_spacing must be positive"}), 400
+
     # Resolve glyphs path
-    if font_name:
-        glyphs_path = os.path.join(BASE_GLYPHS_DIR, font_name)
-    else:
-        glyphs_path = BASE_GLYPHS_DIR
+    glyphs_path, font_error = _resolve_font_path(font_name)
+    if font_error or glyphs_path is None:
+        return jsonify({"error": font_error or "invalid font name"}), 400
 
     if not os.path.isdir(glyphs_path):
         return jsonify({"error": f"Font directory not found: {font_name}"}), 404
@@ -473,7 +523,7 @@ def api_png():
     svg_text = data.get("svg", "")
     if not svg_text.strip():
         return jsonify({"error": "No SVG provided"}), 400
-    dpi, field_error = _int_field(data, "dpi", 300)
+    dpi, field_error = _positive_int_field(data, "dpi", 300)
     if field_error:
         return jsonify({"error": field_error}), 400
     transparent = bool(data.get("transparent", False))
@@ -530,10 +580,9 @@ def api_coverage():
     font_name = data.get("font", "")
     fallbacks_enabled = bool(data.get("fallbacks", True))
 
-    if font_name:
-        glyphs_path = os.path.join(BASE_GLYPHS_DIR, font_name)
-    else:
-        glyphs_path = BASE_GLYPHS_DIR
+    glyphs_path, font_error = _resolve_font_path(font_name)
+    if font_error or glyphs_path is None:
+        return jsonify({"error": font_error or "invalid font name"}), 400
     if not os.path.isdir(glyphs_path):
         return jsonify({"error": f"Font directory not found: {font_name}"}), 404
 
