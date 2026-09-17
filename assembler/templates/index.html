@@ -194,7 +194,16 @@
             width: 38px; height: 20px;
             cursor: pointer;
         }
-        .toggle input { display: none; }
+        .toggle input {
+            position: absolute;
+            opacity: 0;
+            width: 1px;
+            height: 1px;
+        }
+        .toggle input:focus-visible ~ .toggle-track {
+            box-shadow: 0 0 0 3px var(--accent-glow);
+            border-color: var(--border-focus);
+        }
         .toggle-track {
             position: absolute; inset: 0;
             background: var(--bg-input);
@@ -541,8 +550,50 @@
 
         /* ── Responsive ── */
         @media (max-width: 768px) {
-            .main { flex-direction: column; }
-            .sidebar { width: 100%; min-width: unset; max-height: 50vh; border-right: none; border-bottom: 1px solid var(--border); }
+            html, body {
+                height: auto;
+                min-height: 100%;
+                overflow-x: hidden;
+                overflow-y: auto;
+            }
+            .header {
+                flex-wrap: wrap;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 10px 12px;
+            }
+            .header-title { min-width: 100%; }
+            .view-tabs, .header-right { flex-wrap: wrap; }
+            .main {
+                flex-direction: column;
+                overflow: visible;
+            }
+            .sidebar {
+                width: 100%;
+                min-width: unset;
+                max-height: none;
+                border-right: none;
+                border-bottom: 1px solid var(--border);
+            }
+            .sidebar-scroll { max-height: none; }
+            .sidebar-actions { position: sticky; bottom: 0; }
+            .preview-area {
+                min-height: 60vh;
+                overflow: visible;
+            }
+            .preview-toolbar,
+            .preview-toolbar > div {
+                flex-wrap: wrap;
+                gap: 8px;
+            }
+            .preview-container { overflow-x: auto; }
+            .field-row { flex-wrap: wrap; }
+            .view-tab, .btn, .toggle, .fitchip-btn {
+                min-height: 44px;
+            }
+            .toggle { width: 48px; height: 28px; }
+            .toggle-thumb { width: 20px; height: 20px; }
+            .toggle input:checked ~ .toggle-thumb { transform: translateX(20px); }
         }
     </style>
 </head>
@@ -574,22 +625,22 @@
 
                 <!-- Text Input -->
                 <div class="section">
-                    <div class="section-label">Text Input</div>
+                    <label class="section-label" for="textInput">Text Input</label>
                     <textarea id="textInput" class="text-editor" placeholder="Type or paste your text here…
-Line breaks are preserved."></textarea>
+Line breaks are preserved." aria-label="Text Input"></textarea>
                     <div style="margin-top: 8px;">
                         <label class="btn btn-secondary file-upload" style="width: 100%; font-size: 12px;">
                             📄 Upload Text File
-                            <input type="file" id="fileUpload" accept=".txt,.text">
+                            <input type="file" id="fileUpload" accept=".txt,.text" aria-label="Upload Text File">
                         </label>
                     </div>
                 </div>
 
                 <!-- Font -->
                 <div class="section">
-                    <div class="section-label">Font</div>
+                    <label class="section-label" for="fontSelect">Font</label>
                     <div class="field">
-                        <select id="fontSelect">
+                        <select id="fontSelect" aria-label="Font">
                             <option value="">Loading fonts…</option>
                         </select>
                     </div>
@@ -603,10 +654,10 @@ Line breaks are preserved."></textarea>
 
                 <!-- Presets -->
                 <div class="section">
-                    <div class="section-label">Preset</div>
+                    <label class="section-label" for="presetSelect">Preset</label>
                     <div class="field-row">
                         <div class="field">
-                            <select id="presetSelect">
+                            <select id="presetSelect" aria-label="Preset">
                                 <option value="">(none)</option>
                             </select>
                         </div>
@@ -627,36 +678,36 @@ Line breaks are preserved."></textarea>
                     <div class="section-label">Page Setup</div>
                     <div class="field-row">
                         <div class="field">
-                            <label class="field-label">Paper Size</label>
-                            <select id="paperSize">
+                            <label class="field-label" for="paperSize">Paper Size</label>
+                            <select id="paperSize" aria-label="Paper Size">
                                 <option value="">Auto-fit</option>
                             </select>
                         </div>
                         <div class="field">
-                            <label class="field-label">Orientation</label>
-                            <select id="orientation">
+                            <label class="field-label" for="orientation">Orientation</label>
+                            <select id="orientation" aria-label="Orientation">
                                 <option value="portrait">Portrait</option>
                                 <option value="landscape">Landscape</option>
                             </select>
                         </div>
                     </div>
                     <div class="field">
-                        <label class="field-label">Margin (mm)</label>
-                        <input type="number" id="margin" value="20" min="0" max="100" step="1">
+                        <label class="field-label" for="margin">Margin (mm)</label>
+                        <input type="number" id="margin" value="20" min="0" max="100" step="1" aria-label="Margin in millimetres">
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Start X (mm)</label>
-                            <input type="number" id="startX" placeholder="= margin" min="0" step="1">
+                            <label class="field-label" for="startX">Start X (mm)</label>
+                            <input type="number" id="startX" placeholder="= margin" min="0" step="1" aria-label="Start X in millimetres">
                         </div>
                         <div class="field">
-                            <label class="field-label">Start Y (mm)</label>
-                            <input type="number" id="startY" placeholder="= margin" min="0" step="1">
+                            <label class="field-label" for="startY">Start Y (mm)</label>
+                            <input type="number" id="startY" placeholder="= margin" min="0" step="1" aria-label="Start Y in millimetres">
                         </div>
                     </div>
                     <div class="field" style="margin-top: 8px;">
-                        <label class="field-label">Max Width (mm)</label>
-                        <input type="number" id="maxWidthMm" placeholder="= page − margin − start-x" min="0" step="1">
+                        <label class="field-label" for="maxWidthMm">Max Width (mm)</label>
+                        <input type="number" id="maxWidthMm" placeholder="= page − margin − start-x" min="0" step="1" aria-label="Max Width in millimetres">
                     </div>
                 </div>
 
@@ -665,33 +716,33 @@ Line breaks are preserved."></textarea>
                     <div class="section-label">Typography</div>
                     <div class="field-row">
                         <div class="field">
-                            <label class="field-label">Line Height (mm)</label>
-                            <input type="number" id="lineHeightMm" value="8" min="1" max="50" step="0.5">
+                            <label class="field-label" for="lineHeightMm">Line Height (mm)</label>
+                            <input type="number" id="lineHeightMm" value="8" min="1" max="50" step="0.5" aria-label="Line Height in millimetres">
                         </div>
                         <div class="field">
-                            <label class="field-label">Lines / Page</label>
-                            <input type="number" id="linesPerPage" placeholder="auto" min="1" max="200" step="1">
+                            <label class="field-label" for="linesPerPage">Lines / Page</label>
+                            <input type="number" id="linesPerPage" placeholder="auto" min="1" max="200" step="1" aria-label="Lines per Page">
                         </div>
                     </div>
                     <div class="field" style="margin-top: 8px;">
-                        <label class="field-label">Line Spacing</label>
-                        <input type="number" id="lineSpacing" value="1.0" min="0.5" max="4.0" step="0.1">
+                        <label class="field-label" for="lineSpacing">Line Spacing</label>
+                        <input type="number" id="lineSpacing" value="1.0" min="0.5" max="4.0" step="0.1" aria-label="Line Spacing">
                     </div>
                     <div class="field" style="margin-top: 8px;">
-                        <label class="field-label">Wrap Mode</label>
-                        <select id="wrapMode">
+                        <label class="field-label" for="wrapMode">Wrap Mode</label>
+                        <select id="wrapMode" aria-label="Wrap Mode">
                             <option value="balanced" selected>Balanced (uniform line lengths)</option>
                             <option value="greedy">Greedy (first-fit, legacy)</option>
                         </select>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Space Width (mm)</label>
-                            <input type="number" id="spaceWidthMm" placeholder="font default" min="0" max="20" step="0.1">
+                            <label class="field-label" for="spaceWidthMm">Space Width (mm)</label>
+                            <input type="number" id="spaceWidthMm" placeholder="font default" min="0" max="20" step="0.1" aria-label="Space Width in millimetres">
                         </div>
                         <div class="field">
-                            <label class="field-label">Space Jitter (mm)</label>
-                            <input type="number" id="spaceJitterMm" value="0" min="0" max="5" step="0.1">
+                            <label class="field-label" for="spaceJitterMm">Space Jitter (mm)</label>
+                            <input type="number" id="spaceJitterMm" value="0" min="0" max="5" step="0.1" aria-label="Space Jitter in millimetres">
                         </div>
                     </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 6px;">
@@ -704,72 +755,72 @@ Line breaks are preserved."></textarea>
                 <div class="section">
                     <div class="section-label">Styling</div>
                     <div class="toggle-row">
-                        <span class="toggle-label">Smooth Curves</span>
+                        <label class="toggle-label" for="smooth">Smooth Curves</label>
                         <label class="toggle">
-                            <input type="checkbox" id="smooth" checked>
+                            <input type="checkbox" id="smooth" checked aria-label="Smooth Curves">
                             <span class="toggle-track"></span>
                             <span class="toggle-thumb"></span>
                         </label>
                     </div>
                     <div class="toggle-row">
-                        <span class="toggle-label">Auto Kerning</span>
+                        <label class="toggle-label" for="autoKern">Auto Kerning</label>
                         <label class="toggle">
-                            <input type="checkbox" id="autoKern">
+                            <input type="checkbox" id="autoKern" aria-label="Auto Kerning">
                             <span class="toggle-track"></span>
                             <span class="toggle-thumb"></span>
                         </label>
                     </div>
                     <div class="toggle-row">
-                        <span class="toggle-label">Unicode Fallbacks</span>
+                        <label class="toggle-label" for="fallbacks">Unicode Fallbacks</label>
                         <label class="toggle">
-                            <input type="checkbox" id="fallbacks" checked>
+                            <input type="checkbox" id="fallbacks" checked aria-label="Unicode Fallbacks">
                             <span class="toggle-track"></span>
                             <span class="toggle-thumb"></span>
                         </label>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Kern Aggressiveness</label>
+                            <label class="field-label" for="kernAggressiveness">Kern Aggressiveness</label>
                             <input type="range" id="kernAggressiveness" value="0.5" min="0" max="1" step="0.1"
-                                   style="width: 100%;">
+                                   style="width: 100%;" aria-label="Kern Aggressiveness">
                             <span style="font-size: 11px; color: #888;" id="kernAggressivenessValue">0.5</span>
                         </div>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Jitter</label>
-                            <input type="number" id="jitter" value="0" min="0" max="5" step="0.1">
+                            <label class="field-label" for="jitter">Jitter</label>
+                            <input type="number" id="jitter" value="0" min="0" max="5" step="0.1" aria-label="Jitter">
                         </div>
                         <div class="field">
-                            <label class="field-label">Stroke Width (mm)</label>
-                            <input type="number" id="strokeWidth" value="0.4" min="0.1" max="5" step="0.1">
+                            <label class="field-label" for="strokeWidth">Stroke Width (mm)</label>
+                            <input type="number" id="strokeWidth" value="0.4" min="0.1" max="5" step="0.1" aria-label="Stroke Width in millimetres">
                         </div>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Ink Color</label>
-                            <input type="color" id="color" value="#000000">
+                            <label class="field-label" for="color">Ink Color</label>
+                            <input type="color" id="color" value="#000000" aria-label="Ink Color">
                         </div>
                         <div class="field"></div>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Line Drift Angle (°)</label>
-                            <input type="number" id="lineDriftAngle" value="0" min="0" max="5" step="0.1">
+                            <label class="field-label" for="lineDriftAngle">Line Drift Angle (°)</label>
+                            <input type="number" id="lineDriftAngle" value="0" min="0" max="5" step="0.1" aria-label="Line Drift Angle">
                         </div>
                         <div class="field">
-                            <label class="field-label">Line Drift Y (mm)</label>
-                            <input type="number" id="lineDriftY" value="0" min="0" max="5" step="0.1">
+                            <label class="field-label" for="lineDriftY">Line Drift Y (mm)</label>
+                            <input type="number" id="lineDriftY" value="0" min="0" max="5" step="0.1" aria-label="Line Drift Y in millimetres">
                         </div>
                     </div>
                     <div class="field-row" style="margin-top: 8px;">
                         <div class="field">
-                            <label class="field-label">Glyph Slant (°)</label>
-                            <input type="number" id="glyphSlantJitter" value="0" min="0" max="5" step="0.1">
+                            <label class="field-label" for="glyphSlantJitter">Glyph Slant (°)</label>
+                            <input type="number" id="glyphSlantJitter" value="0" min="0" max="5" step="0.1" aria-label="Glyph Slant">
                         </div>
                         <div class="field">
-                            <label class="field-label">Glyph Y (mm)</label>
-                            <input type="number" id="glyphYJitter" value="0" min="0" max="2" step="0.05">
+                            <label class="field-label" for="glyphYJitter">Glyph Y (mm)</label>
+                            <input type="number" id="glyphYJitter" value="0" min="0" max="2" step="0.05" aria-label="Glyph Y jitter">
                         </div>
                     </div>
                     <div class="field-hint" style="font-size: 11px; color: #888; margin-top: 4px;">
@@ -782,9 +833,9 @@ Line breaks are preserved."></textarea>
             <!-- Action Buttons -->
             <div class="sidebar-actions">
                 <div class="toggle-row" style="margin-bottom: 6px;">
-                    <span class="toggle-label">Live Preview</span>
+                    <label class="toggle-label" for="livePreview">Live Preview</label>
                     <label class="toggle">
-                        <input type="checkbox" id="livePreview" checked>
+                        <input type="checkbox" id="livePreview" checked aria-label="Live Preview">
                         <span class="toggle-track"></span>
                         <span class="toggle-thumb"></span>
                     </label>
@@ -810,12 +861,12 @@ Line breaks are preserved."></textarea>
                 </div>
                 <div class="field-row" style="margin-top: 4px;">
                     <div class="field">
-                        <label class="field-label">PNG DPI</label>
-                        <input type="number" id="pngDpi" value="300" min="72" max="1200" step="6">
+                        <label class="field-label" for="pngDpi">PNG DPI</label>
+                        <input type="number" id="pngDpi" value="300" min="72" max="1200" step="6" aria-label="PNG DPI">
                     </div>
                     <div class="field" style="display: flex; align-items: end;">
                         <label style="font-size: 12px; color: #aaa;">
-                            <input type="checkbox" id="pngTransparent"> transparent
+                            <input type="checkbox" id="pngTransparent" aria-label="Transparent PNG background"> transparent
                         </label>
                     </div>
                 </div>
