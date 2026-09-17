@@ -464,6 +464,25 @@ def api_coverage():
 # the realpath is double-checked against the glyphs root.
 _GLYPH_FONT_RE = re.compile(r"[A-Za-z0-9_-]{1,64}")
 _GLYPH_FILE_RE = re.compile(r"[0-9A-Fa-f]{2,256}\.json")
+_GLYPH_CHAR_MAX = 64
+
+
+def _validate_glyph_payload(glyph):
+    if not isinstance(glyph, dict) or "variants" not in glyph:
+        return "glyph must be an object with a 'variants' array"
+    if not isinstance(glyph.get("variants"), list):
+        return "glyph variants must be an array"
+    char = glyph.get("char")
+    if char is not None:
+        if not isinstance(char, str) or not char:
+            return "glyph char must be a non-empty string when present"
+        if len(char) > _GLYPH_CHAR_MAX:
+            return f"glyph char must be at most {_GLYPH_CHAR_MAX} characters"
+        if any(ord(c) < 32 for c in char):
+            return "glyph char contains unsupported control characters"
+        if re.search(r"<\s*[A-Za-z][^>]*>", char):
+            return "glyph char looks like HTML markup"
+    return None
 
 
 @app.route("/api/save-glyph", methods=["POST"])
@@ -483,8 +502,9 @@ def api_save_glyph():
         return jsonify({"error": "invalid font name (use letters, digits, _ or -)"}), 400
     if not _GLYPH_FILE_RE.fullmatch(filename):
         return jsonify({"error": "invalid filename (expected hex .json)"}), 400
-    if not isinstance(glyph, dict) or "variants" not in glyph:
-        return jsonify({"error": "glyph must be an object with a 'variants' array"}), 400
+    validation_error = _validate_glyph_payload(glyph)
+    if validation_error:
+        return jsonify({"error": validation_error}), 400
 
     base_real = os.path.realpath(BASE_GLYPHS_DIR)
     font_dir = os.path.join(base_real, font)
