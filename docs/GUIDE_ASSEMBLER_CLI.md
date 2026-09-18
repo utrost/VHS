@@ -277,6 +277,8 @@ The PNGs in `docs/img/cli-*.png` are produced by
 change to keep the guide accurate:
 
 ```bash
+python3 -m pip install -r requirements-docs.txt
+python3 -m playwright install chromium
 python3 docs/tools/capture_screenshots.py
 ```
 

@@ -3,14 +3,14 @@
 **Objective:** Verify that ligature substitution and optical kerning work correctly.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/` (includes ligature files like `00740074.json` for "tt")
+- Font `font1` available in `glyphs/font1/` (includes ligature files like `00740074.json` for "tt")
 
 ## Steps
 
 ### 1. Test ligature substitution
 ```bash
 cd assembler
-python3 assembler.py "butter" vs07_ligature.svg --font utrost
+python3 assembler.py "butter" vs07_ligature.svg --font font1
 ```
 
 Open `vs07_ligature.svg` in a browser.
@@ -21,8 +21,8 @@ Open `vs07_ligature.svg` in a browser.
 
 ### 2. Test auto-kerning
 ```bash
-python3 assembler.py "WAVE" vs07_no_kern.svg --font utrost
-python3 assembler.py "WAVE" vs07_auto_kern.svg --font utrost --auto-kern
+python3 assembler.py "WAVE" vs07_no_kern.svg --font font1
+python3 assembler.py "WAVE" vs07_auto_kern.svg --font font1 --auto-kern
 ```
 
 Open both SVGs in a browser.
@@ -33,9 +33,9 @@ Open both SVGs in a browser.
 
 ### 3. Test zone-aware kerning aggressiveness
 ```bash
-python3 assembler.py "Typically" vs07_kern_low.svg --font utrost --auto-kern --kern-aggressiveness 0.0
-python3 assembler.py "Typically" vs07_kern_mid.svg --font utrost --auto-kern --kern-aggressiveness 0.5
-python3 assembler.py "Typically" vs07_kern_high.svg --font utrost --auto-kern --kern-aggressiveness 1.0
+python3 assembler.py "Typically" vs07_kern_low.svg --font font1 --auto-kern --kern-aggressiveness 0.0
+python3 assembler.py "Typically" vs07_kern_mid.svg --font font1 --auto-kern --kern-aggressiveness 0.5
+python3 assembler.py "Typically" vs07_kern_high.svg --font font1 --auto-kern --kern-aggressiveness 1.0
 ```
 
 Open all three SVGs in a browser.
@@ -47,7 +47,7 @@ Open all three SVGs in a browser.
 
 ### 4. Test German characters
 ```bash
-python3 assembler.py "Größe Übung Ärger straße" vs07_german.svg --font utrost
+python3 assembler.py "Größe Übung Ärger straße" vs07_german.svg --font font1
 ```
 
 **Expected:**

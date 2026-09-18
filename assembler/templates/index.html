@@ -1246,7 +1246,11 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
             if (!file) return;
             const reader = new FileReader();
             reader.onload = (ev) => {
-                document.getElementById('textInput').value = ev.target.result;
+                const textInput = document.getElementById('textInput');
+                textInput.value = ev.target.result;
+                textInput.dispatchEvent(new Event('input', { bubbles: true }));
+                textInput.dispatchEvent(new Event('change', { bubbles: true }));
+                saveSession();
                 setStatus('ready', `Loaded: ${file.name}`);
             };
             reader.readAsText(file);
@@ -1820,9 +1824,9 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
                     '<div class="wys-textbox"></div>' +
                     '<textarea class="wys-edit" spellcheck="false"></textarea>' +
                     '<div class="wys-label"></div>' +
-                    '<div class="wys-handle move" data-h="move" title="Drag to position the text"></div>' +
-                    '<div class="wys-handle ew" data-h="ew" title="Drag to set column width"></div>' +
-                    '<div class="wys-handle margin" data-h="margin" title="Drag to set the page margin"></div>';
+                    '<button type="button" class="wys-handle move" data-h="move" title="Drag or use arrow keys to position the text" aria-label="Move text block"></button>' +
+                    '<button type="button" class="wys-handle ew" data-h="ew" title="Drag or use left/right arrow keys to set column width" aria-label="Resize text column"></button>' +
+                    '<button type="button" class="wys-handle margin" data-h="margin" title="Drag or use up/down arrow keys to set the page margin" aria-label="Adjust page margin"></button>';
                 wrapper.appendChild(o);
 
                 // On-page typing → mirror into the sidebar textarea + live render.
@@ -1843,6 +1847,7 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
                     if (idx != null) ta.setSelectionRange(idx, idx);
                 });
                 o.querySelectorAll('.wys-handle').forEach(attachHandle);
+                o.querySelectorAll('.wys-handle').forEach(attachKeyboardHandle);
             }
 
             // Keep the on-page text in sync unless the user is typing into it.
@@ -2094,9 +2099,13 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
             const box = _el('div', 'wys-frame-box');
             const ta = _el('textarea', 'wys-frame-edit'); ta.spellcheck = false;
             const label = _el('div', 'wys-label');
-            const hMove = _el('div', 'wys-handle move frame');
-            const hEw = _el('div', 'wys-handle ew frame');
-            const del = _el('div', 'wys-frame-del'); del.textContent = '✕'; del.title = 'Delete frame';
+            const hMove = _el('button', 'wys-handle move frame');
+            const hEw = _el('button', 'wys-handle ew frame');
+            const del = _el('button', 'wys-frame-del'); del.textContent = '✕'; del.title = 'Delete frame';
+            hMove.type = hEw.type = del.type = 'button';
+            hMove.setAttribute('aria-label', 'Move frame');
+            hEw.setAttribute('aria-label', 'Resize frame');
+            del.setAttribute('aria-label', 'Delete frame');
             const lh = _el('input', 'wys-frame-lh');
             lh.type = 'number'; lh.min = '2'; lh.step = '0.5'; lh.placeholder = 'lh';
             lh.title = 'Line height (mm) for this frame — blank = document default';
@@ -2128,6 +2137,8 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
             del.addEventListener('click', () => deleteFrame(refs));
             attachFrameHandle(hMove, refs, 'move');
             attachFrameHandle(hEw, refs, 'ew');
+            attachKeyboardFrameHandle(hMove, refs, 'move');
+            attachKeyboardFrameHandle(hEw, refs, 'ew');
             return refs;
         }
 
@@ -2172,6 +2183,29 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
                 maxBottom = Math.max(maxBottom, p.matrixTransform(inv).y);
             });
             return maxBottom > g.writableBottomMm + 0.5;
+        }
+
+        function attachKeyboardFrameHandle(h, refs, kind) {
+            h.addEventListener('keydown', (e) => {
+                const step = e.shiftKey ? 5 : 1;
+                const arrows = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+                if (!arrows.includes(e.key)) return;
+                const g = editorGeom();
+                const fr = extraFrames[extraEls.indexOf(refs)];
+                if (!g || !fr) return;
+                e.preventDefault();
+                if (kind === 'move') {
+                    if (e.key === 'ArrowLeft') fr.start_x = Math.round(clamp(fr.start_x - step, 0, g.pageWmm - 5));
+                    if (e.key === 'ArrowRight') fr.start_x = Math.round(clamp(fr.start_x + step, 0, g.pageWmm - 5));
+                    if (e.key === 'ArrowUp') fr.start_y = Math.round(clamp(fr.start_y - step, 0, g.pageHmm - 5));
+                    if (e.key === 'ArrowDown') fr.start_y = Math.round(clamp(fr.start_y + step, 0, g.pageHmm - 5));
+                } else if (kind === 'ew') {
+                    const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
+                    fr.max_width = Math.round(clamp(fr.max_width + delta, 10, g.pageWmm - fr.start_x));
+                }
+                positionExtraFrame(refs, fr, g);
+                scheduleFramesRender();
+            });
         }
 
         function attachFrameHandle(h, refs, kind) {
@@ -2231,6 +2265,34 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
                 if (f.line_height) o.line_height = f.line_height;
                 return o;
             })];
+        }
+
+        function attachKeyboardHandle(h) {
+            h.addEventListener('keydown', (e) => {
+                const step = e.shiftKey ? 5 : 1;
+                const arrows = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'];
+                if (!arrows.includes(e.key)) return;
+                const g = editorGeom();
+                if (!g) return;
+                e.preventDefault();
+                const kind = h.dataset.h;
+                if (kind === 'move') {
+                    if (e.key === 'ArrowLeft') setFieldRaw('startX', clamp(g.startX - step, 0, g.pageWmm - 5));
+                    if (e.key === 'ArrowRight') setFieldRaw('startX', clamp(g.startX + step, 0, g.pageWmm - 5));
+                    if (e.key === 'ArrowUp') setFieldRaw('startY', clamp(g.startY - step, 0, g.pageHmm - 5));
+                    if (e.key === 'ArrowDown') setFieldRaw('startY', clamp(g.startY + step, 0, g.pageHmm - 5));
+                } else if (kind === 'ew') {
+                    const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
+                    setFieldRaw('maxWidthMm', clamp(g.maxW + delta, 10, g.pageWmm - g.startX));
+                } else if (kind === 'margin') {
+                    const delta = (e.key === 'ArrowLeft' || e.key === 'ArrowUp') ? -step : step;
+                    const lim = Math.min(g.pageWmm, g.pageHmm) / 2 - 5;
+                    setFieldRaw('margin', clamp(g.margin + delta, 0, lim));
+                }
+                const o = document.querySelector('.wysiwyg-overlay');
+                if (o) layoutEditor(o, editorGeom());
+                generate(true);
+            });
         }
 
         // Wire one drag handle. Each gesture clamps to the page and writes the

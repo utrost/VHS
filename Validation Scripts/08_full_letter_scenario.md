@@ -3,7 +3,7 @@
 **Objective:** Verify a realistic end-to-end use case — rendering a multi-paragraph letter on A4 paper.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
@@ -24,14 +24,14 @@ EOF
 
 ### 2. Generate on A4 Portrait
 ```bash
-python3 assembler.py --file vs08_letter.txt vs08_letter_a4.svg --font utrost \
+python3 assembler.py --file vs08_letter.txt vs08_letter_a4.svg --font font1 \
   --paper-size A4 --orientation portrait --margin 25 \
   --line-height-mm 10 --line-spacing 1.3 --stroke-width 0.4
 ```
 
 ### 3. Generate on A5 Landscape
 ```bash
-python3 assembler.py --file vs08_letter.txt vs08_letter_a5.svg --font utrost \
+python3 assembler.py --file vs08_letter.txt vs08_letter_a5.svg --font font1 \
   --paper-size A5 --orientation landscape --margin 15 \
   --line-height-mm 8 --line-spacing 1.2 --stroke-width 0.4
 ```

@@ -4,14 +4,14 @@
 
 ## Prerequisites
 - Python 3.10+ installed
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
 ### 1. Run the assembler with inline text
 ```bash
 cd assembler
-python3 assembler.py "Hello World" vs01_hello.svg --font utrost
+python3 assembler.py "Hello World" vs01_hello.svg --font font1
 ```
 
 ### 2. Verify output file exists

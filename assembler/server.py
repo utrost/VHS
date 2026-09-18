@@ -537,7 +537,11 @@ def api_png():
     kwargs = {"bytestring": svg_text.encode("utf-8"), "dpi": dpi}
     if not transparent:
         kwargs["background_color"] = "white"
-    png_bytes = cairosvg.svg2png(**kwargs)
+    try:
+        png_bytes = cairosvg.svg2png(**kwargs)
+    except Exception as exc:
+        logging.warning("PNG conversion failed: %s", exc)
+        return jsonify({"error": f"SVG conversion failed: {exc}"}), 400
     return Response(png_bytes, mimetype="image/png")
 
 
@@ -560,7 +564,11 @@ def api_pdf():
         return jsonify({"error": "PDF output requires cairosvg. "
                                    "Install with: pip install cairosvg"}), 503
 
-    pdf_bytes = cairosvg.svg2pdf(bytestring=svg_text.encode("utf-8"))
+    try:
+        pdf_bytes = cairosvg.svg2pdf(bytestring=svg_text.encode("utf-8"))
+    except Exception as exc:
+        logging.warning("PDF conversion failed: %s", exc)
+        return jsonify({"error": f"SVG conversion failed: {exc}"}), 400
     return Response(pdf_bytes, mimetype="application/pdf")
 
 
