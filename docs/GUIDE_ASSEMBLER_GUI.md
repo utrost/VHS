@@ -121,6 +121,11 @@ font is missing.
   as a one-page PDF. Multi-page PDFs come from the CLI's `--paginate
   --format pdf` combination.
 
+If a client sends malformed SVG to the PNG/PDF endpoints, the server
+returns a JSON `400` error instead of a Flask HTML traceback. Missing
+optional export dependencies still return JSON `503` errors with install
+guidance.
+
 ---
 
 ## 6. Edit on page (WYSIWYG)
@@ -134,11 +139,13 @@ What you get on the page:
 - **Type on the page.** A transparent text layer sits exactly over the
   rendered handwriting — type into it and the handwriting re-renders live
   underneath. It mirrors the sidebar **Text** box (they stay in sync).
-- **Drag to position.** A square **move** handle at the text block's
-  top-left sets **start-x / start-y**; a round **width** handle on the
-  right edge sets **max-width**; a purple handle at the top-centre of the
-  page sets the **margin**. A small label shows the live mm values. Every
-  gesture writes the matching sidebar field — there's one source of truth.
+- **Drag or keyboard to position.** A square **move** handle at the text
+  block's top-left sets **start-x / start-y**; a round **width** handle on
+  the right edge sets **max-width**; a purple handle at the top-centre of
+  the page sets the **margin**. These handles are focusable buttons: use
+  arrow keys for 1 mm steps and Shift+arrow for 5 mm steps. A small label
+  shows the live mm values. Every gesture writes the matching sidebar
+  field — there's one source of truth.
 - **Click-to-caret.** Click anywhere on the handwriting to place the text
   caret at that letter (it snaps to the nearest glyph), so editing lands
   where you point rather than where a hidden textarea would guess.
@@ -154,8 +161,8 @@ Click **➕ Frame** to add another independently-positioned block — a
 heading box plus a body column, a margin note, two columns, etc. Each
 extra frame is drawn in green with its own:
 
-- draggable **box** (move + width handles) writing that frame's
-  start-x / start-y / max-width,
+- draggable and keyboard-accessible **box** controls (move + width
+  handles) writing that frame's start-x / start-y / max-width,
 - transparent **textarea** (type on it; click-to-caret works per frame),
 - **label** (`Frame 2: x, y mm`) and a red **✕** to delete it,
 - a small **`lh`** input at the bottom-right for this frame's own line

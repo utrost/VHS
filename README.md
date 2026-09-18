@@ -4,6 +4,16 @@
 
 For server-backed assembly, live SVG preview, and the one-window Assemble + Capture workflow, run the **Local Assembler GUI** with `./vhs-gui.sh` or `vhs-gui.bat`.
 
+## Current status
+
+VHS now has three maintained entry points:
+
+- **Hosted Collector** on GitHub Pages / simiono.com for capturing glyph JSON only.
+- **Local Assembler GUI** for the full Assemble + Capture round trip, live preview, exports, presets, and on-page editing.
+- **CLI** for repeatable SVG/PNG/PDF generation and validation scripts.
+
+Recent hardening keeps the public quickstart reproducible: all validation scripts use the shipped `glyphs/font1` sample font, screenshot regeneration declares its Playwright dependency in `requirements-docs.txt`, malformed SVG conversion requests return JSON `400` errors instead of Flask HTML errors, and editor/collector shortcuts avoid destructive surprises while typing in form fields.
+
 VHS is a deterministic pipeline for generating realistic handwriting for pen plotters. It replaces neural-network-based generation with a stochastic "Shaping Engine" utilizing a custom-captured library of single-stroke vector glyphs.
 
 ## Project Structure
@@ -59,8 +69,8 @@ round trip. The CLI uses the same engine — see §2.
 1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser, use the [hosted collector-only demo](https://simiono.com/vhs/), or use the **Capture glyphs** tab inside the local Assembler GUI.
 2. Enter a character in the input field.
 3. Draw 10 variants across the canvas slots. Use a stylus/tablet for pressure sensitivity.
-4. Press **Enter** or click **Save JSON** to export.
-5. Move the JSON files to `glyphs/YourFont/`.
+4. Press **Enter** while focus is on the drawing area/page background, or click **Save JSON** to export/save.
+5. If you used the hosted/static Collector, move the downloaded JSON files to `glyphs/YourFont/`. If you used the local Assembler GUI, Save writes directly into `glyphs/<font>/`.
 
 **Capture aids** (toggle in header bar or via keyboard):
 - **Template** (`T`) — Semi-transparent handwriting font overlay as a visual guide. Pick from 17 Google Fonts in ⚙️ Settings. Adjust opacity (default 15%).
@@ -164,7 +174,7 @@ renders from `assembler/`.
 - [Assembler GUI Guide](docs/GUIDE_ASSEMBLER_GUI.md) — Screenshot tour of the web UI
 - [GlyphCollector Guide](docs/GUIDE_GLYPHCOLLECTOR.md) — Capture workflow end-to-end
 - Tracer has moved to the dedicated [utrost/Tracer](https://github.com/utrost/Tracer) repository; the in-repo VHS docs are migration notes only.
-- [Roadmap](docs/ROADMAP.md) — Planned realism and UX enhancements
+- [Roadmap](docs/ROADMAP.md) — Planned realism, UX, and static-browser delivery work
 - [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
 - [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
 - [Glyph Collector UI](GlyphCollectorUI/README.md) — Capture tool documentation

@@ -48,6 +48,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Undo/Redo in Glyph Collector**: Per-stroke undo (Ctrl+Z) and redo (Ctrl+Shift+Z) in the capture UI. Buttons also added to the header.
 - **Auto-save in Glyph Collector**: Drawing sessions are automatically saved to localStorage and restored on page reload. No more lost work from accidental browser closes.
 
+### Fixed
+- PNG/PDF conversion endpoints now return JSON `400` errors for malformed SVG instead of surfacing Flask HTML 500 pages.
+- GlyphCollector's global Enter shortcut no longer saves/resets while focus is inside form controls such as Queue, Settings, or preview fields.
+- Assembler text-file upload now reuses the same session persistence and live-preview path as typing/pasting in the main text box.
+- On-page editor move/resize/margin/delete controls are keyboard-reachable buttons with accessible names; arrow keys adjust the selected handle.
+- Public validation scripts now use the shipped `glyphs/font1` sample font instead of a private `utrost` font.
+- Screenshot regeneration docs now declare the Playwright dependency in `requirements-docs.txt` and include browser-install setup.
+- CONTRIBUTING quickstart now matches the Python 3.10+ requirement and uses runnable GUI/CLI commands.
+
 ### Changed
 - **Deterministic output with `--seed`**: passing `--seed N` now also resets the global `random` state inside `typeset_text`, so glyph-variant selection is repeatable across runs. Previously only the Renderer's stroke jitter was fully deterministic.
 

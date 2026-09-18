@@ -73,3 +73,17 @@ def test_contributing_quickstart_matches_python310_and_runnable_commands():
     assert "python assembler.py" not in text
     assert "python3 assembler.py" in text
     assert "--font font1" in text
+
+
+def test_docs_describe_current_project_review_hardening():
+    readme = README
+    gui = (ROOT / "docs" / "GUIDE_ASSEMBLER_GUI.md").read_text(encoding="utf-8")
+    collector = (ROOT / "docs" / "GUIDE_GLYPHCOLLECTOR.md").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    assert "malformed SVG conversion requests return JSON `400`" in readme
+    assert "all validation scripts use the shipped `glyphs/font1`" in readme
+    assert "returns a JSON `400` error" in gui
+    assert "arrow keys for 1 mm steps" in gui
+    assert "Ignored while typing in inputs" in collector
+    assert "### Fixed" in changelog
+    assert "Playwright dependency" in changelog

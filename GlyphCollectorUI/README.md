@@ -33,7 +33,7 @@ A browser-based tool for capturing handwriting glyph variants with pressure sens
 1.  Open `GlyphCollectorUI.html` in a modern web browser.
 2.  **Draw**: Use a stylus or mouse to draw characters in the boxes.
 3.  **Label**: Enter the character or ligature you are drawing in the input field (e.g., "a", "B", "sch").
-4.  **Save**: Click **Save JSON** or press **Enter**.
+4.  **Save**: Click **Save JSON** or press **Enter** while focus is on the drawing area/page background.
     -   The file will be downloaded automatically.
     -   The grid will be cleared for the next character.
 
@@ -51,7 +51,7 @@ Click the **Settings (⚙️)** button in the header to open the configuration p
 
 ## Keyboard Shortcuts
 
--   **Enter**: Save JSON and reset
+-   **Enter**: Save JSON and reset when focus is not inside a form control
 -   **Ctrl+Z** / **Cmd+Z**: Undo last stroke (on the last-drawn variant)
 -   **Ctrl+Shift+Z** / **Cmd+Shift+Z**: Redo last undone stroke
 -   **Esc**: Cancel an active capture queue
@@ -64,7 +64,8 @@ Click the **Settings (⚙️)** button in the header to open the configuration p
     (e.g. *Basic Latin*).
 3. Type your sequence into the **Queue** field (e.g.
     `abcdefghijklmnopqrstuvwxyz`) and click **Start Queue**.
-4. Draw the first letter. Hit **Enter** — it saves directly into the
-    folder, the dashboard cell turns green, and the next letter loads
-    into the input automatically.
+4. Draw the first letter. Hit **Enter** while focus is on the drawing
+    area/page background — it saves directly into the folder, the
+    dashboard cell turns green, and the next letter loads into the input
+    automatically. If focus is in a field, click **Save JSON** instead.
 5. Repeat until the queue is empty. Press **Esc** at any time to stop.

@@ -4,7 +4,7 @@ This guide will walk you through the process of capturing your handwriting and g
 
 ## 1. Setup
 
-1.  **Open the Collector**: Navigate to `VHS/GlyphCollectorUI/GlyphCollectorUI.html` and open it in a modern web browser (Chrome/Edge recommended).
+1.  **Open the Collector**: for the easiest round trip, run `./vhs-gui.sh` and use the **✍ Capture glyphs** tab at `http://localhost:5001`. You can also open `VHS/GlyphCollectorUI/GlyphCollectorUI.html` directly in a modern browser (Chrome/Edge recommended).
 2.  **Input Device**: For best results, use a **Graphics Tablet** (Wacom, Huion) or an iPad with Pencil (via Sidecar/EasyCanvas). You *can* use a mouse, but it will look like mouse-writing.
 
 ## 2. Capturing Glyphs (The Art)
@@ -38,8 +38,8 @@ The Collector UI applies **live Catmull-Rom smoothing** to the canvas so you can
 
 1.  Create a folder `VHS/glyphs/MyHandwriting/`.
 2.  In the Collector UI, enter a character (e.g., `a`) and draw your variants.
-3.  Press **Enter** or "Save JSON".
-4.  A file named `0061.json` (hex for 'a') will download. Move this to your font folder.
+3.  Press **Enter** while focus is on the drawing area/page background, or click **Save JSON**.
+4.  If you opened the Collector through the local Assembler GUI/server, it saves directly into `glyphs/<font>/`. If you opened the static file or hosted collector, a file named `0061.json` (hex for `a`) downloads; move it to your font folder.
 5.  Repeat for `a`-`z`, `A`-`Z`, `0`-`9`, and punctuation.
 
 ## 4. Advanced Techniques: Mimicking Cursive

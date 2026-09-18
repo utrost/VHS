@@ -98,8 +98,9 @@ separated). Click **Start Queue**.
 
 - The first token loads into the **Zeichen** (label) input.
 - Draw your variants.
-- Hit **Enter** (or click *Save JSON*). The file is written, the grid
-  clears, and the next token auto-loads.
+- Hit **Enter** while focus is on the drawing area/page background (or
+  click *Save JSON*). The file is written, the grid clears, and the
+  next token auto-loads.
 - A progress readout shows `done / total · next: x`.
 - **Esc** stops the queue. The queue also exits automatically when
   the last token saves.
@@ -188,8 +189,11 @@ Collector through the server URL.
    **Start Queue**.
 4. Draw 5–10 variants of each letter. Watch the pressure indicator —
    consistent contact helps the Bezier fitter.
-5. Press **Enter** after each letter. The dashboard cell turns green,
-   the next letter loads, the Assembler preview (if open) refreshes.
+5. Press **Enter** after each letter while focus is on the drawing area
+   or page background. The dashboard cell turns green, the next letter
+   loads, and the Assembler preview (if open) refreshes. If focus is in
+   the Queue, Settings, or another form field, Enter edits/submits that
+   field instead of saving the glyph.
 6. Repeat until the queue is empty. Press **Esc** at any time to stop.
 7. Open the Collector via `/collector` and click **👁 Render** to see
    your new font in a sample sentence.
@@ -200,7 +204,7 @@ Collector through the server URL.
 
 | Shortcut | Action |
 |----------|--------|
-| **Enter** | Save JSON for the current label. |
+| **Enter** | Save JSON for the current label when focus is on the drawing surface or page background. Ignored while typing in inputs, textareas, selects, or buttons. |
 | **Ctrl/Cmd + Z** | Undo the last stroke. |
 | **Ctrl/Cmd + Shift + Z** | Redo. |
 | **Esc** | Cancel an active capture queue. |
