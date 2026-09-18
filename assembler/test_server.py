@@ -217,6 +217,45 @@ class SaveGlyphTest(unittest.TestCase):
         self.assertEqual(r.content_type, "application/json")
         self.assertIn("dpi", r.get_json()["error"])
 
+
+    def test_png_returns_json_400_for_malformed_svg_conversion(self):
+        class FakeCairoSvg:
+            @staticmethod
+            def svg2png(**_kwargs):
+                raise ValueError("malformed SVG")
+
+        original = sys.modules.get("cairosvg")
+        sys.modules["cairosvg"] = FakeCairoSvg
+        try:
+            r = self.client.post("/api/png", json={"svg": "<svg><path", "dpi": 300})
+        finally:
+            if original is None:
+                sys.modules.pop("cairosvg", None)
+            else:
+                sys.modules["cairosvg"] = original
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("SVG conversion failed", r.get_json()["error"])
+
+    def test_pdf_returns_json_400_for_malformed_svg_conversion(self):
+        class FakeCairoSvg:
+            @staticmethod
+            def svg2pdf(**_kwargs):
+                raise ValueError("malformed SVG")
+
+        original = sys.modules.get("cairosvg")
+        sys.modules["cairosvg"] = FakeCairoSvg
+        try:
+            r = self.client.post("/api/pdf", json={"svg": "<svg><path"})
+        finally:
+            if original is None:
+                sys.modules.pop("cairosvg", None)
+            else:
+                sys.modules["cairosvg"] = original
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(r.content_type, "application/json")
+        self.assertIn("SVG conversion failed", r.get_json()["error"])
+
     def test_rejects_font_traversal(self):
         r = self._post({"font": "../evil", "filename": "0061.json",
                         "glyph": {"variants": []}})

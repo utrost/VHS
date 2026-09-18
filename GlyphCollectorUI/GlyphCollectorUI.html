@@ -497,7 +497,10 @@
             }
 
             document.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') saveAndReset();
+                if (e.key === 'Enter' && !isFormFieldActive()) {
+                    e.preventDefault();
+                    saveAndReset();
+                }
                 if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
                     e.preventDefault();
                     undo();

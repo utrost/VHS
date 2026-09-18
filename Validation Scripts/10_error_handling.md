@@ -19,19 +19,19 @@ python3 assembler.py "Hello" vs10_err.svg --font NonExistentFont 2>&1
 
 ### 3. Non-existent input file
 ```bash
-python3 assembler.py --file does_not_exist.txt vs10_err.svg --font utrost 2>&1
+python3 assembler.py --file does_not_exist.txt vs10_err.svg --font font1 2>&1
 ```
 **Expected:** Error message about failing to read the input file. Non-zero exit code.
 
 ### 4. Invalid paper size
 ```bash
-python3 assembler.py "Hello" vs10_err.svg --font utrost --paper-size B5 2>&1
+python3 assembler.py "Hello" vs10_err.svg --font font1 --paper-size B5 2>&1
 ```
 **Expected:** argparse error listing valid choices (A3, A4, A5, A6, Letter, Legal).
 
 ### 5. Invalid orientation
 ```bash
-python3 assembler.py "Hello" vs10_err.svg --font utrost --orientation diagonal 2>&1
+python3 assembler.py "Hello" vs10_err.svg --font font1 --orientation diagonal 2>&1
 ```
 **Expected:** argparse error listing valid choices (portrait, landscape).
 

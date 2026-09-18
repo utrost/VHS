@@ -228,6 +228,8 @@ The images in `docs/img/collector-*.png` are produced by
 ```bash
 ./vhs-gui.sh
 # in a second terminal
+python3 -m pip install -r requirements-docs.txt
+python3 -m playwright install chromium
 python3 docs/tools/capture_screenshots.py
 ```
 

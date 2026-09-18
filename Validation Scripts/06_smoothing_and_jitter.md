@@ -3,38 +3,38 @@
 **Objective:** Verify that `--no-smooth` and `--jitter` affect the visual output. Smoothing is on by default.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
 ### 1. Generate without smoothing
 ```bash
 cd assembler
-python3 assembler.py "Smooth test" vs06_raw.svg --font utrost --no-smooth
+python3 assembler.py "Smooth test" vs06_raw.svg --font font1 --no-smooth
 ```
 
 ### 2. Generate with smoothing (default)
 ```bash
-python3 assembler.py "Smooth test" vs06_smooth.svg --font utrost
+python3 assembler.py "Smooth test" vs06_smooth.svg --font font1
 ```
 
 ### 3. Generate with smoothing + jitter
 ```bash
-python3 assembler.py "Smooth test" vs06_jitter.svg --font utrost --jitter 1.0
+python3 assembler.py "Smooth test" vs06_jitter.svg --font font1 --jitter 1.0
 ```
 
 ### 4. Verify deterministic jitter
 ```bash
-python3 assembler.py "Smooth test" vs06_jitter_a.svg --font utrost --jitter 1.0
-python3 assembler.py "Smooth test" vs06_jitter_b.svg --font utrost --jitter 1.0
+python3 assembler.py "Smooth test" vs06_jitter_a.svg --font font1 --jitter 1.0
+python3 assembler.py "Smooth test" vs06_jitter_b.svg --font font1 --jitter 1.0
 diff vs06_jitter_a.svg vs06_jitter_b.svg
 ```
 **Expected:** No differences — jitter is deterministic (content-seeded).
 
 ### 5. Verify explicit seed
 ```bash
-python3 assembler.py "Smooth test" vs06_seed42.svg --font utrost --jitter 1.0 --seed 42
-python3 assembler.py "Smooth test" vs06_seed99.svg --font utrost --jitter 1.0 --seed 99
+python3 assembler.py "Smooth test" vs06_seed42.svg --font font1 --jitter 1.0 --seed 42
+python3 assembler.py "Smooth test" vs06_seed99.svg --font font1 --jitter 1.0 --seed 99
 ```
 **Expected:** Different seed values produce different jitter patterns.
 

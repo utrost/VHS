@@ -3,7 +3,7 @@
 **Objective:** Verify that `--paper-size` and `--orientation` produce SVGs with correct fixed dimensions.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
@@ -19,7 +19,7 @@ EOF
 
 ### 2. Generate A4 Portrait
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a4_portrait.svg --font utrost \
+python3 assembler.py --file vs03_input.txt vs03_a4_portrait.svg --font font1 \
   --paper-size A4 --orientation portrait
 ```
 
@@ -31,7 +31,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a4_portrait.svg
 
 ### 3. Generate A4 Landscape
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a4_landscape.svg --font utrost \
+python3 assembler.py --file vs03_input.txt vs03_a4_landscape.svg --font font1 \
   --paper-size A4 --orientation landscape
 ```
 
@@ -43,7 +43,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a4_landscape.svg
 
 ### 4. Generate A5 Portrait
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a5_portrait.svg --font utrost \
+python3 assembler.py --file vs03_input.txt vs03_a5_portrait.svg --font font1 \
   --paper-size A5 --orientation portrait
 ```
 
@@ -55,7 +55,7 @@ grep -o 'width="[^"]*" height="[^"]*"' vs03_a5_portrait.svg
 
 ### 5. Generate A3 Landscape
 ```bash
-python3 assembler.py --file vs03_input.txt vs03_a3_landscape.svg --font utrost \
+python3 assembler.py --file vs03_input.txt vs03_a3_landscape.svg --font font1 \
   --paper-size A3 --orientation landscape
 ```
 

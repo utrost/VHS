@@ -39,3 +39,37 @@ def test_tracer_docs_are_explicit_migration_notes_not_runnable_instructions():
         assert "dedicated Tracer" in text
         assert "https://github.com/utrost/" in text
         assert "Open `TracerUI/TracerUI.html`" not in text
+
+
+def test_validation_scripts_use_shipped_sample_font_not_private_font():
+    validation_root = ROOT / "Validation Scripts"
+    offenders = []
+    for path in validation_root.glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        if "utrost" in text or "glyphs/utrost" in text:
+            offenders.append(str(path.relative_to(ROOT)))
+    assert not offenders, "validation scripts must use shipped font1, not private utrost font: " + ", ".join(offenders)
+
+
+def test_screenshot_regeneration_playwright_dependency_is_declared_and_documented():
+    req = (ROOT / "requirements-docs.txt").read_text(encoding="utf-8")
+    assert "playwright" in req.lower()
+    for path in [
+        ROOT / "docs" / "GUIDE_ASSEMBLER_GUI.md",
+        ROOT / "docs" / "GUIDE_ASSEMBLER_CLI.md",
+        ROOT / "docs" / "GUIDE_GLYPHCOLLECTOR.md",
+    ]:
+        text = path.read_text(encoding="utf-8")
+        assert "requirements-docs.txt" in text
+        assert "playwright install chromium" in text
+
+
+def test_contributing_quickstart_matches_python310_and_runnable_commands():
+    text = (ROOT / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "Python 3.10+" in text
+    assert "Python 3.8+" not in text
+    assert "./vhs-gui.sh" in text
+    assert "vhs-gui.bat" in text
+    assert "python assembler.py" not in text
+    assert "python3 assembler.py" in text
+    assert "--font font1" in text

@@ -85,3 +85,33 @@ def test_assembler_mobile_touch_targets_and_wrapping_controls():
         assert selector in mobile, f"mobile CSS must size {selector}"
     assert "min-height: 44px" in mobile
     assert "flex-wrap: wrap" in mobile
+
+
+def test_text_file_upload_reuses_input_session_and_live_preview_path():
+    match = re.search(r"function\s+handleFileUpload\s*\([^)]*\)\s*\{(?P<body>.*?)\n\s*// ── Generate", HTML, re.S)
+    assert match, "handleFileUpload() must exist"
+    body = match.group("body")
+    assert "textInput.dispatchEvent(new Event('input', { bubbles: true }))" in body
+    assert "textInput.dispatchEvent(new Event('change', { bubbles: true }))" in body
+    assert "saveSession()" in body
+
+
+def test_wysiwyg_editor_handles_are_keyboard_accessible_controls():
+    assert '<button type="button" class="wys-handle move"' in HTML
+    assert 'aria-label="Move text block"' in HTML
+    assert 'aria-label="Resize text column"' in HTML
+    assert 'aria-label="Adjust page margin"' in HTML
+    assert "function attachKeyboardHandle" in HTML
+    assert "addEventListener('keydown'" in HTML
+    assert "ArrowLeft" in HTML and "ArrowRight" in HTML and "ArrowUp" in HTML and "ArrowDown" in HTML
+    assert "o.querySelectorAll('.wys-handle').forEach(attachKeyboardHandle)" in HTML
+
+
+def test_extra_frame_controls_are_keyboard_accessible_buttons():
+    assert "_el('button', 'wys-handle move frame')" in HTML
+    assert "_el('button', 'wys-handle ew frame')" in HTML
+    assert "_el('button', 'wys-frame-del')" in HTML
+    assert "hMove.setAttribute('aria-label'" in HTML
+    assert "hEw.setAttribute('aria-label'" in HTML
+    assert "del.setAttribute('aria-label'" in HTML
+    assert "attachKeyboardFrameHandle" in HTML

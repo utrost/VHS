@@ -3,7 +3,7 @@
 **Objective:** Verify that `--file` reads a text file and preserves line breaks verbatim.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
@@ -19,7 +19,7 @@ EOF
 
 ### 2. Run the assembler with file input
 ```bash
-python3 assembler.py --file vs02_input.txt vs02_multiline.svg --font utrost \
+python3 assembler.py --file vs02_input.txt vs02_multiline.svg --font font1 \
   --paper-size A4 --line-height-mm 10
 ```
 

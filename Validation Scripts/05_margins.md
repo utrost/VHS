@@ -3,20 +3,20 @@
 **Objective:** Verify that `--margin` offsets content from the page edges.
 
 ## Prerequisites
-- Font `utrost` available in `glyphs/utrost/`
+- Font `font1` available in `glyphs/font1/`
 
 ## Steps
 
 ### 1. Generate with small margin (5mm)
 ```bash
 cd assembler
-python3 assembler.py "Margin test" vs05_margin_5.svg --font utrost \
+python3 assembler.py "Margin test" vs05_margin_5.svg --font font1 \
   --paper-size A5 --margin 5
 ```
 
 ### 2. Generate with large margin (40mm)
 ```bash
-python3 assembler.py "Margin test" vs05_margin_40.svg --font utrost \
+python3 assembler.py "Margin test" vs05_margin_40.svg --font font1 \
   --paper-size A5 --margin 40
 ```
 

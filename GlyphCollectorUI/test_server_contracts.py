@@ -42,3 +42,18 @@ def test_queue_start_guards_unsaved_strokes_before_retargeting_character():
     assert guard_pos != -1, "startQueue must check unsaved strokes"
     assert retarget_pos != -1, "startQueue must preload the first queued character"
     assert guard_pos < retarget_pos, "unsaved-strokes guard must run before retargeting charInput"
+
+
+def test_global_enter_shortcut_ignores_form_fields_before_saving():
+    init = re.search(
+        r"document\.addEventListener\('keydown', \(e\) => \{(?P<body>.*?)\n\s*// Auto-save when character input changes",
+        HTML,
+        re.S,
+    )
+    assert init, "init keydown handler must exist"
+    body = init.group("body")
+    enter_pos = body.find("e.key === 'Enter'")
+    save_pos = body.find("saveAndReset()", enter_pos)
+    guard_pos = body.find("isFormFieldActive()")
+    assert enter_pos != -1 and save_pos != -1, "Enter shortcut must still save from drawing context"
+    assert guard_pos != -1 and guard_pos < save_pos, "Enter shortcut must guard form fields before save"
