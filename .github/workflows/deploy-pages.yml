@@ -16,6 +16,12 @@ concurrency:
 
 jobs:
   deploy:
+    env:
+      # actions/deploy-pages@v5 currently emits Node's DEP0040 punycode
+      # warning under the runner runtime. The action is already on the
+      # latest major; suppress only Node runtime deprecation noise for
+      # this deploy job.
+      NODE_OPTIONS: --no-deprecation
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
