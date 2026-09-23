@@ -875,7 +875,7 @@ class Typesetter:
         self._word_info = []
         # Source character index (into the post-fallback text) of each placed
         # shape, kept parallel to compiled_shapes. Lets the renderer tag glyphs
-        # so the GUI can map a click back to a caret position (U7 Phase 2).
+        # so the GUI can map a click back to a caret position.
         self._shape_source_idx = []
 
         # Balanced wrap is a two-pass flow: first lay out unwrapped (so we
@@ -1161,8 +1161,12 @@ class Typesetter:
                        space_width_override=None, space_jitter=0.0, seed=None,
                        fallbacks=None, glyph_slant_jitter=0.0, glyph_y_jitter=0.0):
         """Typeset several independently-positioned frames into one shared
-        glyph-coordinate space, with each frame's page position *baked* into
-        the coordinates (U7 Phase 2b — see docs/U7_TEXT_FRAMES_PLAN.md).
+        glyph-coordinate space.
+
+        The renderer receives one flat shape list. `source_frame` and
+        `source_frame_char_index` identify the original frame and character
+        for GUI hit testing. Coordinates are already baked into page space
+        before rendering.
 
         frames: list of {'text', 'start_x'(mm), 'start_y'(mm), 'max_width'(mm)}.
         scale:  mm per glyph unit (the renderer's explicit_scale).
@@ -1188,8 +1192,8 @@ class Typesetter:
             mw_mm = frame.get('max_width')
             frame_seed = (seed + b) if seed is not None else None
 
-            # Per-frame typography overrides (U7). Default to the document
-            # globals, so a frame with no overrides is byte-identical to before.
+            # Per-frame typography overrides. Default to the document globals,
+            # so a frame with no overrides is byte-identical to before.
             lh_f = float(frame.get('line_height') or global_lh_mm)
             sp_f = float(frame.get('line_spacing') or line_spacing)
             # k pre-scales this frame's glyph coords so that the SHARED render
@@ -1553,7 +1557,7 @@ class Renderer:
         """
         Generate an SVG file from compiled shapes.
 
-        When ``prebaked`` is set (multi-frame layout, U7 Phase 2b), the glyph
+        When ``prebaked`` is set for multi-frame layout, the glyph
         coordinates already carry their absolute page position, so the outer
         transform is just ``scale`` with a zero origin / content-offset.
 
@@ -2191,7 +2195,7 @@ if __name__ == "__main__":
 
     fallbacks = None if args.no_fallbacks else DEFAULT_UNICODE_FALLBACKS
 
-    # ── Multiple text frames (U7 Phase 2b) ──────────────────────────────
+    # ── Multiple text frames (multi-frame layout) ──────────────────────────────
     # Self-contained path: typeset each positioned frame, bake positions, and
     # render once. Does not support --paginate / --report (single positioned
     # page by definition). CLI output stays lean (no data-ci/-frame tags).

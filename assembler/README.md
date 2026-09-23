@@ -5,18 +5,21 @@ The Assembler is the backend engine that converts input text and a library of ve
 ## Usage
 
 ```bash
+../vhs-cli.sh [TEXT] [OUTPUT_FILE] [OPTIONS]
+# or, from this directory:
 python assembler.py [TEXT] [OUTPUT_FILE] [OPTIONS]
 ```
 
 ### Arguments
 
 - `text`: The string of text to render.
-- `output`: The filename for the resulting SVG (e.g., `out.svg`).
+- `output`: The filename for the resulting file (SVG by default).
 
 ### Options
 
 - `--file [PATH]`, `-f [PATH]`: Read input text from a file instead of the command line.
-- `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `myFont`). Defaults to root `glyphs/`.
+- `--frames [PATH]`: Read a JSON file with several positioned text frames. Requires `--paper-size` and cannot be combined with positional text or `--file`.
+- `--font [NAME]`: Name of the subdirectory in `glyphs/` to load glyphs from (e.g., `font1`). Defaults to root `glyphs/`.
 - `--paper-size [SIZE]`: Fixed paper size for the output SVG. Choices: `A3`, `A4`, `A5`, `A6`, `Letter`, `Legal`. When set, `--line-height-mm` or `--lines-per-page` is required.
 - `--orientation [portrait|landscape]`: Page orientation. Default: `portrait`.
 - `--margin [FLOAT]`: Page margin in mm on all sides (default: `20.0`). Doubles as the default for `--start-x` / `--start-y`.

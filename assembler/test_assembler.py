@@ -154,7 +154,7 @@ class TestAssembler(unittest.TestCase):
          # We can't easily check internal metrics here, but we check count.
 
     def test_shape_source_index_parallel(self):
-        """Each placed shape records its source char index (U7 Phase 2)."""
+        """Each placed shape records its source char index for GUI caret mapping."""
         # "a.tt" → shapes a(@0), .(@1), tt(@2). The ligature spans chars 2-3
         # but is recorded at its start index.
         shapes = self.typesetter.typeset_text("a.tt")

@@ -416,7 +416,7 @@ def api_generate():
 
     fallbacks = DEFAULT_UNICODE_FALLBACKS if fallbacks_enabled else None
 
-    # ── Multiple text frames (U7 Phase 2b) ──────────────────────────────
+    # ── Multiple text frames ──────────────────────────────
     # When the payload carries a non-empty `frames` list, render several
     # independently-positioned blocks via typeset_frames + a prebaked render.
     # Each glyph is tagged data-frame/data-ci for per-frame click-to-caret.

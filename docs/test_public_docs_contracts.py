@@ -7,10 +7,10 @@ DEPLOY = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encodin
 
 
 def test_readme_labels_hosted_pages_as_collector_only_and_local_gui_as_assembler():
-    assert "Hosted collector demo" in README
+    assert "hosted collector demo" in README.lower()
     assert "collector-only" in README.lower()
-    assert "Local Assembler GUI" in README
-    assert "server-backed assembly" in README.lower()
+    assert "local app has the full workflow" in README.lower()
+    assert "capture glyphs, type text, preview SVG, and export files" in README
 
 
 def test_collector_header_navigation_stays_inside_project_or_explains_local_gui():
@@ -75,15 +75,25 @@ def test_contributing_quickstart_matches_python310_and_runnable_commands():
     assert "--font font1" in text
 
 
-def test_docs_describe_current_project_review_hardening():
+def test_readme_keeps_public_first_contact_surface_plain():
     readme = README
-    gui = (ROOT / "docs" / "GUIDE_ASSEMBLER_GUI.md").read_text(encoding="utf-8")
-    collector = (ROOT / "docs" / "GUIDE_GLYPHCOLLECTOR.md").read_text(encoding="utf-8")
-    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-    assert "malformed SVG conversion requests return JSON `400`" in readme
-    assert "all validation scripts use the shipped `glyphs/font1`" in readme
-    assert "returns a JSON `400` error" in gui
-    assert "arrow keys for 1 mm steps" in gui
-    assert "Ignored while typing in inputs" in collector
-    assert "### Fixed" in changelog
-    assert "Playwright dependency" in changelog
+    assert "turns typed text into handwriting-style SVG for pen plotters" in readme
+    assert "You draw your own glyphs" in readme
+    assert "internal" not in readme.lower()
+    assert "hardening" not in readme.lower()
+    assert "validation scripts" not in readme.lower()
+    assert "malformed SVG conversion" not in readme
+    assert "/home/" not in readme
+
+
+def test_roadmap_reflects_current_baseline_and_future_candidates():
+    roadmap = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    assert "## Current baseline" in roadmap
+    assert "Multiple text frames" in roadmap
+    assert "Real plotter smoke tests" in roadmap
+    assert "Cursive joining" in roadmap
+    assert "Static browser build" in roadmap
+    assert "Today every knob" not in roadmap
+    assert "currently silently skipped" not in roadmap
+    assert "U7_TEXT_FRAMES_PLAN" not in roadmap
+    assert not (ROOT / "docs" / "U7_TEXT_FRAMES_PLAN.md").exists()

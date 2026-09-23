@@ -267,7 +267,6 @@ options (font, line height, spacing, colour, realism) apply to all
 frames. Requires `--paper-size`; not combinable with `--paginate`.
 `--report` gives a per-frame fit summary (words/lines/overflow). The web
 GUI's **➕ Frame** mode builds the same structure — see the GUI guide.
-Full design notes: `docs/U7_TEXT_FRAMES_PLAN.md`.
 
 ---
 
