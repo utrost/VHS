@@ -1678,7 +1678,7 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
             }
         }
 
-        // ── WYSIWYG on-page editor (U7, Phase 1) ───────────────────────────
+        // ── WYSIWYG on-page editor ───────────────────────────
         //
         // An additive editing mode: it overlays the rendered page with
         // draggable guides and a transparent on-page text layer. It owns NO
@@ -2042,7 +2042,7 @@ Line breaks are preserved." aria-label="Text Input"></textarea>
             el.dispatchEvent(new Event('input', { bubbles: true }));
         }
 
-        // ── Multiple text frames (U7 Phase 2b, editor) ─────────────────────
+        // ── Multiple text frames ─────────────────────
         // Frame 0 is the sidebar-driven block; these are frames 1+. Each extra
         // frame is an additive box + transparent textarea + drag handles + a
         // delete button. When any exist, generate() sends the `frames` payload.

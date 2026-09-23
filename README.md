@@ -1,195 +1,129 @@
-# Vector Handwriting System (VHS)
+# VHS
 
-**🌐 Hosted collector demo:** [utrost.github.io/VHS](https://utrost.github.io/VHS/) · [simiono.com/vhs](https://simiono.com/vhs/) — collector-only static pages for capturing glyph JSON.
+VHS turns typed text into handwriting-style SVG for pen plotters.
 
-For server-backed assembly, live SVG preview, and the one-window Assemble + Capture workflow, run the **Local Assembler GUI** with `./vhs-gui.sh` or `vhs-gui.bat`.
+You draw your own glyphs with a pen, tablet, or stylus. Capture a few versions of each letter, digit, punctuation mark, or ligature. VHS then uses those glyphs to assemble text as single-stroke vector paths.
 
-## Current status
+The output is meant for plotters: SVG paths, millimetre-based page settings, paper sizes, margins, line spacing, and small variation so repeated letters do not all look the same.
 
-VHS now has three maintained entry points:
+## What you can do
 
-- **Hosted Collector** on GitHub Pages / simiono.com for capturing glyph JSON only.
-- **Local Assembler GUI** for the full Assemble + Capture round trip, live preview, exports, presets, and on-page editing.
-- **CLI** for repeatable SVG/PNG/PDF generation and validation scripts.
+- Capture handwriting glyph variants in the browser.
+- Turn text or a text file into SVG.
+- Export PNG or PDF when the optional dependencies are installed.
+- Use A3, A4, A5, A6, Letter, or Legal page sizes.
+- Set margins, line height, stroke width, wrapping, spacing, and line drift.
+- Keep your handwriting data local. Glyph JSON files are yours to keep private or share.
 
-Recent hardening keeps the public quickstart reproducible: all validation scripts use the shipped `glyphs/font1` sample font, screenshot regeneration declares its Playwright dependency in `requirements-docs.txt`, malformed SVG conversion requests return JSON `400` errors instead of Flask HTML errors, and editor/collector shortcuts avoid destructive surprises while typing in form fields.
+## Try it
 
-VHS is a deterministic pipeline for generating realistic handwriting for pen plotters. It replaces neural-network-based generation with a stochastic "Shaping Engine" utilizing a custom-captured library of single-stroke vector glyphs.
+There are two ways to start.
 
-## Project Structure
+### 1. Capture glyphs online
 
-- **`GlyphCollectorUI/`**: A browser-based tool for capturing handwriting glyph variants.
-- **`assembler/`**: Python tools to assemble captured glyphs into handwritten SVG text.
-- **`glyphs/`**: Storage for captured glyph data (JSON format). Personal glyph data is gitignored.
-- **`vhs-cli.*` / `vhs-gui.*`**: Platform-specific scripts to run the CLI and Web UI from the root.
+Use the hosted collector demo:
 
-![VHS Glyph Collector — capturing handwriting variants](docs/glyph-collector.jpg)
+- https://simiono.com/vhs/
+- https://utrost.github.io/VHS/
 
-### Example Output
+This is collector-only. It lets you draw glyphs and download JSON files. It does not assemble full pages in the browser.
 
-![Example: "Hello World" rendered by VHS](docs/example-hello-world.png)
+### 2. Run the local app
 
-*Generated SVG output — single-stroke paths ready for pen plotting.*
+The local app has the full workflow: capture glyphs, type text, preview SVG, and export files.
 
-![Example: a full-page VHS handwriting sample](docs/example-long-page.jpg)
+You need Python 3.10 or newer.
 
-*A longer page-length sample. The useful test here is not whether one word looks convincing, but whether spacing, repeated letters, line rhythm, and the page as a whole still avoid the cloned-font look.*
+macOS / Linux:
 
-## Quick Start
-
-### 0. Install & run (one command)
-
-The only prerequisite is **Python 3.10+**. Get the project (clone or
-download the ZIP), then start the web UI:
-
-**macOS / Linux**
 ```bash
 ./vhs-gui.sh
 ```
-**Windows**
+
+Windows:
+
 ```cmd
 vhs-gui.bat
 ```
 
-On first run this creates a self-contained local environment (`.venv/`),
-installs the dependencies, starts the server, and opens your browser at
-**http://localhost:5001**. Later runs just start the server. Nothing is
-installed system-wide and nothing leaves your machine.
+The first run creates a local `.venv`, installs the needed packages, starts the server, and opens the app at:
 
-That one window has both tools: **✦ Assemble** (type → handwriting) and
-**✍ Capture glyphs** (draw your own letters), with a capture → assemble
-round trip. The CLI uses the same engine — see §2.
-
-> Prefer to manage Python yourself? `pip install -r requirements.txt`
-> then `python3 assembler/server.py`. (Only `--format png/pdf` and YAML
-> presets need the optional packages; the SVG core is pure standard
-> library.)
-
-### 1. Capture Glyphs
-1. Open `GlyphCollectorUI/GlyphCollectorUI.html` in a browser, use the [hosted collector-only demo](https://simiono.com/vhs/), or use the **Capture glyphs** tab inside the local Assembler GUI.
-2. Enter a character in the input field.
-3. Draw 10 variants across the canvas slots. Use a stylus/tablet for pressure sensitivity.
-4. Press **Enter** while focus is on the drawing area/page background, or click **Save JSON** to export/save.
-5. If you used the hosted/static Collector, move the downloaded JSON files to `glyphs/YourFont/`. If you used the local Assembler GUI, Save writes directly into `glyphs/<font>/`.
-
-**Capture aids** (toggle in header bar or via keyboard):
-- **Template** (`T`) — Semi-transparent handwriting font overlay as a visual guide. Pick from 17 Google Fonts in ⚙️ Settings. Adjust opacity (default 15%).
-- **Bezier** (`B`) — Fits cubic Bezier curves to your strokes in real-time. Produces smoother SVG output. Adjust tolerance in Settings (0.5–5.0).
-- **Normalize** (`N`) — Corrects slant, normalizes height, and smooths pressure. Keeps your handwriting character but cleans up wobbles. Start with low strength (25%) and increase as needed.
-- **Smooth** — Catmull-Rom spline preview (on by default).
-
-All processing is display-only — raw stroke data is always preserved. When Bezier or Normalize are active during Save, the enhanced data is included in the JSON and used by the Assembler automatically.
-
-### 2. Generate Handwriting (CLI)
-
-Use the provided start scripts for your platform:
-
-**macOS/Linux:**
-```bash
-./vhs-cli.sh "Hello World" output.svg --font YourFont
-./vhs-cli.sh --file letter.txt output.svg --font YourFont \
-  --paper-size A4 --margin 25 --line-height-mm 8 --line-spacing 1.3 --stroke-width 0.4
+```text
+http://localhost:5001
 ```
 
-**Windows:**
-```cmd
-vhs-cli.bat "Hello World" output.svg --font YourFont
-vhs-cli.bat --file letter.txt output.svg --font YourFont ^
-  --paper-size A4 --margin 25 --line-height-mm 8 --line-spacing 1.3 --stroke-width 0.4
-```
+By default it only listens on `localhost`.
 
-All page-related values (`--line-height-mm`, `--margin`, `--start-x/y`, `--max-width-mm`, `--stroke-width`) are in **millimetres**, so the output matches real paper. See [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) for the full walkthrough.
+## Basic workflow
 
-### 3. Web UI
+1. Open the local app.
+2. Go to **Capture glyphs**.
+3. Pick a character, for example `a`.
+4. Draw several versions with a pen or tablet.
+5. Save the glyph JSON into a font folder.
+6. Go back to **Assemble**.
+7. Type or paste text.
+8. Adjust page size, margins, line height, spacing, and stroke width.
+9. Export SVG and send it to your plotter workflow.
 
-Run `./vhs-gui.sh` (macOS/Linux) or `vhs-gui.bat` (Windows) — see
-[§0](#0-install--run-one-command). The browser opens automatically at
-[http://localhost:5001](http://localhost:5001).
+You do not need to capture a full alphabet before testing. Start with a small phrase and the characters it needs.
 
-The web UI provides a modern visual interface with live SVG preview, an
-**on-page WYSIWYG editor** (drag to position, click-to-caret, actual-size
-1:1 view, multiple text frames), file upload, paper-size presets,
-real-time adjustment of all assembler parameters, and the embedded
-**Capture glyphs** tool.
+## Command line
 
-By default the server binds to `localhost` only and runs with debug off.
-To expose it on your LAN or change the port, set environment variables:
-`VHS_HOST=0.0.0.0 VHS_PORT=8080 ./vhs-gui.sh`. `VHS_NO_BROWSER=1` skips the
-auto-open.
-
-## Features
-
-- **True Single-Stroke**: Output paths are 1-pixel wide vectors — ready for pen plotters.
-- **Bezier Curve Fitting**: Schneider algorithm with adaptive corner detection and Newton-Raphson refinement converts raw polyline captures into smooth cubic Bezier curves. Produces cleaner SVG output with fewer path points and natural curvature.
-- **Stroke Normalization**: Captured strokes are automatically corrected for slant, smoothed for pressure variation, and height-normalized for consistent glyph sizing. Blending strength is configurable.
-- **Template Overlay**: Semi-transparent handwriting font guides behind the capture canvas slots. Choose from 17 Google Fonts organized in two groups (Formal and Casual) to guide your capture consistency.
-- **Millimetre-First Page Layout**: Every page-related control (`--line-height-mm`, `--margin`, `--start-x/y`, `--max-width-mm`, `--stroke-width`) is in millimetres. A 12 mm line on paper stays 12 mm regardless of how much text you feed it — the Assembler does not auto-shrink to fit, so you keep pixel-perfect control.
-- **Fixed Paper Sizes**: Support for A3, A4, A5, A6, Letter, and Legal with Portrait/Landscape orientation.
-- **Micro-Variations**: Randomly selects from multiple variants of each character to avoid the "font" look.
-- **Curve Smoothing**: Catmull-Rom splines turn raw input into fluid, natural curves (fallback when Bezier data is unavailable).
-- **Zone-Aware Auto-Kerning**: Scanline-based algorithm calculates optimal letter spacing with vertical zone awareness (upper/ground/lower). Letters in non-overlapping zones kern tighter. Configurable aggressiveness (0.0–1.0).
-- **Ligature Support**: Greedy matching for multi-character sequences (e.g., "sch", "tt", "th").
-- **Typography Controls**: Line height in mm (or derived from `--lines-per-page`), line spacing multiplier, explicit text-block origin, page margins, and mm-based word wrapping via `--max-width-mm`.
-- **Balanced Line Breaks**: Default `--wrap-mode balanced` runs a minimum-raggedness DP per paragraph so line lengths stay uniform; `--wrap-mode greedy` falls back to first-fit. `--space-width-mm` and `--space-jitter-mm` give human-sized spaces with subtle variation.
-- **Organic Line Drift**: `--line-drift-angle` and `--line-drift-y` apply a tiny per-line rotation and baseline wobble so the output doesn't look like it's sitting on ruled lines.
-- **Multi-Page Pagination**: `--paginate` splits content that overflows into `output-01.svg`, `output-02.svg`, ….
-- **Pressure Data**: Preserves pressure information from the capture phase. Bezier segments carry interpolated pressure from raw stroke points.
-- **Multi-Font**: Organize different handwriting styles in separate `glyphs/` subdirectories.
-- **Windows Safe**: Unicode hex filenames (e.g., `0041.json`) prevent case-insensitivity conflicts.
-
-## Assembler Pipeline
-
-The assembler uses a priority chain when rendering glyphs:
-
-1. **Bezier curves** (`bezier_curves` in JSON) — rendered as SVG cubic Bezier `C` commands for the smoothest output
-2. **Normalized strokes** (`normalized_strokes` in JSON) — slant-corrected, pressure-smoothed, height-normalized points
-3. **Raw points** (`strokes` in JSON) — original capture data, optionally smoothed with Catmull-Rom splines
-
-Use `--no-bezier` to skip Bezier curves and fall back to normalized/raw strokes. Use `--no-normalize` to skip normalized strokes and use raw points directly. Both flags can be combined.
+Generate an SVG from text:
 
 ```bash
-./vhs-cli.sh "Hello" output.svg --font MyFont --no-bezier        # skip Bezier, use normalized or raw
-./vhs-cli.sh "Hello" output.svg --font MyFont --no-normalize      # skip normalization, use Bezier or raw
-./vhs-cli.sh "Hello" output.svg --font MyFont --no-bezier --no-normalize  # raw points only
+./vhs-cli.sh "Hello World" output.svg --font font1
 ```
 
-## Testing
+Generate an SVG from a text file:
 
-The system includes an automated test suite covering the core assembler,
-CLI behavior, Flask server endpoints, and the browser-only Glyph Collector
-contracts.
-
-Run all tests from the repository root:
 ```bash
-python3 -m pytest -q
+./vhs-cli.sh --file letter.txt output.svg --font font1 \
+  --paper-size A4 \
+  --margin 25 \
+  --line-height-mm 8 \
+  --line-spacing 1.3 \
+  --stroke-width 0.4
 ```
 
-The CI workflow also runs the historical focused assembler checks and smoke
-renders from `assembler/`.
+On Windows, use `vhs-cli.bat` instead of `./vhs-cli.sh`.
+
+## Fonts and glyphs
+
+A VHS font is a folder of JSON files under `glyphs/`.
+
+Each JSON file stores captured strokes for one character or ligature. VHS picks from the available variants while assembling text. More variants usually means less repetition on the page.
+
+The repository includes `glyphs/font1` as a sample font so you can test the assembler before drawing your own alphabet.
+
+## Screenshots
+
+![VHS local app showing text converted to handwriting SVG](docs/img/gui-overview.png)
+
+![Glyph capture screen with several variants of the letter A](docs/glyph-collector.jpg)
+
+![Example page rendered by VHS](docs/example-long-page.jpg)
+
+## Notes for plotter use
+
+- The main output is SVG with stroked paths.
+- Page and spacing controls use millimetres.
+- The paths are intended for pen plotting, not filled font outlines.
+- Test with a short phrase first. Check scale, stroke width, and spacing before plotting a full page.
+- Different plotter software handles SVG slightly differently. If something imports badly, try saving a smaller sample and inspect the paths first.
 
 ## Documentation
 
-- [User Guide](docs/USER_GUIDE.md) — Full mm-first layout walkthrough with recipes and cheat-sheet (start here)
-- [Assembler CLI Guide](docs/GUIDE_ASSEMBLER_CLI.md) — Illustrated walkthrough with rendered samples
-- [Assembler GUI Guide](docs/GUIDE_ASSEMBLER_GUI.md) — Screenshot tour of the web UI
-- [GlyphCollector Guide](docs/GUIDE_GLYPHCOLLECTOR.md) — Capture workflow end-to-end
-- Tracer has moved to the dedicated [utrost/Tracer](https://github.com/utrost/Tracer) repository; the in-repo VHS docs are migration notes only.
-- [Roadmap](docs/ROADMAP.md) — Planned realism, UX, and static-browser delivery work
-- [How to Create Realistic Handwriting](HowTo.md) — Step-by-step capture guide
-- [Assembler Reference](assembler/README.md) — CLI flag table, kerning, ligatures
-- [Glyph Collector UI](GlyphCollectorUI/README.md) — Capture tool documentation
-- [Technical Design Document](Handwriting%20Simulation%20System%20TDD.md) — Architecture and data specification
+- [User guide](docs/USER_GUIDE.md)
+- [Assembler GUI guide](docs/GUIDE_ASSEMBLER_GUI.md)
+- [Assembler CLI guide](docs/GUIDE_ASSEMBLER_CLI.md)
+- [Glyph collector guide](docs/GUIDE_GLYPHCOLLECTOR.md)
+- [Roadmap](docs/ROADMAP.md)
+- [Contributing](CONTRIBUTING.md)
 
-## Requirements
-
-- Python 3.10+
-- Modern web browser (for Capture UI)
-- A pen plotter (for the fun part)
+Tracer has moved to a separate project: [utrost/Tracer](https://github.com/utrost/Tracer).
 
 ## License
 
-Copyright © 2025–2026 Uwe Trostheide
-
-Licensed under the [GNU Affero General Public License v3.0](LICENSE).
-
-Note: The VHS engine is open source. Your captured glyph data (your handwriting) is yours — keep it private or share it, your choice.
+VHS is licensed under the [GNU Affero General Public License v3.0](LICENSE).

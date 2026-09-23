@@ -1,6 +1,6 @@
-# How to Create Realistic Handwriting with VHS
+# Capture handwriting for VHS
 
-This guide will walk you through the process of capturing your handwriting and generating vector text suitable for pen plotters.
+Use this guide when you want to draw your own glyphs and turn text into plotter-ready SVG.
 
 ## 1. Setup
 
